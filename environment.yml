@@ -1,0 +1,6 @@
+name: tree-segment
+dependencies:
+  - python
+  - pip
+  - pip:
+    - pylas
