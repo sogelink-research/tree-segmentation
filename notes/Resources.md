@@ -22,7 +22,7 @@ IGN data [here](https://geoservices.ign.fr/bdortho)
 
 See if there is anything to get from this.
 
-### French cities data
+### French data
 
 - French government data page: [here](https://www.data.gouv.fr/fr/datasets/?page=2&q=arbre)
 - Bordeaux: [here](http://www.opendata.bordeaux.fr/content/patrimoine-arbore) or better [here](https://opendata.bordeaux-metropole.fr/explore/dataset/ec_arbre_p/information/?disjunctive.insee)
@@ -49,17 +49,14 @@ Data can be downloaded from [here](https://www.beeldmateriaal.nl/data-room)
 All 300.000 trees managed by the municipality of Amsterdam, including species, height, diameter, age and xy location (but excluding crown shape).
 Can be downloaded [here](https://maps.amsterdam.nl/open_geodata/?k=505)
 
+### Other sources
+
+- [OpenTrees.org](https://opentrees.org/)
+- Some potentially interesting data from mountains [here](https://esajournals.onlinelibrary.wiley.com/doi/10.1002/ecy.1759)
+
 ## Software
 
 - [QGIS](https://qgis.org/en/site/), generic GIS viewer, good for checking any set of geographic data
 - [GDAL](https://gdal.org/), good for handling any type of vector or raster geo dataset (both CLI and python)
 - [PDAL](https://pdal.io/), good for handling pointcloud datasets, can be used for creating smalle subsets out of larger ones.
 - [Cloud Compare](https://www.danielgm.net/cc/), powerful viewer for pointclouds
-
-
-
-### Other sources
-
-- [Concatenation](https://www.data.gouv.fr/fr/datasets/arbres-en-open-data-en-france-par-namr/) (was not updated since 2021)
-- [OpenTrees.org](https://opentrees.org/)
-- Some potentially interesting data from mountains [here](https://esajournals.onlinelibrary.wiley.com/doi/10.1002/ecy.1759)
