@@ -33,6 +33,27 @@ See if there is anything to get from this.
 - Toulouse: [here](https://data.toulouse-metropole.fr/explore/dataset/arbres-urbains/information/)
 - Nice: [here](https://opendata.nicecotedazur.org/data/dataset/cartographie-des-arbres-communaux)
 
+### Dutch data
+
+#### AHN, Lidar Pointclouds countrywide
+Several versions with 5 years in between, most recent one is from last year (AHN4)
+All pointclouds have been shot during winter time so no leafs, good for finding internal tree structure and ground.
+Data can be downloaded in (very) large chuncks from [here](https://ahn.arcgisonline.nl/ahnviewer/)
+This raw data needs to be processed into smaller subsets first before something can be done with it (see PDAL)
+
+#### Luchtfotos (Aerial pictures)
+Aerial pictures of every year. High res (~8cm) in RGB and lower res (25cm) in RGB and IR
+Data can be downloaded from [here](https://www.beeldmateriaal.nl/data-room)
+
+## Software
+
+- [QGIS](https://qgis.org/en/site/), generic GIS viewer, good for checking any set of geographic data
+- [GDAL](https://gdal.org/), good for handling any type of vector or raster geo dataset (both CLI and python)
+- [PDAL](https://pdal.io/), good for handling pointcloud datasets, can be used for creating smalle subsets out of larger ones.
+- [Cloud Compare](https://www.danielgm.net/cc/), powerful viewer for pointclouds
+
+
+
 ### Other sources
 
 - [Concatenation](https://www.data.gouv.fr/fr/datasets/arbres-en-open-data-en-france-par-namr/) (was not updated since 2021)
