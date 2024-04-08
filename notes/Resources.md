@@ -45,6 +45,10 @@ This raw data needs to be processed into smaller subsets first before something 
 Aerial pictures of every year. High res (~8cm) in RGB and lower res (25cm) in RGB and IR
 Data can be downloaded from [here](https://www.beeldmateriaal.nl/data-room)
 
+#### Trees Amsterdam
+All 300.000 trees managed by the municipality of Amsterdam, including species, height, diameter, age and xy location (but excluding crown shape).
+Can be downloaded [here](https://maps.amsterdam.nl/open_geodata/?k=505)
+
 ## Software
 
 - [QGIS](https://qgis.org/en/site/), generic GIS viewer, good for checking any set of geographic data
