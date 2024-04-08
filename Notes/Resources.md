@@ -14,17 +14,27 @@ This page is interesting because we have a [whole Jupyter notebook](https://gith
 
 ## Datasets
 
+### Satellite images
+
+IGN data [here](https://geoservices.ign.fr/bdortho)
+
 ### [MillionTrees](https://milliontrees.idtrees.org/)
 
 See if there is anything to get from this.
 
-### [Global Urban Tree Inventory](https://onlinelibrary.wiley.com/doi/abs/10.1111/geb.13169)
+### French cities data
 
-The Appendix S3 contains links to the tree datasets of several French cities, copied below:
+- French government data page: [here](https://www.data.gouv.fr/fr/datasets/?page=2&q=arbre)
+- Bordeaux: [here](http://www.opendata.bordeaux.fr/content/patrimoine-arbore) or better [here](https://opendata.bordeaux-metropole.fr/explore/dataset/ec_arbre_p/information/?disjunctive.insee)
+- Grenoble: [here](https://data.metropolegrenoble.fr/visualisation/information/?id=arbres-grenoble)
+- Lyon: [alignment trees](https://data.grandlyon.com/portail/fr/jeux-de-donnees/arbres-alignement-metropole-lyon/donnees)
+- Montpellier: [without position](http://data.montpellier3m.fr/dataset/arbres-dalignement-de-montpellier)
+- Mulhouse: [here](https://data.mulhouse-alsace.fr/explore/dataset/68224_arbres_alignement/information/)
+- Toulouse: [here](https://data.toulouse-metropole.fr/explore/dataset/arbres-urbains/information/)
+- Nice: [here](https://opendata.nicecotedazur.org/data/dataset/cartographie-des-arbres-communaux)
 
-- [Bordeaux](http://www.opendata.bordeaux.fr/content/patrimoine-arbore)
-- [Grenoble](http://data.metropolegrenoble.fr/ckan/dataset/les-arbres-de-grenoble)
-- [Lyon](https://download.data.grandlyon.com/catalogue/srv/eng/find?uuid=c1b069ca-181d-4265-9838-8d182f207bd3)
-- [Montpellier](http://data.montpellier3m.fr/dataset/arbres-dalignement-de-montpellier)
-- [Mulhouse](http://www.mulhouse.fr/fr/Localisation-et-caracteristiques-des-arbres/Localisation-et-caracteristiques-des-arbres.html)
-- [Paris](https://opendata.paris.fr/explore/dataset/les-arbres/information/)
+### Other sources
+
+- [Concatenation](https://www.data.gouv.fr/fr/datasets/arbres-en-open-data-en-france-par-namr/) (was not updated since 2021)
+- [OpenTrees.org](https://opentrees.org/)
+- Some potentially interesting data from mountains [here](https://esajournals.onlinelibrary.wiley.com/doi/10.1002/ecy.1759)
