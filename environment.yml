@@ -1,9 +1,9 @@
 name: tree-segment
 dependencies:
   - python
-  - pdal
   - gdal
+  - pdal
+  - python-pdal
   - numpy
-  - pip
-  - pip:
-    - pylas[lazrs,laszip]
+  # - pip
+  # - pip:
