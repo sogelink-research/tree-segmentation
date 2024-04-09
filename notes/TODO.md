@@ -1,4 +1,4 @@
 # TODO
 
-- Extract smaller parts from the .LAZ files
-- Make Jupyter notebooks run on the server
+- Create a small dataset with RGB images, CHM images
+- Add tree positions/crowns to this dataset?

@@ -14,6 +14,10 @@ This page is interesting because we have a [whole Jupyter notebook](https://gith
 
 ## Datasets
 
+### Tools to label images
+
+[Labelimg](https://github.com/HumanSignal/labelImg)
+
 ### Satellite images
 
 IGN data [here](https://geoservices.ign.fr/bdortho)

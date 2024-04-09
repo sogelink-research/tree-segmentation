@@ -1,0 +1,22 @@
+[
+  "data/25FN1_13.las",
+  {
+      "type":"filters.smrf",
+      "window":33,
+      "slope":1.0,
+      "threshold":0.15,
+      "cell":1.0
+  },
+  {
+      "type":"filters.range",
+      "limits":"Classification[2:2]"
+  },
+  {
+      "type":"writers.gdal",
+      "filename":"data/25FN1_13_dtm_doc.tif",
+      "output_type":"min",
+      "gdaldriver":"GTiff",
+      "window_size":4,
+      "resolution":0.5
+  }
+]
