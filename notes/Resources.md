@@ -40,18 +40,21 @@ See if there is anything to get from this.
 ### Dutch data
 
 #### AHN, Lidar Pointclouds countrywide
-Several versions with 5 years in between, most recent one is from last year (AHN4)
+Several versions with 5 years in between, most recent one is from last year (AHN4).
 All pointclouds have been shot during winter time so no leafs, good for finding internal tree structure and ground.
-Data can be downloaded in (very) large chuncks from [here](https://ahn.arcgisonline.nl/ahnviewer/)
-This raw data needs to be processed into smaller subsets first before something can be done with it (see PDAL)
+Data can be downloaded in (very) large chuncks from [here](https://ahn.arcgisonline.nl/ahnviewer/).
+This raw data needs to be processed into smaller subsets first before something can be done with it (see PDAL).
+These large chunks have been divided into 25 chunks each and can be found [here](https://geotiles.citg.tudelft.nl/).
 
 #### Luchtfotos (Aerial pictures)
-Aerial pictures of every year. High res (~8cm) in RGB and lower res (25cm) in RGB and IR
-Data can be downloaded from [here](https://www.beeldmateriaal.nl/data-room)
+
+Aerial pictures of every year. High res (~8cm) in RGB and lower res (25cm) in RGB and IR.
+Data can be downloaded from [here](https://www.beeldmateriaal.nl/data-room).
 
 #### Trees Amsterdam
+
 All 300.000 trees managed by the municipality of Amsterdam, including species, height, diameter, age and xy location (but excluding crown shape).
-Can be downloaded [here](https://maps.amsterdam.nl/open_geodata/?k=505)
+Can be downloaded [here](https://maps.amsterdam.nl/open_geodata/?k=505).
 
 ### Other sources
 
@@ -62,5 +65,5 @@ Can be downloaded [here](https://maps.amsterdam.nl/open_geodata/?k=505)
 
 - [QGIS](https://qgis.org/en/site/), generic GIS viewer, good for checking any set of geographic data
 - [GDAL](https://gdal.org/), good for handling any type of vector or raster geo dataset (both CLI and python)
-- [PDAL](https://pdal.io/), good for handling pointcloud datasets, can be used for creating smalle subsets out of larger ones.
+- [PDAL](https://pdal.io/), good for handling pointcloud datasets, can be used for creating small subsets out of larger ones
 - [Cloud Compare](https://www.danielgm.net/cc/), powerful viewer for pointclouds
