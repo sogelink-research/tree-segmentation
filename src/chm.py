@@ -3,98 +3,111 @@ from osgeo import gdal
 import pdal
 from os.path import splitext
 import json
+import time
 
 gdal.UseExceptions()
 
-RESOLUTION = 0.125
+RESOLUTION = 0.25
+
+def measure_execution_time(func):
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        execution_time = end_time - start_time
+        print(f"Execution time for {func.__name__}: {execution_time} seconds")
+        return result
+    return wrapper
 
 def compute_laz_to_las(laz_file_name: str):
-    print("Converting LAZ to LAS...", end="", flush=True)
+    """Decompress LAZ files to LAS and save the new file.
+    
+    Return the name of the new LAS file.
+    """
+    
+    print("Converting LAZ to LAS... ", end="", flush=True)
     file_name = splitext(laz_file_name)[0]
     las_file_name = file_name + ".las"
-    pipeline = {
-        "pipeline": [
-            {
-                "type": "readers.las",
-                "filename": laz_file_name
-            },
-            {
-                "type": "writers.las",
-                "filename": las_file_name
-            }
-        ]
-    }
+    pipeline_json = [
+        {
+            "type": "readers.las",
+            "filename": laz_file_name
+        },
+        {
+            "type": "writers.las",
+            "filename": las_file_name
+        }
+    ]
     
     # Execute the pipeline
-    pipeline = pdal.Pipeline(json.dumps(pipeline))
+    pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
 
     # Check if the pipeline execution was successful
     if count == 0:
-        print(" Conversion failed.")
+        print("Conversion failed.")
     else:
-        print(" Conversion successful.")
+        print("Conversion successful.")
     
-    # laz_ds = gdal.Open(laz_file_name)
-    # gdal.Translate(las_file_name, laz_ds, format="las")
-    # laz_ds = None
     return laz_file_name
 
 def compute_dsm(las_file_name: str):
-    print("Computing Surface Model...", end="", flush=True)
+    print("Computing Surface Model... ", end="", flush=True)
     file_name = splitext(las_file_name)[0]
     output_tif_name = f"{file_name}_dsm.tif"
-    json = f"""[
-    "{las_file_name}",
-    {{
-        "type":"filters.range",
-        "limits":"returnnumber[1:1]"
-    }},
-    {{
-        "type": "writers.gdal",
-        "filename":"{output_tif_name}",
-        "output_type":"idw",
-        "gdaldriver":"GTiff",
-        "window_size":4,
-        "resolution":{RESOLUTION}
-    }}
-]"""
-    pipeline = pdal.Pipeline(json)
+    
+    pipeline_json = [
+        las_file_name,
+        {
+            "type":"filters.range",
+            "limits":"returnnumber[1:1]"
+        },
+        {
+            "type": "writers.gdal",
+            "filename": output_tif_name,
+            "output_type": "idw",
+            "gdaldriver": "GTiff",
+            "window_size": 4,
+            "resolution": RESOLUTION
+        }
+    ]
+    pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
     metadata = pipeline.metadata
     print(f"Done: {count} points found.")
     return output_tif_name
     
 def compute_dtm(las_file_name: str):
-    print("Computing Terrain Model...", end="", flush=True)
+    print("Computing Terrain Model... ", end="", flush=True)
     file_name = splitext(las_file_name)[0]
     output_tif_name = f"{file_name}_dtm.tif"
-    json = f"""[
-    "{las_file_name}",
-    {{
-        "type":"filters.smrf",
-        "window":33,
-        "slope":1.0,
-        "threshold":0.15,
-        "cell":1.0
-    }},
-    {{
-        "type":"filters.range",
-        "limits":"Classification[2:2]"
-    }},
-    {{
-        "type":"writers.gdal",
-        "filename":"{output_tif_name}",
-        "output_type":"min",
-        "gdaldriver":"GTiff",
-        "window_size":4,
-        "resolution":{RESOLUTION}
-    }}
-]"""
-    pipeline = pdal.Pipeline(json)
+
+    pipeline_json = [
+        las_file_name,
+        {
+            "type": "filters.smrf",
+            "window": 33,
+            "slope": 1.0,
+            "threshold": 0.15,
+            "cell": 1.0
+        },
+        {
+            "type": "filters.range",
+            "limits": "Classification[2:2]"
+        },
+        {
+            "type": "writers.gdal",
+            "filename": output_tif_name,
+            "output_type": "min",
+            "gdaldriver": "GTiff",
+            "window_size": 4,
+            "resolution": RESOLUTION
+        }
+    ]
+    pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
     metadata = pipeline.metadata
-    print(f" Done: {count} points found.")
+    print(f"Done: {count} points found.")
     return output_tif_name
 
 def compute_chm(laz_file_name: str):
@@ -104,7 +117,7 @@ def compute_chm(laz_file_name: str):
     dtm_file_name = compute_dtm(las_file_name)
     dsm_file_name = compute_dsm(las_file_name)
     
-    print("Computing Canopy Height Model...", end="", flush=True)
+    print("Computing Canopy Height Model... ", end="", flush=True)
     # Output file name
     file_name = splitext(las_file_name)[0]
     output_tif_name = f"{file_name}_chm.tif"
@@ -145,4 +158,45 @@ def compute_chm(laz_file_name: str):
     dsm_ds = None
     chm_ds = None
 
-    print(f" CHM calculation completed and saved to {output_tif_name}")
+    print(f"CHM calculation completed and saved to {output_tif_name}")
+
+@measure_execution_time
+def compute_laz_minus_ground_height(laz_file_name: str):
+    
+    print("Subtract ground height to point cloud... ", end="", flush=True)
+    
+    # las_file_name = compute_laz_to_las(laz_file_name)
+    
+    # Create new file name
+    file_name = splitext(laz_file_name)[0]
+    output_laz_name = f"{file_name}_minus_gh.LAZ"
+    
+    pipeline_json = [
+        {
+            "type": "readers.las",
+            "filename": laz_file_name
+        },
+        {
+            "type":"filters.smrf"
+        },
+        {
+            "type": "filters.hag_nn",
+            "count": 3,
+            "allow_extrapolation": True
+        },
+        {
+            "type": "filters.ferry",
+            "dimensions": "HeightAboveGround=>Z"
+        },
+        {
+            "type": "writers.las",
+            "filename": output_laz_name,
+        }
+    ]
+
+    pipeline = pdal.Pipeline(json.dumps(pipeline_json))
+    count = pipeline.execute()
+    metadata = pipeline.metadata
+    print(f"Done: {count} points found.")
+    
+    return output_laz_name
