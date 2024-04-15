@@ -6,6 +6,11 @@
 
 Really interesting paper which develops a variation of [YOLO v8](https://github.com/ultralytics/ultralytics) to combine LiDAR point clouds and RGB images. They also focused on topics really similar to what we are looking for: species identification and dense forests. Sadly, there is no implementation available online.
 
+### [Tree segmentation
+from AHN4
+Using a non-end-to-end neural network and
+random forest](https://repository.tudelft.nl/islandora/object/uuid%3A5d2ad31c-476e-4048-83f2-a5b4f92494d1)
+
 ## GitHub pages
 
 ### [Tree detection from satellite images](https://github.com/talhayavcin/Tree-detection-from-satellite-images)
