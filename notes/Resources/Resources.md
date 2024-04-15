@@ -46,8 +46,8 @@ See if there is anything to get from this.
 
 #### AHN, Lidar Pointclouds countrywide
 Several versions with 5 years in between, most recent one is from last year (AHN4).
-All pointclouds have been shot during winter time so no leafs, good for finding internal tree structure and ground.
-Data can be downloaded in (very) large chuncks from [here](https://ahn.arcgisonline.nl/ahnviewer/).
+All point clouds have been shot during winter time so no leafs, good for finding internal tree structure and ground.
+Data can be downloaded in (very) large chunks from [here](https://ahn.arcgisonline.nl/ahnviewer/).
 This raw data needs to be processed into smaller subsets first before something can be done with it (see PDAL).
 These large chunks have been divided into 25 chunks each and can be found [here](https://geotiles.citg.tudelft.nl/).
 
@@ -70,5 +70,5 @@ Can be downloaded [here](https://maps.amsterdam.nl/open_geodata/?k=505).
 
 - [QGIS](https://qgis.org/en/site/), generic GIS viewer, good for checking any set of geographic data
 - [GDAL](https://gdal.org/), good for handling any type of vector or raster geo dataset (both CLI and python)
-- [PDAL](https://pdal.io/), good for handling pointcloud datasets, can be used for creating small subsets out of larger ones
-- [Cloud Compare](https://www.danielgm.net/cc/), powerful viewer for pointclouds
+- [PDAL](https://pdal.io/), good for handling point cloud datasets, can be used for creating small subsets out of larger ones
+- [Cloud Compare](https://www.danielgm.net/cc/), powerful viewer for point clouds
