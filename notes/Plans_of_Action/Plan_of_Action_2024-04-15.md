@@ -1,4 +1,4 @@
-# Plan of Action (April 5 2024)
+# Plan of Action (April 15 2024)
 
 ## Last week
 
@@ -12,4 +12,10 @@ Last week, my main goal was to gather and understand the data I had, to start pr
 
 ## Next goals
 
-The goals for the next week are the following:
+The goals for this week are the following:
+
+- Look for ways to **programmatically create a tree instance segmentation dataset** using the LiDAR point cloud data. For this, the most interesting properties seem to be:
+    - the XYZ coordinates,
+    - the number of returns,
+    - the intensity.
+- Also look if there exist some small datasets I haven't found yet

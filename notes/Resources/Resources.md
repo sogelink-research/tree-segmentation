@@ -13,10 +13,7 @@ Some resources to help with the implementation:
 - [Convolutional Block Attention Module](https://github.com/Peachypie98/CBAM) (CBAM) in Pytorch for the AMFNet
 - [ShuffleNet v2](https://github.com/pytorch/vision/blob/main/torchvision/models/shufflenetv2.py) in Pytorch for the AMFNet
 
-### [Tree segmentation
-from AHN4
-Using a non-end-to-end neural network and
-random forest](https://repository.tudelft.nl/islandora/object/uuid%3A5d2ad31c-476e-4048-83f2-a5b4f92494d1)
+### [Tree segmentation from AHN4 Using a non-end-to-end neural network and random forest](https://repository.tudelft.nl/islandora/object/uuid%3A5d2ad31c-476e-4048-83f2-a5b4f92494d1)
 
 ## GitHub pages
 
