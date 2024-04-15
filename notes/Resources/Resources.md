@@ -6,6 +6,13 @@
 
 Really interesting paper which develops a variation of [YOLO v8](https://github.com/ultralytics/ultralytics) to combine LiDAR point clouds and RGB images. They also focused on topics really similar to what we are looking for: species identification and dense forests. Sadly, there is no implementation available online.
 
+Some resources to help with the implementation:
+
+- YOLOv8 [implementation](https://github.com/ultralytics/ultralytics), [structure](https://github.com/ultralytics/ultralytics/issues/189) and [documentation](https://docs.ultralytics.com/models/yolov8/)
+- [Gather and Distribute](https://arxiv.org/pdf/2309.11331.pdf) (GAD) with an [implementation](https://github.com/huawei-noah/Efficient-Computing/tree/master/Detection/Gold-YOLO) in Pytorch
+- [Convolutional Block Attention Module](https://github.com/Peachypie98/CBAM) (CBAM) in Pytorch for the AMFNet
+- [ShuffleNet v2](https://github.com/pytorch/vision/blob/main/torchvision/models/shufflenetv2.py) in Pytorch for the AMFNet
+
 ### [Tree segmentation
 from AHN4
 Using a non-end-to-end neural network and
@@ -45,6 +52,7 @@ See if there is anything to get from this.
 ### Dutch data
 
 #### AHN, Lidar Pointclouds countrywide
+
 Several versions with 5 years in between, most recent one is from last year (AHN4).
 All point clouds have been shot during winter time so no leafs, good for finding internal tree structure and ground.
 Data can be downloaded in (very) large chunks from [here](https://ahn.arcgisonline.nl/ahnviewer/).
