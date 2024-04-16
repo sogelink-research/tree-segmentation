@@ -6,6 +6,8 @@ There a several different ways to embed point cloud data from LiDAR to extract i
 
 The first step that is very important for the standardization of the data is to subtract the altitude of the terrain. This can be done by computing a Digital Terrain Model (DTM). I should look for a way to do this that doesn't necessarily involve a grid to create a new standardized point cloud.
 
+Then, ground points should also be removed to create point clouds as small as possible and quicker to process.
+
 ## Deep Learning Models
 
 The different methods mostly come from [this paper](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9609839/).

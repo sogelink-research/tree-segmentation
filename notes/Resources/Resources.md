@@ -1,10 +1,10 @@
 # Resources
 
-## Papers
+## Deep Learning methods
 
-### [Individual Tree Species Identification for Complex Coniferous and Broad-Leaved Mixed Forests Based on Deep Learning Combined with UAV LiDAR Data and RGB Images](https://www.mdpi.com/1999-4907/15/2/293)
+### Individual Tree Species Identification for Complex Coniferous and Broad-Leaved Mixed Forests Based on Deep Learning Combined with UAV LiDAR Data and RGB Images
 
-Really interesting paper which develops a variation of [YOLO v8](https://github.com/ultralytics/ultralytics) to combine LiDAR point clouds and RGB images. They also focused on topics really similar to what we are looking for: species identification and dense forests. Sadly, there is no implementation available online.
+See [here](https://www.mdpi.com/1999-4907/15/2/293). Really interesting paper which develops a variation of [YOLO v8](https://github.com/ultralytics/ultralytics) to combine LiDAR point clouds and RGB images. They also focused on topics really similar to what we are looking for: species identification and dense forests. Sadly, there is no implementation available online.
 
 Some resources to help with the implementation:
 
@@ -13,27 +13,45 @@ Some resources to help with the implementation:
 - [Convolutional Block Attention Module](https://github.com/Peachypie98/CBAM) (CBAM) in Pytorch for the AMFNet
 - [ShuffleNet v2](https://github.com/pytorch/vision/blob/main/torchvision/models/shufflenetv2.py) in Pytorch for the AMFNet
 
-### [Tree segmentation from AHN4 Using a non-end-to-end neural network and random forest](https://repository.tudelft.nl/islandora/object/uuid%3A5d2ad31c-476e-4048-83f2-a5b4f92494d1)
+### Tree segmentation from AHN4 Using a non-end-to-end neural network and random forest
 
-## GitHub pages
+See [here](https://repository.tudelft.nl/islandora/object/uuid%3A5d2ad31c-476e-4048-83f2-a5b4f92494d1).
 
-### [Tree detection from satellite images](https://github.com/talhayavcin/Tree-detection-from-satellite-images)
+### Tree detection from satellite images
 
-This page is interesting because we have a [whole Jupyter notebook](https://github.com/talhayavcin/Tree-detection-from-satellite-images/blob/main/YOLOv5_Custom_Training.ipynb) explaining how they install YOLO v5 and create their own dataset from images.
+See [here](https://github.com/talhayavcin/Tree-detection-from-satellite-images). This page is interesting because we have a [whole Jupyter notebook](https://github.com/talhayavcin/Tree-detection-from-satellite-images/blob/main/YOLOv5_Custom_Training.ipynb) explaining how they install YOLOv5 and create their own dataset from images.
+
+### Forest 3D App
+
+See [here](https://github.com/lloydwindrim/forest_3d_app)
+
+Uses YOLOv3 and point clouds only. Seems flexible and could be used to train a first model.
+
+### Automatic modelling of 3d trees using aerial lidar point cloud data and deep learning
+
+See [here](https://ris.utwente.nl/ws/portalfiles/portal/276874011/Kippers2021automatic.pdf). Uses LiDAR point clouds processed in two steps:
+
+1. Semantic segmentation using PointNet
+2. Segmentation using the Watershed algorithm
+
+### Tree Detection in Aerial Point Clouds
+
+See [here](https://github.com/Amsterdam-AI-Team/Tree_Detection_in_Aerial_Point_Clouds). The method in itself doesn't seem so great but they have notebooks explaining how they preprocessed the data.
 
 ## Datasets
 
 ### Tools to label images
 
-[Labelimg](https://github.com/HumanSignal/labelImg)
+- [Labelimg](https://github.com/HumanSignal/labelImg) for bounding box labeling
+- [SamGeo](https://samgeo.gishub.org/examples/box_prompts/) to segment images using SAM and bounding boxes
 
 ### Satellite images
 
 IGN data [here](https://geoservices.ign.fr/bdortho)
 
-### [MillionTrees](https://milliontrees.idtrees.org/)
+### MillionTrees
 
-See if there is anything to get from this.
+See [here](https://milliontrees.idtrees.org/). See if there is anything to get from this.
 
 ### French data
 
