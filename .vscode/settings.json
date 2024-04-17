@@ -2,7 +2,9 @@
     "python.analysis.typeCheckingMode": "basic",
     "cSpell.words": [
         "convolutional",
+        "multispectral",
         "osgeo",
-        "pdal"
+        "pdal",
+        "voxels"
     ]
 }

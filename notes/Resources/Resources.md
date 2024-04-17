@@ -38,7 +38,51 @@ See [here](https://ris.utwente.nl/ws/portalfiles/portal/276874011/Kippers2021aut
 
 See [here](https://github.com/Amsterdam-AI-Team/Tree_Detection_in_Aerial_Point_Clouds). The method in itself doesn't seem so great but they have notebooks explaining how they preprocessed the data.
 
+### DeepForest
+
+Can be found [here](https://deepforest.readthedocs.io/en/latest/landing.html). The model uses only RGB data but it might still be useful to look into it.
+
+###
+
+Can be found [here](https://www.sciencedirect.com/science/article/pii/S2667393223000169). Implements instance segmentation using CHM images and YOLOv5 on the FOR-instance benchmark.
+
 ## Datasets
+
+### OpenForest
+
+Can be found [here](https://github.com/RolnickLab/OpenForest/tree/main) and paper [here](https://arxiv.org/abs/2311.00277). This repo gathers open forest datasets, classified depending on the tasks they target and the types of data they contain.
+
+### NeonTreeEvaluation Benchmark
+
+Can be found [here](https://github.com/weecology/NeonTreeEvaluation/). The benchmark contains 30975 tree annotations (bounding boxes), with RGB, hyperspectral and LiDAR data. It is based on US data, but it is at least some data. The main problem might be the quality of the data, since the LiDAR density seems much lower than the one of the data from the Netherlands.
+
+### ReforesTree
+
+Can be found [here](https://github.com/gyrrei/ReforesTree). It contains over 4600 tree annotations (bounding boxes, species and more) from 6 tropical agroforestry reforestation project sites. However there are only RGB images. Maybe corresponding point clouds could be found somewhere else?
+
+### FoMo-Bench
+
+Can be found [here](https://github.com/RolnickLab/FoMo-Bench) (not yet available) and paper [here](https://arxiv.org/pdf/2312.10114.pdf). It "consists of 15 diverse datasets encompassing satellite, aerial, and inventory data, covering a variety of geographical regions, and including multispectral, red-green-blue, synthetic aperture radar (SAR) and LiDAR data with various temporal, spatial and spectral resolutions".
+
+### FOR-instance
+
+Can be found [here](https://zenodo.org/records/8287792) and paper [here](https://arxiv.org/abs/2309.01279). It contains only LiDAR point clouds with a very high point density. The trees in these point clouds are segmented individually.
+
+### NEON Tree Crowns
+
+Can be found [here](https://zenodo.org/records/3765872) and visualized [here](https://visualize.idtrees.org/). The dataset contains individual level crown estimates for 100 million trees at 37 geographic sites across the United States. The bounding boxes were generated using the DeepForest model, and they contain height, crown area, spatial location and confidence score. I think that [LiDAR point clouds](https://data.neonscience.org/data-products/explore?search=lidar) ([CHM](https://data.neonscience.org/data-products/DP3.30015.001), [LAS](https://data.neonscience.org/data-products/DP1.30003.001)) and [RGB images](https://data.neonscience.org/data-products/DP3.30010.001) can be downloaded from the NEON website.
+
+### MDAS: a new multimodal benchmark dataset for remote sensing
+
+Can be found [here](https://essd.copernicus.org/articles/15/113/2023/essd-15-113-2023.html). Seems to include RGB images and DSM at least.
+
+### TALLO
+
+Can be found [here](https://github.com/selva-lab-repo/TALLO), and paper [here](https://onlinelibrary.wiley.com/doi/full/10.1111/gcb.16302). Contains a list of trees with species and radius from many sources BUT there is no precise position for the trees. Maybe looking at the sources from which the data comes could help getting more precise information, but this is likely to be vain since it would require a lot (precise position, RGB images and LiDAR point clouds).
+
+### Datasets for Earth Observation
+
+Can be found [here](https://earthnets.retool.com/embedded/public/676aa812-0dca-4e3b-a596-b043d852571d). This is a list of datasets, maybe there is something interesting in the list.
 
 ### Tools to label images
 
