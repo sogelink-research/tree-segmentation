@@ -14,9 +14,15 @@ It could maybe also be interesting to look at the bias of the point cloud and fi
 
 ## Data Augmentation
 
+See [Albumentations](https://albumentations.ai/docs/) for an image augmentation library.
+
 ### Rotations and Symmetries
 
 Applying rotations and symmetries to the data is a simple way to increase the data. We can easily create 8 data tiles from 1 with 0°, 90°, 180° and 270° rotations. Some other transformations might be possible to consider.
+
+### Different slicing
+
+I don't know whether the model will handle every part of the image in the same way. It should not be a problem due to how convolution layers work, but it might be interesting to cut the full images at different positions in case any kind of problem like this occurs.
 
 ### Noise
 

@@ -42,7 +42,8 @@ See [here](https://github.com/Amsterdam-AI-Team/Tree_Detection_in_Aerial_Point_C
 
 Can be found [here](https://deepforest.readthedocs.io/en/latest/landing.html). The model uses only RGB data but it might still be useful to look into it.
 
-###
+### Instance segmentation of individual tree crowns with YOLOv5: A comparison of approaches using the ForInstance benchmark LiDAR dataset
+
 
 Can be found [here](https://www.sciencedirect.com/science/article/pii/S2667393223000169). Implements instance segmentation using CHM images and YOLOv5 on the FOR-instance benchmark.
 
