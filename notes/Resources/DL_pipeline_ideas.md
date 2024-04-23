@@ -45,3 +45,9 @@ It would probably be better to train and use the model on point clouds (and imag
 ### Watershed algorithm
 
 It could be interesting to apply the watershed algorithm when something detected as one tree seems too large to be one tree. The idea comes from [here](https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=9652063).
+
+## Potential things to try
+
+### Point cloud as 3rd channel
+
+Maybe it could be interesting to create images with 3 channels, where the two first channels come from a PCA on RGB, and the last channel comes from the point cloud height values. The image could then be directly given as input to a model?

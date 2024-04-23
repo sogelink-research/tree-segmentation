@@ -9,3 +9,7 @@
 Then, we should extract images of 1920 $\times$ 1920 pixels to have a size 640 $\times$ 640 after a reduction to a 24 cm resolution. To have a proper overlap of images to have every tree in one piece in at least one of the images, we should aim for an overlap of about 40 m, which is quite large since images will be 153.6 m large. In terms of pixels, we can take 160 pixels as the margin (38.4 m).
 
 With these parameters, we will get about 50 images per km², so 50 images from one single full RGB image. However, there will be overlaps between the different full images, which will sometimes require to use 4 different full (1 km²) images to compute one data image.
+
+## Alignment of images with the point cloud
+
+Due to the images not being orthophotos, it might be interesting to shift the images compared to the point cloud to align everything.
