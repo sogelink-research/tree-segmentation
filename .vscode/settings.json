@@ -1,11 +1,25 @@
 {
-    "python.analysis.typeCheckingMode": "basic",
+    // Generic settings :
+    "editor.formatOnSave": true, // Format files on save
+    "formatFiles.runOrganizeImports": true, // Sort imports when formatting
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit"
+    },
+    // Python
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter", // Use Black formatter for python
+        "editor.formatOnType": true
+    },
+    "python.analysis.typeCheckingMode": "basic", // or "strict" : use stricter python type checking
+    // Spell check
     "cSpell.words": [
+        "bboxes",
         "convolutional",
         "Geodan",
         "multispectral",
         "osgeo",
         "pdal",
+        "tqdm",
         "voxels"
     ]
 }
