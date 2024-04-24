@@ -1,9 +1,19 @@
 name: tree-segment
 dependencies:
   - python
+  # Images manipulation
   - gdal
+  # Point clouds manipulation
   - pdal
   - python-pdal
+  # Jupyter notebook
+  - ipykernel
+  - ipywidgets
+  # Others
   - numpy
-  # - pip
-  # - pip:
+  - matplotlib
+  # - tqdm
+  - pip
+  - pip:
+    # TODO: use the real tqdm package when this PR https://github.com/tqdm/tqdm/pull/1504 will be finally accepted
+    - git+https://github.com/UFO-101/tqdm.git
