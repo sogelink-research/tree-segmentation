@@ -1,14 +1,16 @@
 import json
+import os
 import time
 from os.path import splitext
 
+import laspy
 import numpy as np
 import pdal
 from osgeo import gdal
 
 gdal.UseExceptions()
 
-RESOLUTION = 0.25
+RESOLUTION = 0.24
 
 
 def measure_execution_time(func):
@@ -23,13 +25,14 @@ def measure_execution_time(func):
     return wrapper
 
 
-def compute_laz_to_las(laz_file_name: str):
+def compute_laz_to_las(laz_file_name: str, verbose: bool = False):
     """Decompress LAZ files to LAS and save the new file.
 
     Return the name of the new LAS file.
     """
 
-    print("Converting LAZ to LAS... ", end="", flush=True)
+    if verbose:
+        print("Converting LAZ to LAS... ", end="", flush=True)
     file_name = splitext(laz_file_name)[0]
     las_file_name = file_name + ".las"
     pipeline_json = [
@@ -42,18 +45,25 @@ def compute_laz_to_las(laz_file_name: str):
     count = pipeline.execute()
 
     # Check if the pipeline execution was successful
-    if count == 0:
-        print("Conversion failed.")
-    else:
-        print("Conversion successful.")
+    if verbose:
+        if count == 0:
+            print("Conversion failed.")
+        else:
+            print("Conversion successful.")
 
-    return laz_file_name
+    return las_file_name
 
 
-def compute_dsm(las_file_name: str):
-    print("Computing Surface Model... ", end="", flush=True)
+def compute_dsm(las_file_name: str, verbose: bool = False):
+    if verbose:
+        print("Computing Surface Model... ", end="", flush=True)
     file_name = splitext(las_file_name)[0]
     output_tif_name = f"{file_name}_dsm.tif"
+
+    with laspy.open(las_file_name, mode="r") as las_file:
+        # Get the bounding box information from the header
+        origin_x = las_file.header.min[0]
+        origin_y = las_file.header.min[1]
 
     pipeline_json = [
         las_file_name,
@@ -65,19 +75,31 @@ def compute_dsm(las_file_name: str):
             "gdaldriver": "GTiff",
             "window_size": 4,
             "resolution": RESOLUTION,
+            "origin_x": origin_x,
+            "origin_y": origin_y,
+            "width": 640,
+            "height": 640,
         },
     ]
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
     metadata = pipeline.metadata
-    print(f"Done: {count} points found.")
+    if verbose:
+        print(f"Done: {count} points found.")
     return output_tif_name
 
 
-def compute_dtm(las_file_name: str):
-    print("Computing Terrain Model... ", end="", flush=True)
+def compute_dtm(las_file_name: str, verbose: bool = False):
+    if verbose:
+        print("Computing Terrain Model... ", end="", flush=True)
     file_name = splitext(las_file_name)[0]
     output_tif_name = f"{file_name}_dtm.tif"
+    output_tif_name_temp = f"{file_name}_dtm_temp.tif"
+
+    with laspy.open(las_file_name, mode="r") as las_file:
+        # Get the bounding box information from the header
+        origin_x = las_file.header.min[0]
+        origin_y = las_file.header.min[1]
 
     pipeline_json = [
         las_file_name,
@@ -91,31 +113,55 @@ def compute_dtm(las_file_name: str):
         {"type": "filters.range", "limits": "Classification[2:2]"},
         {
             "type": "writers.gdal",
-            "filename": output_tif_name,
+            "filename": output_tif_name_temp,
             "output_type": "min",
             "gdaldriver": "GTiff",
             "window_size": 4,
             "resolution": RESOLUTION,
+            "origin_x": origin_x,
+            "origin_y": origin_y,
+            "width": 640,
+            "height": 640,
         },
     ]
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
     metadata = pipeline.metadata
-    print(f"Done: {count} points found.")
+
+    old_ds = gdal.Open(output_tif_name_temp)
+
+    # Create output raster file
+    driver = gdal.GetDriverByName("GTiff")
+    new_ds = driver.CreateCopy(output_tif_name, old_ds)
+
+    band = new_ds.GetRasterBand(1)
+
+    gdal.FillNodata(
+        targetBand=band, maskBand=None, maxSearchDist=100, smoothingIterations=0
+    )
+
+    # new_ds.GetRasterBand(1).WriteArray(band.ReadAsArray())
+
+    # Close all datasets
+    old_ds = None
+    new_ds = None
+
+    # os.remove(output_tif_name_temp)
+
+    if verbose:
+        print(f"Done: {count} points found.")
     return output_tif_name
 
 
-def compute_chm(laz_file_name: str):
-    las_file_name = compute_laz_to_las(laz_file_name)
+def compute_chm(laz_file_name: str, output_tif_name: str, verbose: bool = False):
+    las_file_name = compute_laz_to_las(laz_file_name, verbose)
 
     # Compute DTM and DSM
-    dtm_file_name = compute_dtm(las_file_name)
-    dsm_file_name = compute_dsm(las_file_name)
+    dtm_file_name = compute_dtm(las_file_name, verbose)
+    dsm_file_name = compute_dsm(las_file_name, verbose)
 
-    print("Computing Canopy Height Model... ", end="", flush=True)
-    # Output file name
-    file_name = splitext(las_file_name)[0]
-    output_tif_name = f"{file_name}_chm.tif"
+    if verbose:
+        print("Computing Canopy Height Model... ", end="", flush=True)
 
     # Open DTM and DSM files
     dtm_ds = gdal.Open(dtm_file_name)
@@ -155,15 +201,22 @@ def compute_chm(laz_file_name: str):
     dsm_ds = None
     chm_ds = None
 
-    print(f"CHM calculation completed and saved to {output_tif_name}")
+    # Remove intermediary files
+    print(f"{las_file_name = }")
+    os.remove(las_file_name)
+    # os.remove(dtm_file_name)
+    os.remove(dsm_file_name)
+
+    if verbose:
+        print(f"CHM calculation completed and saved to {output_tif_name}")
 
 
 @measure_execution_time
-def compute_laz_minus_ground_height(laz_file_name: str):
+def compute_laz_minus_ground_height(laz_file_name: str, verbose: bool = False):
+    if verbose:
+        print("Subtract ground height to point cloud... ", end="", flush=True)
 
-    print("Subtract ground height to point cloud... ", end="", flush=True)
-
-    # las_file_name = compute_laz_to_las(laz_file_name)
+    # las_file_name = compute_laz_to_las(laz_file_name, verbose)
 
     # Create new file name
     file_name = splitext(laz_file_name)[0]
@@ -183,6 +236,7 @@ def compute_laz_minus_ground_height(laz_file_name: str):
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
     metadata = pipeline.metadata
-    print(f"Done: {count} points found.")
+    if verbose:
+        print(f"Done: {count} points found.")
 
     return output_laz_name
