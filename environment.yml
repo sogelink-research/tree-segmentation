@@ -1,8 +1,14 @@
 name: tree-segment
+channels:
+  - conda-forge
+  - defaults
 dependencies:
   - python
   # Images manipulation
   - gdal
+  - shapely
+  # - rasterio
+  # - geopandas
   # Point clouds manipulation
   - pdal
   - python-pdal
@@ -12,6 +18,8 @@ dependencies:
   # Others
   - numpy
   - matplotlib
+  # Downloading files
+  - requests
   # - tqdm
   - pip
   - pip:
