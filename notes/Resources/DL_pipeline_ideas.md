@@ -40,7 +40,21 @@ Also, for the generated data to be interesting, bounding boxes are necessary. Th
 
 It would probably be better to train and use the model on point clouds (and images) having consistent precisions, even if this means reducing the amount of points in some LiDAR point clouds for example.
 
+## Error evaluation
+
+### IoU
+
+IoU is one of the common ways to tell if the model finds proper masks corresponding to bounding boxes.
+
+### Weighting
+
+The model will probably have issues finding trees that are below other trees. Since there can be a lot of small trees like this, it might be interesting to weight the loss corresponding to each tree with the area of the corresponding bounding box.
+
 ## Postprocessing
+
+### Output format
+
+I don't know how I would be possible to allow the model to have multiple trees to share an (x,y) coordinate. This is necessary since I aim at also detecting the trees that are below other trees.
 
 ### Watershed algorithm
 
