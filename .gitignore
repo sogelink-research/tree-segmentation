@@ -1,3 +1,4 @@
 /data/*
 !/data/annotations_full
+/models/*
 **/__pycache__

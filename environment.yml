@@ -2,27 +2,41 @@ name: tree-segment
 channels:
   - conda-forge
   - defaults
+  - pytorch
+  - nvidia
 dependencies:
   - python
   # Images manipulation
   - gdal
   - shapely
-  # - rasterio
-  # - geopandas
+
   # Point clouds manipulation
   - pdal
   - python-pdal
+
+  # Pytorch
+  - pytorch
+  - torchvision
+  - pytorch-cuda=11.8
+  # - torchinfo
+
+  # Deep Learning
+  - ultralytics
+
   # Jupyter notebook
   - ipykernel
   - ipywidgets
+
   # Others
   - numpy
   - matplotlib
+
   # Downloading files
   - requests
-  # - tqdm
+
   - pip
   - pip:
     # TODO: use the real tqdm package when this PR https://github.com/tqdm/tqdm/pull/1504 will be finally accepted
     - git+https://github.com/UFO-101/tqdm.git
     - laspy[lazrs,laszip]
+    - pyyaml

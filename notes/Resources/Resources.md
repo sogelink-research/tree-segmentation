@@ -11,7 +11,7 @@ Some resources to help with the implementation:
 - YOLOv8 [implementation](https://github.com/ultralytics/ultralytics), [structure](https://github.com/ultralytics/ultralytics/issues/189) and [documentation](https://docs.ultralytics.com/models/yolov8/)
 - [Gather and Distribute](https://arxiv.org/pdf/2309.11331.pdf) (GAD) with an [implementation](https://github.com/huawei-noah/Efficient-Computing/tree/master/Detection/Gold-YOLO) in Pytorch
 - [Convolutional Block Attention Module](https://github.com/Peachypie98/CBAM) (CBAM) in Pytorch for the AMFNet
-- [ShuffleNet v2](https://github.com/pytorch/vision/blob/main/torchvision/models/shufflenetv2.py) in Pytorch for the AMFNet
+- ShuffleNet v2 [paper](https://arxiv.org/abs/1807.11164v1) and [implementation](https://github.com/pytorch/vision/blob/main/torchvision/models/shufflenetv2.py) in Pytorch for the AMFNet
 
 ### Tree segmentation from AHN4 Using a non-end-to-end neural network and random forest
 
@@ -43,7 +43,6 @@ See [here](https://github.com/Amsterdam-AI-Team/Tree_Detection_in_Aerial_Point_C
 Can be found [here](https://deepforest.readthedocs.io/en/latest/landing.html). The model uses only RGB data but it might still be useful to look into it.
 
 ### Instance segmentation of individual tree crowns with YOLOv5: A comparison of approaches using the ForInstance benchmark LiDAR dataset
-
 
 Can be found [here](https://www.sciencedirect.com/science/article/pii/S2667393223000169). Implements instance segmentation using CHM images and YOLOv5 on the FOR-instance benchmark.
 

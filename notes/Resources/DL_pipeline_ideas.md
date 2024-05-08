@@ -50,6 +50,8 @@ IoU is one of the common ways to tell if the model finds proper masks correspond
 
 The model will probably have issues finding trees that are below other trees. Since there can be a lot of small trees like this, it might be interesting to weight the loss corresponding to each tree with the area of the corresponding bounding box.
 
+It might also be worth it to weight the loss function with the distance between trees, or with the density of trees in the area of the tree, to make sure the model performs well on isolated trees.
+
 ## Postprocessing
 
 ### Output format
