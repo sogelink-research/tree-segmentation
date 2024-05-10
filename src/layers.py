@@ -1,14 +1,19 @@
 import os
+import sys
 from typing import List, Tuple
+
+sys.path.append(os.path.abspath("Efficient-Computing/Detection/Gold-YOLO"))
 
 import torch
 import torch.nn as nn
 from cbam import CBAM
-from torchvision.models.shufflenetv2 import channel_shuffle
-from ultralytics.nn.modules.block import Bottleneck, C2f
-from ultralytics.nn.modules.conv import Concat, Conv
+from ultralytics.nn.modules.block import DFL, Bottleneck, C2f
+from ultralytics.nn.modules.conv import Conv
 from ultralytics.nn.modules.head import Detect
+from ultralytics.utils.tal import TORCH_1_10, dist2bbox, dist2rbox, make_anchors
 from utils import download_file
+from yolov6.models.yolo import build_network, make_divisible
+from yolov6.utils.config import Config
 
 
 def get_scale_constants(scale: str) -> Tuple[float, float, float]:
@@ -74,11 +79,11 @@ class YOLOv8Backbone(nn.Module):
     """Backbone of the YOLOv8 model (except SPPF)"""
 
     def __init__(self, scale: str = "n", c_input: int = 3) -> None:
-        """Initialize the backbone of the YOLOv8 model (except SPPF) with the chosen scale.
+        """Initializes the backbone of the YOLOv8 model (except SPPF) with the chosen scale.
 
         Args:
-            scale (str, optional): scale of the model (among `['n', 's', 'm', 'l', 'x']`). Defaults to "n".
-            c_input (int, optional): number of channels of the input Tensor
+            scale (str, optional): scale of the model (among ["n", "s", "m", "l", "x"]). Defaults to "n".
+            c_input (int, optional): number of channels of the input Tensor.
         """
         super().__init__()
         self.scale = scale
@@ -168,10 +173,8 @@ class YOLOv8Backbone(nn.Module):
                 weights = param.data
                 # Load the weights
                 if name == "model.0.conv.weight" and first_conv == "average":
-                    print(weights.shape)
                     weights_averaged = torch.mean(weights, dim=1, keepdim=True)
                     weights = weights_averaged.repeat(1, self.c_input, 1, 1)
-                    print(weights.shape)
                 self.state_dict()[real_name].data.copy_(weights)
 
     def save_real_state(self, state_path: str | None = None):
@@ -185,12 +188,12 @@ class AMF(nn.Module):
     """Attention Multi-level Fusion layer."""
 
     def __init__(self, c1_left: int, c1_right: int, r: int) -> None:
-        """Initialize an AMF layer.
+        """Initializes an AMF layer.
 
         Args:
-            c1_left (int): channels of the left branch
-            c1_right (int): channels of the right branch
-            r (int): reduction ratio
+            c1_left (int): channels of the left branch.
+            c1_right (int): channels of the right branch.
+            r (int): reduction ratio.
         """
         super().__init__()
         self.cbam_left = CBAM(c1_left, r=r)
@@ -200,8 +203,8 @@ class AMF(nn.Module):
         self.conv = Conv0(c2, c2, k=1, s=1, p=0)
 
     def forward(self, x_left: torch.Tensor, x_right: torch.Tensor):
-        first_cat = torch.cat((self.cbam_left(x_left), self.cbam_right(x_right)), 1)
-        return torch.cat((first_cat, self.conv(self.channel_shuffle(first_cat))))
+        first_cat = torch.cat((self.cbam_left(x_left), self.cbam_right(x_right)), dim=1)
+        return torch.cat((first_cat, self.conv(self.channel_shuffle(first_cat))), dim=1)
 
 
 class AMFNet(nn.Module):
@@ -210,19 +213,19 @@ class AMFNet(nn.Module):
     def __init__(
         self, c_input_left: int, c_input_right: int, scale: str = "n", r: int = 16
     ) -> None:
-        """Initiaze and AMFNet
+        """Initializes and AMFNet
 
         Args:
-            c_input_left (int): input channels of the left branch
-            c_input_right (int): input channels of the right branch
-            scale (str, optional): scale of the YOLOv8 backbones (among ['n', 's', 'm', 'l', 'x']). Defaults to "n".
+            c_input_left (int): input channels of the left branch.
+            c_input_right (int): input channels of the right branch.
+            scale (str, optional): scale of the YOLOv8 backbones (among ["n", "s", "m", "l", "x"]). Defaults to "n".
             r (int, optional): reduction ratio of AMF layers. Defaults to 16.
         """
         super().__init__()
         self.yolo_backbone_left = YOLOv8Backbone(scale, c_input_left)  # RGB images
         self.yolo_backbone_right = YOLOv8Backbone(scale, c_input_right)  # LiDAR data
         self.amfs = [
-            AMF(self.yolo_backbone_left.chs[2], self.yolo_backbone_right.chs[2], r)
+            AMF(self.yolo_backbone_left.chs[i], self.yolo_backbone_right.chs[i], r)
             for i in range(2, 6)
         ]
 
@@ -230,11 +233,78 @@ class AMFNet(nn.Module):
         self, x_left: torch.Tensor, x_right: torch.Tensor
     ) -> List[torch.Tensor]:
         layers = [2, 3, 4, 5]
-        left_outputs: List[torch.Tensor] = self.yolo_backbone_left(x_left, layers)
-        right_outputs: List[torch.Tensor] = self.yolo_backbone_right(x_right, layers)
+        left_outputs: Tuple[torch.Tensor] = self.yolo_backbone_left(x_left, layers)
+        right_outputs: Tuple[torch.Tensor] = self.yolo_backbone_right(x_right, layers)
         return list(
             map(
                 lambda i: self.amfs[i - 2](left_outputs[i - 2], right_outputs[i - 2]),
                 layers,
             )
         )
+
+
+class GD(nn.Module):
+
+    def __init__(self, config_file: str) -> None:
+        """Initializes a Gather and Distribute (GD) model using
+
+        Args:
+            config_file (str): path of a file containing the configuration of the model.
+        """
+        super().__init__()
+        config = Config.fromfile(config_file)
+        if not hasattr(config, "training_mode"):
+            setattr(config, "training_mode", "repvgg")
+        num_layers = config.model.head.num_layers
+        _, self.model, _ = build_network(
+            config,
+            channels=3,
+            num_classes=10,
+            num_layers=num_layers,
+            fuse_ab=False,
+            distill_ns=False,
+        )
+
+    def forward(self, x: List[torch.Tensor]) -> List[torch.Tensor]:
+        return list(self.model.forward(tuple(x)))
+
+
+class AMF_GD_YOLOv8(nn.Module):
+
+    def __init__(
+        self,
+        c_input_left: int,
+        c_input_right: int,
+        scale: str = "n",
+        r: int = 16,
+        gd_config_file: str | None = None,
+        number_classes: int = 4,
+    ) -> None:
+        super().__init__()
+
+        # AMFNet structure
+        self.amfnet = AMFNet(c_input_left, c_input_right, scale, r)
+
+        # Gather and Distribute structure
+        if gd_config_file is None:
+            gd_config_file = f"../models/gd_configs/gold_yolo-{scale}.py"
+        self.gd = GD(gd_config_file)
+
+        # Detection structure
+        depth, width, ratio = get_scale_constants(scale)
+        self.gd_config = Config.fromfile(gd_config_file)
+        channels_list = [
+            make_divisible(i * width, 8)
+            for i in (
+                self.gd_config.model.backbone.out_channels
+                + self.gd_config.model.neck.out_channels
+            )
+        ]
+        out_channels = [channels_list[6], channels_list[8], channels_list[10]]
+        self.detect = Detect(number_classes, out_channels)
+
+    def forward(self, x_left: torch.Tensor, x_right: torch.Tensor):
+        xs = self.amfnet(x_left, x_right)
+        xs = self.gd(xs)
+        self.detect.training = False
+        return self.detect(xs)

@@ -13,6 +13,7 @@
     "python.analysis.typeCheckingMode": "basic", // or "strict" : use stricter python type checking
     // Spell check
     "cSpell.words": [
+        "amfnet",
         "bboxes",
         "convolutional",
         "Geodan",
@@ -20,6 +21,10 @@
         "osgeo",
         "pdal",
         "tqdm",
-        "voxels"
+        "voxels",
+        "YOLO"
+    ],
+    "python.analysis.extraPaths": [
+        "./src/Efficient-Computing/Detection/Gold-YOLO"
     ]
 }

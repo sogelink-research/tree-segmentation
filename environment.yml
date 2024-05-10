@@ -40,3 +40,6 @@ dependencies:
     - git+https://github.com/UFO-101/tqdm.git
     - laspy[lazrs,laszip]
     - pyyaml
+    # Gold-YOLO
+    - cmake
+    - -r gold-yolo-requirements.txt
