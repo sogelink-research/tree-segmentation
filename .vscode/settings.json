@@ -24,7 +24,10 @@
         "voxels",
         "YOLO"
     ],
+    // Imports paths
     "python.analysis.extraPaths": [
         "./src/Efficient-Computing/Detection/Gold-YOLO"
-    ]
+    ],
+    // Jupyter notebooks
+    "notebook.formatOnSave.enabled": true,
 }
