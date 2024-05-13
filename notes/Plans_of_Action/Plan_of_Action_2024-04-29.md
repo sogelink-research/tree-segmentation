@@ -14,7 +14,7 @@ Even if it didn't go as fast as I wished, here is what was achieved so far:
 
 ## Next goals
 
-AS for next week, the goal is to keep working on the same two tasks and hope to finish them quickly:
+As for next week, the goal is to keep working on the same two tasks and hope to finish them quickly:
 
 - Create the tree dataset with bounding boxes,
 - Implement the first ML pipeline using this dataset.

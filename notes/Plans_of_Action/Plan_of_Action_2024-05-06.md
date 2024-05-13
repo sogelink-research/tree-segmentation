@@ -6,7 +6,7 @@ There is not much to say about what I did last week. Nothing fancy, I simply add
 
 ## Next goals
 
-AS for next week, the goal is to keep working on the same two tasks and hope to finish them quickly:
+As for next week, the goal is to keep working on the same two tasks and hope to finish them quickly:
 
 - Complete the tree dataset with bounding boxes (I might give up on some small areas where trees are really hard to distinguish),
 - Put everything together to have the PyTorch model working (at least having all the elements for the `forward` function).
