@@ -1,0 +1,23 @@
+[
+    "data/Amsterdam_Forest.laz",
+    {
+        "type": "filters.hag_delaunay"
+    },
+    {
+        "type": "filters.sort",
+        "dimension": "HeightAboveGround",
+        "order": "DESC"
+    },
+    {
+        "type": "filters.litree",
+        "min_points": 50,
+        "min_height": 10.0,
+        "radius": 200.0
+    },
+    {
+        "type": "writers.las",
+        "minor_version": 4,
+        "filename": "data/Amsterdam_Forest_Trees_Classification.laz",
+        "extra_dims": "ClusterID=uint64,HeightAboveGround=double"
+    }
+]

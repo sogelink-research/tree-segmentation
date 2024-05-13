@@ -1,0 +1,14 @@
+[
+	{
+		"type": "readers.tif",
+		"filename": "2023_122000_484000_RGB_hrl.tif"
+	},
+	{
+		"type": "filters.crop",
+		"bounds": "([122344.67, 483618.84], [122724.02, 483827.57])"
+	},
+	{
+		"type": "writers.gdal",
+		"filename": "2023_122000_484000_RGB_hrl_cropped.tif"
+	}
+]
