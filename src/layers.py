@@ -1,16 +1,22 @@
 import os
 import sys
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 sys.path.append(os.path.abspath("Efficient-Computing/Detection/Gold-YOLO"))
 
+import cv2
+import numpy as np
+import numpy.typing as npt
 import torch
 import torch.nn as nn
+import torchvision.transforms as transforms
 from cbam import CBAM
-from ultralytics.nn.modules.block import DFL, Bottleneck, C2f
+from PIL import Image
+from ultralytics.engine.results import Results
+from ultralytics.nn.modules.block import Bottleneck, C2f
 from ultralytics.nn.modules.conv import Conv
 from ultralytics.nn.modules.head import Detect
-from ultralytics.utils.tal import TORCH_1_10, dist2bbox, dist2rbox, make_anchors
+from ultralytics.utils import ops
 from utils import download_file
 from yolov6.models.yolo import build_network, make_divisible
 from yolov6.utils.config import Config
@@ -78,6 +84,8 @@ class C2f0(C2f):
 class YOLOv8Backbone(nn.Module):
     """Backbone of the YOLOv8 model (except SPPF)"""
 
+    INPUT_SIZE = 640
+
     def __init__(self, scale: str = "n", c_input: int = 3) -> None:
         """Initializes the backbone of the YOLOv8 model (except SPPF) with the chosen scale.
 
@@ -111,9 +119,25 @@ class YOLOv8Backbone(nn.Module):
         self.conv5 = Conv0(self.chs[4], self.chs[5], 3, 2, 1)
         self.c2f5 = C2f0(self.chs[5], self.chs[5], ns[0], True)  # P5
 
+    def preprocess(self, x: torch.Tensor) -> torch.Tensor:
+        shape = x.shape[1:3]
+        if shape[0] > shape[1]:
+            resized_shape = (
+                self.INPUT_SIZE,
+                round(self.INPUT_SIZE * shape[1] / shape[0]),
+            )
+        else:
+            resized_shape = (
+                round(self.INPUT_SIZE * shape[0] / shape[1]),
+                self.INPUT_SIZE,
+            )
+        resize = transforms.Resize(resized_shape, antialias=True)  # type: ignore # antialias=True helps preventing a warning
+        return resize(x)
+
     def forward(
         self, x: torch.Tensor, output_indices: List[int] | None = None
     ) -> List[torch.Tensor]:
+        x = self.preprocess(x)
         outputs = []
         outputs.append(self.conv1(x))
         outputs.append(self.c2f2(self.conv2(outputs[-1])))
@@ -278,9 +302,15 @@ class AMF_GD_YOLOv8(nn.Module):
         scale: str = "n",
         r: int = 16,
         gd_config_file: str | None = None,
-        number_classes: int = 4,
+        class_names: Dict[int, str] = {
+            0: "Tree",
+            1: "Tree_disappeared",
+            2: "Tree_replaced",
+            3: "Tree_new",
+        },
     ) -> None:
         super().__init__()
+        self.class_names = class_names
 
         # AMFNet structure
         self.amfnet = AMFNet(c_input_left, c_input_right, scale, r)
@@ -301,10 +331,85 @@ class AMF_GD_YOLOv8(nn.Module):
             )
         ]
         out_channels = [channels_list[6], channels_list[8], channels_list[10]]
-        self.detect = Detect(number_classes, out_channels)
+        self.detect = Detect(len(class_names), out_channels)
 
-    def forward(self, x_left: torch.Tensor, x_right: torch.Tensor):
+    def open_image(self, image_path: str) -> torch.Tensor:
+        to_tensor_transform = transforms.ToTensor()
+
+        image = Image.open(image_path)
+        image_tensor = to_tensor_transform(image)
+        return image_tensor.unsqueeze(0)
+
+    def forward(
+        self,
+        x_left: torch.Tensor | str,
+        x_right: torch.Tensor | str,
+        image_save_path: str | None = None,
+    ) -> Tuple[List[torch.Tensor | List[torch.Tensor]], Results]:
+        # Open x_left if it is a path
+        if isinstance(x_left, str):
+            origin_image_path = x_left
+            x_left = self.open_image(x_left)
+        else:
+            origin_image_path = None
+        input_img_shape = x_left.shape[2:]
+        origin_image = np.ascontiguousarray(
+            np.array(np.round(255 * x_left[0].permute(1, 2, 0)), dtype=np.uint8)
+        )
+
+        # Open x_right if it is a path
+        if isinstance(x_right, str):
+            x_right = self.open_image(x_right)
+
+        # Compute the output
         xs = self.amfnet(x_left, x_right)
         xs = self.gd(xs)
         self.detect.training = False
-        return self.detect(xs)
+        y = self.detect(xs)
+
+        # Create the results
+        result = extract_bboxes(
+            y,
+            input_img_shape=input_img_shape,
+            origin_image=origin_image,
+            origin_image_path=origin_image_path,
+            class_names=self.class_names,
+            confidence=0.5,
+            iou=0.5,
+        )
+
+        if image_save_path is not None:
+            img = result.plot()
+
+            # Convert BGR to RGB (OpenCV uses BGR by default)
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            cv2.imwrite(image_save_path, img_rgb)
+
+        return (y, result)
+
+
+def extract_bboxes(
+    preds: List[torch.Tensor | List[torch.Tensor]],
+    input_img_shape: Tuple[int] | torch.Size,
+    origin_image: npt.NDArray[np.uint8],
+    origin_image_path: str | None,
+    class_names: Dict[int, str],
+    confidence: float,
+    iou: float,
+) -> Results:
+    """Post-processes predictions and returns a list of Results objects."""
+    preds_nms = ops.non_max_suppression(preds, confidence, iou)[0]
+    preds_nms[:, :4] = ops.scale_boxes(
+        input_img_shape, preds_nms[:, :4], origin_image.shape
+    )
+    return Results(
+        origin_image, path=origin_image_path, names=class_names, boxes=preds_nms
+    )
+
+
+def swap_image_b_r(image: Image.Image) -> Image.Image:
+    r, g, b = image.split()
+    temp = r
+    r = b
+    b = temp
+    return Image.merge("RGB", (r, g, b))
