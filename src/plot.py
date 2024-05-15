@@ -9,7 +9,9 @@ import numpy.typing as npt
 type Number = float | int
 
 
-def get_bounding_boxes(bboxes_path: str) -> Tuple[List[List[float]], List[str]]:
+def get_bounding_boxes(
+    bboxes_path: str, normalize: bool = False
+) -> Tuple[List[List[float]], List[str]]:
     with open(bboxes_path, "r") as file:
         # Load the annotation data
         bboxes_json = json.load(file)

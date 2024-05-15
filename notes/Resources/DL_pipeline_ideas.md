@@ -14,7 +14,7 @@ It could maybe also be interesting to look at the bias of the point cloud and fi
 
 ## Data Augmentation
 
-See [Albumentations](https://albumentations.ai/docs/) for an image augmentation library.
+See [Albumentations](https://albumentations.ai/docs/) for an image augmentation library. For now, I use image augmentations that I have selected, but it might be interesting to look at [AutoAlbument](https://albumentations.ai/docs/autoalbument/) to automatically find the right transformations using GAN methods.
 
 ### Rotations and Symmetries
 
