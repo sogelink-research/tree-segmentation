@@ -10,8 +10,6 @@ from osgeo import gdal
 
 gdal.UseExceptions()
 
-RESOLUTION = 0.24
-
 
 def measure_execution_time(func):
     def wrapper(*args, **kwargs):
@@ -54,7 +52,13 @@ def compute_laz_to_las(laz_file_name: str, verbose: bool = False):
     return las_file_name
 
 
-def compute_dsm(las_file_name: str, verbose: bool = False):
+def compute_dsm(
+    las_file_name: str,
+    width: int,
+    height: int,
+    resolution: float,
+    verbose: bool = False,
+):
     if verbose:
         print("Computing Surface Model... ", end="", flush=True)
     file_name = splitext(las_file_name)[0]
@@ -74,11 +78,11 @@ def compute_dsm(las_file_name: str, verbose: bool = False):
             "output_type": "idw",
             "gdaldriver": "GTiff",
             "window_size": 4,
-            "resolution": RESOLUTION,
+            "resolution": resolution,
             "origin_x": origin_x,
             "origin_y": origin_y,
-            "width": 640,
-            "height": 640,
+            "width": width,
+            "height": height,
         },
     ]
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
@@ -89,7 +93,13 @@ def compute_dsm(las_file_name: str, verbose: bool = False):
     return output_tif_name
 
 
-def compute_dtm(las_file_name: str, verbose: bool = False):
+def compute_dtm(
+    las_file_name: str,
+    width: int,
+    height: int,
+    resolution: float,
+    verbose: bool = False,
+):
     if verbose:
         print("Computing Terrain Model... ", end="", flush=True)
     file_name = splitext(las_file_name)[0]
@@ -117,11 +127,11 @@ def compute_dtm(las_file_name: str, verbose: bool = False):
             "output_type": "min",
             "gdaldriver": "GTiff",
             "window_size": 4,
-            "resolution": RESOLUTION,
+            "resolution": resolution,
             "origin_x": origin_x,
             "origin_y": origin_y,
-            "width": 640,
-            "height": 640,
+            "width": width,
+            "height": height,
         },
     ]
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
@@ -146,19 +156,30 @@ def compute_dtm(las_file_name: str, verbose: bool = False):
     old_ds = None
     new_ds = None
 
-    # os.remove(output_tif_name_temp)
+    os.remove(output_tif_name_temp)
 
     if verbose:
         print(f"Done: {count} points found.")
     return output_tif_name
 
 
-def compute_chm(laz_file_name: str, output_tif_name: str, verbose: bool = False):
+def compute_chm(
+    laz_file_name: str,
+    output_tif_name: str,
+    width: int,
+    height: int,
+    resolution: float,
+    verbose: bool = False,
+):
     las_file_name = compute_laz_to_las(laz_file_name, verbose)
 
     # Compute DTM and DSM
-    dtm_file_name = compute_dtm(las_file_name, verbose)
-    dsm_file_name = compute_dsm(las_file_name, verbose)
+    dtm_file_name = compute_dtm(
+        las_file_name, width, height, resolution, verbose
+    )
+    dsm_file_name = compute_dsm(
+        las_file_name, width, height, resolution, verbose
+    )
 
     if verbose:
         print("Computing Canopy Height Model... ", end="", flush=True)
@@ -183,7 +204,11 @@ def compute_chm(laz_file_name: str, output_tif_name: str, verbose: bool = False)
     # Create output raster file
     driver = gdal.GetDriverByName("GTiff")
     chm_ds = driver.Create(
-        output_tif_name, dtm_ds.RasterXSize, dtm_ds.RasterYSize, 1, gdal.GDT_Float32
+        output_tif_name,
+        dtm_ds.RasterXSize,
+        dtm_ds.RasterYSize,
+        1,
+        gdal.GDT_Float32,
     )
 
     # Write CHM array into the output file
@@ -204,7 +229,7 @@ def compute_chm(laz_file_name: str, output_tif_name: str, verbose: bool = False)
     # Remove intermediary files
     print(f"{las_file_name = }")
     os.remove(las_file_name)
-    # os.remove(dtm_file_name)
+    os.remove(dtm_file_name)
     os.remove(dsm_file_name)
 
     if verbose:

@@ -20,7 +20,9 @@ def get_bounding_boxes(
         bboxes = []
         labels = []
         for bbox in bboxes_json["bounding_boxes"]:
-            bboxes.append([bbox["x"], bbox["y"], bbox["width"], bbox["height"]])
+            bboxes.append(
+                [bbox["x_min"], bbox["y_min"], bbox["x_max"], bbox["y_max"]]
+            )
             labels.append(bbox["label"])
     return bboxes, labels
 

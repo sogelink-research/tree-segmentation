@@ -13,6 +13,7 @@ import torchvision.transforms as transforms
 from cbam import CBAM
 from PIL import Image
 from ultralytics.engine.results import Results
+from ultralytics.models.utils.loss import DETRLoss
 from ultralytics.nn.modules.block import Bottleneck, C2f
 from ultralytics.nn.modules.conv import Conv
 from ultralytics.nn.modules.head import Detect
@@ -208,6 +209,32 @@ class YOLOv8Backbone(nn.Module):
         torch.save(state_dict, state_path)
 
 
+def channel_shuffle(x: torch.Tensor, groups: int) -> torch.Tensor:
+    """Divides and rearranges the channels in the tensor.
+
+    Implementation from here https://github.com/pytorch/vision/blob/main/torchvision/models/shufflenetv2.py
+
+    Args:
+        x (torch.Tensor): input tensor
+        groups (int): number of groups to divide channels in
+
+    Returns:
+        torch.Tensor: output with rearranged channels
+    """
+    batchsize, num_channels, height, width = x.size()
+    channels_per_group = num_channels // groups
+
+    # reshape
+    x = x.view(batchsize, groups, channels_per_group, height, width)
+
+    x = torch.transpose(x, 1, 2).contiguous()
+
+    # flatten
+    x = x.view(batchsize, num_channels, height, width)
+
+    return x
+
+
 class AMF(nn.Module):
     """Attention Multi-level Fusion layer."""
 
@@ -222,13 +249,15 @@ class AMF(nn.Module):
         super().__init__()
         self.cbam_left = CBAM(c1_left, r=r)
         self.cbam_right = CBAM(c1_right, r=r)
-        self.channel_shuffle = nn.ChannelShuffle(2)
+        self.shuffle_groups = 2
         c2 = c1_left + c1_right
         self.conv = Conv0(c2, c2, k=1, s=1, p=0)
 
     def forward(self, x_left: torch.Tensor, x_right: torch.Tensor):
         first_cat = torch.cat((self.cbam_left(x_left), self.cbam_right(x_right)), dim=1)
-        return torch.cat((first_cat, self.conv(self.channel_shuffle(first_cat))), dim=1)
+        # return torch.cat((first_cat, self.conv(self.channel_shuffle(first_cat))), dim=1)
+        long_branch = self.conv(channel_shuffle(first_cat, self.shuffle_groups))
+        return torch.cat((first_cat, long_branch), dim=1)
 
 
 class AMFNet(nn.Module):
@@ -311,6 +340,7 @@ class AMF_GD_YOLOv8(nn.Module):
     ) -> None:
         super().__init__()
         self.class_names = class_names
+        self.class_indices = {value: key for key, value in class_names.items()}
 
         # AMFNet structure
         self.amfnet = AMFNet(c_input_left, c_input_right, scale, r)
@@ -345,7 +375,7 @@ class AMF_GD_YOLOv8(nn.Module):
         x_left: torch.Tensor | str,
         x_right: torch.Tensor | str,
         image_save_path: str | None = None,
-    ) -> Tuple[List[torch.Tensor | List[torch.Tensor]], Results]:
+    ) -> Tuple[torch.Tensor, List[torch.Tensor], Results]:
         # Open x_left if it is a path
         if isinstance(x_left, str):
             origin_image_path = x_left
@@ -385,7 +415,27 @@ class AMF_GD_YOLOv8(nn.Module):
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             cv2.imwrite(image_save_path, img_rgb)
 
-        return (y, result)
+        return (y[0], y[1], result)
+
+    from typing import Union
+
+    def compute_loss(
+        self, preds: torch.Tensor, gt_bboxes: List[List[float]], gt_classes: List[str]
+    ):
+        number_classes = len(self.class_names)
+        loss_func = DETRLoss(nc=number_classes)
+
+        pred_bboxes = preds.unsqueeze(0).permute((0, 1, 3, 2))[:, :, :, :4]
+        pred_scores = preds.unsqueeze(0).permute((0, 1, 3, 2))[:, :, :, 4:]
+        batch = {
+            "cls": torch.Tensor([self.class_indices[cls] for cls in gt_classes]).to(
+                dtype=torch.int64
+            ),
+            "bboxes": xywh2xyxy(torch.Tensor(gt_bboxes)),
+            "gt_groups": [len(gt_classes)],
+        }
+
+        return loss_func.forward(pred_bboxes, pred_scores, batch)
 
 
 def extract_bboxes(
@@ -413,3 +463,31 @@ def swap_image_b_r(image: Image.Image) -> Image.Image:
     r = b
     b = temp
     return Image.merge("RGB", (r, g, b))
+
+
+def xywh2xyxy(x):
+    """
+    Convert bounding box coordinates from (x, y, width, height) format to (x1, y1, x2, y2) format where (x1, y1) is the
+    top-left corner and (x2, y2) is the bottom-right corner.
+
+    Small modification from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/ops.py
+
+    Args:
+        x (np.ndarray | torch.Tensor): The input bounding box coordinates in (x, y, width, height) format.
+
+    Returns:
+        y (np.ndarray | torch.Tensor): The bounding box coordinates in (x1, y1, x2, y2) format.
+    """
+    assert (
+        x.shape[-1] == 4
+    ), f"input shape last dimension expected 4 but input shape is {x.shape}"
+    y = (
+        torch.empty_like(x) if isinstance(x, torch.Tensor) else np.empty_like(x)
+    )  # faster than clone/copy
+    w = x[..., 2]  # half-width
+    h = x[..., 3]  # half-height
+    y[..., 0] = x[..., 0]  # top left x
+    y[..., 1] = x[..., 1]  # top left y
+    y[..., 2] = x[..., 0] + w  # bottom right x
+    y[..., 3] = x[..., 1] + h  # bottom right y
+    return y
