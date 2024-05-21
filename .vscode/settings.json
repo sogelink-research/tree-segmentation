@@ -14,12 +14,17 @@
     // Spell check
     "cSpell.words": [
         "amfnet",
+        "annot",
+        "annots",
         "bboxes",
         "convolutional",
         "Geodan",
+        "geotiles",
+        "laspy",
         "multispectral",
         "osgeo",
         "pdal",
+        "rectanglelabels",
         "tqdm",
         "voxels",
         "YOLO"

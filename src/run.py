@@ -1,6 +1,6 @@
 import os
 
-from chm import compute_chm
+from chm import compute_chm, compute_dtm
 from tqdm import tqdm
 
 if __name__ == "__main__":
@@ -17,9 +17,9 @@ if __name__ == "__main__":
     #             break
     #     elif os.path.splitext(file_name)[1] in [".las", ".LAS"]:
     #         os.remove(input_file_path)
-    compute_chm(
-        "data/point_clouds_full/122000_484000_filtered.laz",
-        "data/CHM_full_8cm/122000_484000_filtered.tif",
+    compute_dtm(
+        "data/lidar/unfiltered/full/122000_484000_cropped.laz",
+        # "data/122000_484000_filtered.tif",
         width=12500,
         height=12500,
         resolution=0.08,

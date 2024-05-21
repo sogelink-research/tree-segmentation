@@ -6,12 +6,10 @@ import numpy as np
 import numpy.typing as npt
 from osgeo import gdal
 from PIL import Image
-from utils import create_folder, open_json
+from utils import Folders, create_folder, get_file_base_name, open_json
 
 
-def get_image_path_from_full_annotation_path(
-    annotations: Dict[Any, Any]
-) -> str:
+def get_image_path_from_full_annotation_path(annotations: Dict[Any, Any]) -> str:
     # Get the path to the full image
     image_path = annotations["task"]["data"]["image"].replace(
         "/data/local-files/?d=", "/"
@@ -59,9 +57,7 @@ def get_cropping_limits(
 
 
 class Box:
-    def __init__(
-        self, x_min: float, y_min: float, x_max: float, y_max: float
-    ) -> None:
+    def __init__(self, x_min: float, y_min: float, x_max: float, y_max: float) -> None:
         self.x_min = float(x_min)
         self.y_min = float(y_min)
         self.x_max = float(x_max)
@@ -203,14 +199,10 @@ def find_annots_repartition(
         x_min = int(round(annot_value["x"] * image_width_factor))
         y_min = int(round(annot_value["y"] * image_height_factor))
         x_max = int(
-            round(
-                (annot_value["x"] + annot_value["width"]) * image_width_factor
-            )
+            round((annot_value["x"] + annot_value["width"]) * image_width_factor)
         )
         y_max = int(
-            round(
-                (annot_value["y"] + annot_value["height"]) * image_height_factor
-            )
+            round((annot_value["y"] + annot_value["height"]) * image_height_factor)
         )
         id = annot_info["id"]
         label = annot_value["rectanglelabels"][0]
@@ -235,18 +227,13 @@ def find_annots_repartition(
         # If it is a tree, add it to the image if it fits in
         else:
             for limit_box in annots_repartition:
-                if (
-                    intersection_ratio(annot.box, limit_box)
-                    > visibility_threshold
-                ):
+                if intersection_ratio(annot.box, limit_box) > visibility_threshold:
                     annots_repartition[limit_box].append(annot)
 
     return annots_repartition
 
 
-def crop_annots_into_limits(
-    annots_repartition: Dict[Box, List[Annotation]]
-) -> None:
+def crop_annots_into_limits(annots_repartition: Dict[Box, List[Annotation]]) -> None:
     """Modifies the bounding boxes repartition dictionary in place to crop
     each bounding box to the limits of its image
 
@@ -316,16 +303,12 @@ def save_annots_per_image(
         }
 
         annotation_output_file_name = f"{image_box.short_name()}.json"
-        output_path = os.path.join(
-            output_folder_path, annotation_output_file_name
-        )
+        output_path = os.path.join(output_folder_path, annotation_output_file_name)
         with open(output_path, "w") as outfile:
             json.dump(annots_dict, outfile)
 
 
-def get_image_box_from_cropped_annotations(
-    cropped_annotations: Dict[Any, Any]
-) -> Box:
+def get_image_box_from_cropped_annotations(cropped_annotations: Dict[Any, Any]) -> Box:
     coords = cropped_annotations["full_image"]["coordinates_of_cropped_image"]
     return Box(
         x_min=coords["x_min"],
@@ -341,131 +324,118 @@ def get_full_image_path_from_cropped_annotations(
     return cropped_annotations["full_image"]["path"]
 
 
-def crop_image_from_cropped_annotations(
-    cropped_annotations: Dict[Any, Any], output_folder_path: str
-) -> None:
-    image_box = get_image_box_from_cropped_annotations(cropped_annotations)
-    full_image_path_tif = get_full_image_path_from_cropped_annotations(
-        cropped_annotations
+def crop_image_from_box(image_path: str, crop_box: Box, output_path: str) -> None:
+    window = (
+        crop_box.x_min,
+        crop_box.y_min,
+        crop_box.x_max - crop_box.x_min,
+        crop_box.y_max - crop_box.y_min,
     )
 
-    window = (
-        image_box.x_min,
-        image_box.y_min,
-        image_box.x_max - image_box.x_min,
-        image_box.y_max - image_box.y_min,
-    )
+    gdal.Translate(output_path, image_path, srcWin=window)
+
+
+def crop_image_from_cropped_annotations(
+    cropped_annotations: Dict[Any, Any], input_image_path: str, output_folder_path: str
+) -> None:
+    image_box = get_image_box_from_cropped_annotations(cropped_annotations)
 
     output_file = f"{image_box.short_name()}.tif"
     output_path = os.path.join(output_folder_path, output_file)
 
-    gdal.Translate(output_path, full_image_path_tif, srcWin=window)
+    crop_image_from_box(input_image_path, image_box, output_path)
 
 
-def crop_all_images_from_annotations_folder(
-    annotations_folder_path: str, output_images_folder_path: str
+def get_coordinates_from_full_image_file_name(file_name: str):
+    return (int(file_name[5:11]), int(file_name[12:18]))
+
+
+def crop_all_rgb_and_chm_images_from_annotations_folder(
+    annotations_folder_path: str,
+    resolution: float,
+    full_rgb_path: str,
 ):
-    create_folder(output_images_folder_path)
+    # Create the folders
+    image_prefix = get_file_base_name(full_rgb_path)
+    rgb_output_folder_path = os.path.join(Folders.CROPPED_IMAGES.value, image_prefix)
+    coord1, coord2 = get_coordinates_from_full_image_file_name(image_prefix)
+    chm_unfiltered_output_folder_path = os.path.join(
+        Folders.CHM.value,
+        f"{round(resolution*100)}cm",
+        "unfiltered",
+        "cropped",
+        f"{coord1}_{coord2}",
+    )
+    chm_filtered_output_folder_path = os.path.join(
+        Folders.CHM.value,
+        f"{round(resolution*100)}cm",
+        "filtered",
+        "cropped",
+        f"{coord1}_{coord2}",
+    )
+    create_folder(rgb_output_folder_path)
+    create_folder(chm_unfiltered_output_folder_path)
+    create_folder(chm_filtered_output_folder_path)
+    full_chm_unfiltered_path = os.path.join(
+        Folders.CHM.value,
+        f"{round(resolution*100)}cm",
+        "unfiltered",
+        "full",
+        f"{coord1}_{coord2}.tif",
+    )
+    full_chm_filtered_path = os.path.join(
+        Folders.CHM.value,
+        f"{round(resolution*100)}cm",
+        "filtered",
+        "full",
+        f"{coord1}_{coord2}.tif",
+    )
+
+    # Iterate over the cropped annotations
     for file_name in os.listdir(annotations_folder_path):
-        # Check if the file is a regular file (not a directory)
         annotations_file_path = os.path.join(annotations_folder_path, file_name)
         if os.path.splitext(annotations_file_path)[1] == ".json":
-            annotations = open_json(annotations_file_path)
+            # Get the annotations
+            cropped_annotations = open_json(annotations_file_path)
+            # Create the cropped RGB image
             crop_image_from_cropped_annotations(
-                annotations, output_images_folder_path
+                cropped_annotations, full_rgb_path, rgb_output_folder_path
+            )
+            # Create the cropped unfiltered CHM image
+            crop_image_from_cropped_annotations(
+                cropped_annotations,
+                full_chm_unfiltered_path,
+                chm_unfiltered_output_folder_path,
+            )
+            # Create the cropped filtered CHM image
+            crop_image_from_cropped_annotations(
+                cropped_annotations,
+                full_chm_filtered_path,
+                chm_filtered_output_folder_path,
             )
 
 
-# @measure_execution_time
-# def merge_crop_las(
-#     input_las_list: list[str], output_las: str, x_limits: tuple, y_limits: tuple
-# ):
-#     if x_limits[0] > x_limits[1]:
-#         raise Exception("You should have x_limits[0] <= x_limits[1]")
-#     if y_limits[0] > y_limits[1]:
-#         raise Exception("You should have y_limits[0] <= y_limits[1]")
-#     bounds = f"([{x_limits[0]},{x_limits[1]}],[{y_limits[0]},{y_limits[1]}])"
-#     pipeline_list = []
-#     for index, input_las in enumerate(input_las_list):
-#         pipeline_list.append(
-#             {"type": "readers.las", "file_name": input_las, "tag": f"A{index}"}
-#         )
-#     pipeline_list.extend(
-#         [
-#             {
-#                 "type": "filters.merge",
-#                 "inputs": [f"A{index}" for index in range(len(input_las_list))],
-#             },
-#             {"type": "filters.crop", "bounds": bounds},
-#             {"type": "writers.las", "file_name": output_las},
-#         ]
-#     )
-#     pipeline = pdal.Pipeline(json.dumps(pipeline_list))
-#     pipeline.execute()
+class ImageData:
+    def __init__(self, image_path: str) -> None:
+        self.path = image_path
+        self._init_properties()
+        self.image_name = get_file_base_name(self.path)
+        self.coord_name = f"{round(self.coord_box.x_min)}_{round(self.coord_box.y_max)}"
 
+    def _init_properties(self):
+        ds = gdal.Open(self.path)
 
-# @measure_execution_time
-# def crop_las(input_las: str, output_las: str, x_limits: tuple, y_limits: tuple):
-#     if x_limits[0] > x_limits[1]:
-#         raise Exception("You should have x_limits[0] <= x_limits[1]")
-#     if y_limits[0] > y_limits[1]:
-#         raise Exception("You should have y_limits[0] <= y_limits[1]")
-#     bounds = f"([{x_limits[0]},{x_limits[1]}],[{y_limits[0]},{y_limits[1]}])"
-#     pipeline_list = [
-#         {
-#             "type": "readers.las",
-#             "file_name": input_las,
-#         },
-#         {"type": "filters.crop", "bounds": bounds},
-#         {"type": "writers.las", "file_name": output_las},
-#     ]
-#     pipeline = pdal.Pipeline(json.dumps(pipeline_list))
-#     pipeline.execute()
+        # Get the geotransform and projection
+        gt = ds.GetGeoTransform()
 
+        # Get the extent of the TIF image
+        x_min = gt[0]
+        y_max = gt[3]
+        x_max = x_min + gt[1] * ds.RasterXSize
+        y_min = y_max + gt[5] * ds.RasterYSize
 
-# def remove_las_overlap_from_geotiles(input_las: str, output_las: str):
-#     overlap = 20
-#     with laspy.open(input_las, mode="r") as las_file:
-#         # Get the bounding box information from the header
-#         min_x = las_file.header.min[0] + overlap
-#         max_x = las_file.header.max[0] - overlap
-#         min_y = las_file.header.min[1] + overlap
-#         max_y = las_file.header.max[1] - overlap
+        self.coord_box = Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max)
+        self.width_pixel: int = ds.RasterXSize
+        self.height_pixel: int = ds.RasterYSize
 
-#     crop_las(input_las, output_las, (min_x, max_x), (min_y, max_y))
-
-
-# def remove_las_overlap_from_geotiles_all():
-#     point_clouds_overlap_folder = "../data/point_clouds_geotiles"
-#     point_clouds_no_overlap_folder = "../data/point_clouds_geotiles_no_overlap"
-#     if not os.path.exists(point_clouds_no_overlap_folder):
-#         os.makedirs(point_clouds_no_overlap_folder)
-#     for file_name in os.listdir(point_clouds_overlap_folder):
-#         # Check if the file is a regular file (not a directory)
-#         overlap_file_path = os.path.join(point_clouds_overlap_folder, file_name)
-#         no_overlap_file_path = os.path.join(
-#             point_clouds_no_overlap_folder, file_name
-#         )
-#         if (os.path.isfile(overlap_file_path)) and (
-#             not os.path.exists(no_overlap_file_path)
-#         ):
-#             remove_las_overlap_from_geotiles(
-#                 overlap_file_path, no_overlap_file_path
-#             )
-
-
-# @measure_execution_time
-# def filter_classification_las(input_las: str, output_las: str):
-#     pipeline_list = [
-#         {
-#             "type": "readers.las",
-#             "file_name": input_las,
-#         },
-#         {
-#             "type": "filters.range",
-#             "limits": "Classification[1:5]",  # Keep only unclassified, ground and vegetation
-#         },
-#         {"type": "writers.las", "file_name": output_las},
-#     ]
-#     pipeline = pdal.Pipeline(json.dumps(pipeline_list))
-#     pipeline.execute()
+        ds = None

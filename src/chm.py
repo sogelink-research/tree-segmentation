@@ -89,7 +89,7 @@ def compute_dsm(
     count = pipeline.execute()
     metadata = pipeline.metadata
     if verbose:
-        print(f"Done: {count} points found.")
+        print(f"Done: {count} points found. Saved at {output_tif_name}")
     return output_tif_name
 
 
@@ -113,13 +113,13 @@ def compute_dtm(
 
     pipeline_json = [
         las_file_name,
-        {
-            "type": "filters.smrf",
-            "window": 33,
-            "slope": 1.0,
-            "threshold": 0.15,
-            "cell": 1.0,
-        },
+        # {
+        #     "type": "filters.smrf",
+        #     "window": 33,
+        #     "slope": 1.0,
+        #     "threshold": 0.15,
+        #     "cell": 1.0,
+        # },
         {"type": "filters.range", "limits": "Classification[2:2]"},
         {
             "type": "writers.gdal",
@@ -159,7 +159,7 @@ def compute_dtm(
     os.remove(output_tif_name_temp)
 
     if verbose:
-        print(f"Done: {count} points found.")
+        print(f"Done: {count} points found. Saved at {output_tif_name}.")
     return output_tif_name
 
 
@@ -171,15 +171,14 @@ def compute_chm(
     resolution: float,
     verbose: bool = False,
 ):
+    if os.path.exists(output_tif_name):
+        print(f"The file {os.path.abspath(output_tif_name)} already exists.")
+        return
     las_file_name = compute_laz_to_las(laz_file_name, verbose)
 
     # Compute DTM and DSM
-    dtm_file_name = compute_dtm(
-        las_file_name, width, height, resolution, verbose
-    )
-    dsm_file_name = compute_dsm(
-        las_file_name, width, height, resolution, verbose
-    )
+    dtm_file_name = compute_dtm(las_file_name, width, height, resolution, verbose)
+    dsm_file_name = compute_dsm(las_file_name, width, height, resolution, verbose)
 
     if verbose:
         print("Computing Canopy Height Model... ", end="", flush=True)
@@ -227,13 +226,16 @@ def compute_chm(
     chm_ds = None
 
     # Remove intermediary files
-    print(f"{las_file_name = }")
     os.remove(las_file_name)
     os.remove(dtm_file_name)
     os.remove(dsm_file_name)
+    if verbose:
+        print(
+            f"The following files were removed:\n - {las_file_name}\n - {dtm_file_name}\n - {dsm_file_name}"
+        )
 
     if verbose:
-        print(f"CHM calculation completed and saved to {output_tif_name}")
+        print(f"CHM calculation completed and saved to {output_tif_name}.")
 
 
 @measure_execution_time

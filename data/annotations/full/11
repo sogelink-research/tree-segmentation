@@ -1,24 +1,19 @@
 {
-  "id": 4,
-  "created_username": " alexandre.bry@sogelink.com, 1",
-  "created_ago": "6\u00a0hours, 20\u00a0minutes",
-  "completed_by": {
-    "id": 1,
-    "first_name": "",
-    "last_name": "",
-    "email": "alexandre.bry@sogelink.com"
-  },
+  "id": 11,
+  "created_username": "",
+  "created_ago": "2\u00a0minutes",
+  "completed_by": null,
   "task": {
-    "id": 7,
+    "id": 25,
     "data": {
-      "image": "/data/local-files/?d=/home/alexandre/Documents/tree-segmentation/data/images_full/2023_122000_484000_RGB_hrl.png"
+      "image": "/data/local-files/?d=home/alexandre/Documents/tree-segmentation/data/images/full/2023_122000_484000_RGB_hrl.png"
     },
     "meta": {},
-    "created_at": "2024-05-16T09:50:38.157604Z",
-    "updated_at": "2024-05-16T10:29:47.913620Z",
+    "created_at": "2024-05-21T07:33:25.061232Z",
+    "updated_at": "2024-05-21T07:33:25.122598Z",
     "is_labeled": true,
     "overlap": 1,
-    "inner_id": 4,
+    "inner_id": 8,
     "total_annotations": 1,
     "cancelled_annotations": 0,
     "total_predictions": 0,
@@ -27,7 +22,7 @@
     "last_comment_updated_at": null,
     "project": 1,
     "updated_by": 1,
-    "file_upload": 15,
+    "file_upload": null,
     "comment_authors": []
   },
   "result": [
@@ -1653,11 +1648,11 @@
     }
   ],
   "was_cancelled": false,
-  "ground_truth": true,
-  "created_at": "2024-05-16T09:50:38.170979Z",
-  "updated_at": "2024-05-16T10:29:47.514735Z",
+  "ground_truth": false,
+  "created_at": "2024-05-21T07:33:25.085215Z",
+  "updated_at": "2024-05-21T07:33:25.085252Z",
   "draft_created_at": null,
-  "lead_time": 2330.611,
+  "lead_time": null,
   "import_id": null,
   "last_action": null,
   "project": 1,
