@@ -5,13 +5,12 @@ from typing import Any, Dict, List, Tuple
 import cv2
 import numpy as np
 import numpy.typing as npt
+from data_processing import Box
 
 type Number = float | int
 
 
-def get_bounding_boxes(
-    bboxes_path: str, normalize: bool = False
-) -> Tuple[List[List[float]], List[str]]:
+def get_bounding_boxes(bboxes_path: str) -> Tuple[List[Box], List[str]]:
     with open(bboxes_path, "r") as file:
         # Load the annotation data
         bboxes_json = json.load(file)
@@ -21,7 +20,12 @@ def get_bounding_boxes(
         labels = []
         for bbox in bboxes_json["bounding_boxes"]:
             bboxes.append(
-                [bbox["x_min"], bbox["y_min"], bbox["x_max"], bbox["y_max"]]
+                Box(
+                    x_min=bbox["x_min"],
+                    y_min=bbox["y_min"],
+                    x_max=bbox["x_max"],
+                    y_max=bbox["y_max"],
+                )
             )
             labels.append(bbox["label"])
     return bboxes, labels

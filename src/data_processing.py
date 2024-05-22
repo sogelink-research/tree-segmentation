@@ -1,5 +1,6 @@
 import json
 import os
+from copy import deepcopy
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -78,6 +79,14 @@ class Box:
     def short_name(self) -> str:
         return f"{round(self.x_min)}_{round(self.y_min)}_{round(self.x_max)}_{round(self.y_max)}"
 
+    def as_list(self) -> List[float]:
+        """Returns the Box as a list.
+
+        Returns:
+            List[float]: [x_min, y_min, x_max, y_max]
+        """
+        return [self.x_min, self.y_min, self.x_max, self.y_max]
+
 
 def intersection(box1: Box, box2: Box) -> float:
     if ((box1.x_min <= box2.x_max) and (box1.x_max >= box2.x_min)) and (
@@ -114,19 +123,19 @@ def intersection_ratio(annot: Box, limits: Box) -> float:
 
 def crop_box_in_box(to_crop: Box, limits: Box) -> Box:
     return Box(
-        max(to_crop.x_min, limits.x_min),
-        max(to_crop.y_min, limits.y_min),
-        min(to_crop.x_max, limits.x_max),
-        min(to_crop.y_max, limits.y_max),
+        x_min=max(to_crop.x_min, limits.x_min),
+        y_min=max(to_crop.y_min, limits.y_min),
+        x_max=min(to_crop.x_max, limits.x_max),
+        y_max=min(to_crop.y_max, limits.y_max),
     )
 
 
 def compute_box_local_coord(to_modify: Box, frame: Box):
     return Box(
-        to_modify.x_min - frame.x_min,
-        to_modify.y_min - frame.y_min,
-        to_modify.x_max - frame.x_min,
-        to_modify.y_max - frame.y_min,
+        x_min=to_modify.x_min - frame.x_min,
+        y_min=to_modify.y_min - frame.y_min,
+        x_max=to_modify.x_max - frame.x_min,
+        y_max=to_modify.y_max - frame.y_min,
     )
 
 
@@ -228,7 +237,7 @@ def find_annots_repartition(
         else:
             for limit_box in annots_repartition:
                 if intersection_ratio(annot.box, limit_box) > visibility_threshold:
-                    annots_repartition[limit_box].append(annot)
+                    annots_repartition[limit_box].append(deepcopy(annot))
 
     return annots_repartition
 
@@ -243,7 +252,11 @@ def crop_annots_into_limits(annots_repartition: Dict[Box, List[Annotation]]) -> 
     """
     for limits_box, annots in annots_repartition.items():
         for i, annot in enumerate(annots):
+            if annots[i].id == "Nk0K77Bbxd":
+                print(f"CROP: {annot.box = }")
             annots[i].box = crop_box_in_box(annot.box, limits_box)
+            if annots[i].id == "Nk0K77Bbxd":
+                print(f"CROP:{annot.box = }")
 
 
 def annots_coordinates_to_local(
@@ -258,7 +271,11 @@ def annots_coordinates_to_local(
     """
     for limits_box, annots in annots_repartition.items():
         for i, annot in enumerate(annots):
+            if annots[i].id == "Nk0K77Bbxd":
+                print(f"LOCAL: {annot.box = }")
             annots[i].box = compute_box_local_coord(annot.box, limits_box)
+            if annots[i].id == "Nk0K77Bbxd":
+                print(f"LOCAL: {annot.box = }")
 
 
 def save_annots_per_image(
@@ -355,6 +372,7 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
     resolution: float,
     full_rgb_path: str,
 ):
+    # TODO: Add a check to skip if the files already exist
     # Create the folders
     image_prefix = get_file_base_name(full_rgb_path)
     rgb_output_folder_path = os.path.join(Folders.CROPPED_IMAGES.value, image_prefix)
@@ -419,7 +437,7 @@ class ImageData:
     def __init__(self, image_path: str) -> None:
         self.path = image_path
         self._init_properties()
-        self.image_name = get_file_base_name(self.path)
+        self.base_name = get_file_base_name(self.path)
         self.coord_name = f"{round(self.coord_box.x_min)}_{round(self.coord_box.y_max)}"
 
     def _init_properties(self):

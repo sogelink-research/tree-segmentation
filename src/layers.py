@@ -121,7 +121,7 @@ class YOLOv8Backbone(nn.Module):
         self.c2f5 = C2f0(self.chs[5], self.chs[5], ns[0], True)  # P5
 
     def preprocess(self, x: torch.Tensor) -> torch.Tensor:
-        shape = x.shape[1:3]
+        shape = x.shape[-2:]
         if shape[0] > shape[1]:
             resized_shape = (
                 self.INPUT_SIZE,
@@ -277,10 +277,12 @@ class AMFNet(nn.Module):
         super().__init__()
         self.yolo_backbone_left = YOLOv8Backbone(scale, c_input_left)  # RGB images
         self.yolo_backbone_right = YOLOv8Backbone(scale, c_input_right)  # LiDAR data
-        self.amfs = [
-            AMF(self.yolo_backbone_left.chs[i], self.yolo_backbone_right.chs[i], r)
-            for i in range(2, 6)
-        ]
+        self.amfs = nn.ModuleList(
+            [
+                AMF(self.yolo_backbone_left.chs[i], self.yolo_backbone_right.chs[i], r)
+                for i in range(2, 6)
+            ]
+        )
 
     def forward(
         self, x_left: torch.Tensor, x_right: torch.Tensor
@@ -328,6 +330,7 @@ class AMF_GD_YOLOv8(nn.Module):
         self,
         c_input_left: int,
         c_input_right: int,
+        device: torch.device,
         scale: str = "n",
         r: int = 16,
         gd_config_file: str | None = None,
@@ -343,12 +346,12 @@ class AMF_GD_YOLOv8(nn.Module):
         self.class_indices = {value: key for key, value in class_names.items()}
 
         # AMFNet structure
-        self.amfnet = AMFNet(c_input_left, c_input_right, scale, r)
+        self.amfnet = AMFNet(c_input_left, c_input_right, scale, r).to(device)
 
         # Gather and Distribute structure
         if gd_config_file is None:
             gd_config_file = f"../models/gd_configs/gold_yolo-{scale}.py"
-        self.gd = GD(gd_config_file)
+        self.gd = GD(gd_config_file).to(device)
 
         # Detection structure
         depth, width, ratio = get_scale_constants(scale)
@@ -361,7 +364,7 @@ class AMF_GD_YOLOv8(nn.Module):
             )
         ]
         out_channels = [channels_list[6], channels_list[8], channels_list[10]]
-        self.detect = Detect(len(class_names), out_channels)
+        self.detect = Detect(len(class_names), out_channels).to(device)
 
     def open_image(self, image_path: str) -> torch.Tensor:
         to_tensor_transform = transforms.ToTensor()
@@ -371,6 +374,26 @@ class AMF_GD_YOLOv8(nn.Module):
         return image_tensor.unsqueeze(0)
 
     def forward(
+        self,
+        x_left: torch.Tensor | str,
+        x_right: torch.Tensor | str,
+    ) -> torch.Tensor:
+        # Open x_left if it is a path
+        if isinstance(x_left, str):
+            x_left = self.open_image(x_left)
+
+        # Open x_right if it is a path
+        if isinstance(x_right, str):
+            x_right = self.open_image(x_right)
+
+        # Compute the output
+        xs = self.amfnet(x_left, x_right)
+        xs = self.gd(xs)
+        self.detect.training = False
+        y = self.detect(xs)
+        return y[0]
+
+    def predict(
         self,
         x_left: torch.Tensor | str,
         x_right: torch.Tensor | str,
@@ -420,19 +443,29 @@ class AMF_GD_YOLOv8(nn.Module):
     from typing import Union
 
     def compute_loss(
-        self, preds: torch.Tensor, gt_bboxes: List[List[float]], gt_classes: List[str]
+        self,
+        preds: torch.Tensor,
+        gt_bboxes: torch.Tensor,
+        gt_classes: torch.Tensor,
+        gt_indices: torch.Tensor,
+        bboxes_format: str,
     ):
         number_classes = len(self.class_names)
         loss_func = DETRLoss(nc=number_classes)
 
-        pred_bboxes = preds.unsqueeze(0).permute((0, 1, 3, 2))[:, :, :, :4]
-        pred_scores = preds.unsqueeze(0).permute((0, 1, 3, 2))[:, :, :, 4:]
+        if len(preds.shape) == 3:
+            preds = preds.unsqueeze(0)
+
+        pred_bboxes = preds.permute((0, 1, 3, 2))[:, :, :, :4].contiguous()
+        pred_scores = preds.permute((0, 1, 3, 2))[:, :, :, 4:].contiguous()
+        if bboxes_format == "xywh":
+            gt_bboxes = xywh2xyxy(gt_bboxes)
+        elif bboxes_format != "xyxy":
+            raise ValueError("bboxes_format must be 'xywh' or 'xyxy'.")
         batch = {
-            "cls": torch.Tensor([self.class_indices[cls] for cls in gt_classes]).to(
-                dtype=torch.int64
-            ),
-            "bboxes": xywh2xyxy(torch.Tensor(gt_bboxes)),
-            "gt_groups": [len(gt_classes)],
+            "cls": gt_classes.to(dtype=torch.int64),
+            "bboxes": gt_bboxes,
+            "gt_groups": [idx[1] - idx[0] for idx in gt_indices],
         }
 
         return loss_func.forward(pred_bboxes, pred_scores, batch)
