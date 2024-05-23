@@ -42,8 +42,8 @@ def add_bbox_to_image(
     x0, y0, x1, y1 = (
         round(bbox[0]),
         round(bbox[1]),
-        round(bbox[0] + bbox[2]),
-        round(bbox[1] + bbox[3]),
+        round(bbox[2]),
+        round(bbox[3]),
     )
     cv2.rectangle(
         image,
@@ -70,8 +70,8 @@ def add_label_to_image(
     x0, y0, x1, y1 = (
         round(bbox[0]),
         round(bbox[1]),
-        round(bbox[0] + bbox[2]),
-        round(bbox[1] + bbox[3]),
+        round(bbox[2]),
+        round(bbox[3]),
     )
     (w, h), baseline = cv2.getTextSize(
         label, 0, fontScale=font_scale, thickness=thickness

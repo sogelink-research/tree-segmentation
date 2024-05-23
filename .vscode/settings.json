@@ -18,6 +18,7 @@
         "annots",
         "bboxes",
         "convolutional",
+        "dtype",
         "Geodan",
         "geotiles",
         "laspy",

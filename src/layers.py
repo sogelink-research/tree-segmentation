@@ -12,6 +12,7 @@ import torch.nn as nn
 import torchvision.transforms as transforms
 from cbam import CBAM
 from PIL import Image
+from ultralytics.engine.model import Model
 from ultralytics.engine.results import Results
 from ultralytics.models.utils.loss import DETRLoss
 from ultralytics.nn.modules.block import Bottleneck, C2f
@@ -324,7 +325,7 @@ class GD(nn.Module):
         return list(self.model.forward(tuple(x)))
 
 
-class AMF_GD_YOLOv8(nn.Module):
+class AMF_GD_YOLOv8(Model):
 
     def __init__(
         self,
@@ -407,7 +408,10 @@ class AMF_GD_YOLOv8(nn.Module):
             origin_image_path = None
         input_img_shape = x_left.shape[2:]
         origin_image = np.ascontiguousarray(
-            np.array(np.round(255 * x_left[0].permute(1, 2, 0)), dtype=np.uint8)
+            np.array(
+                torch.round(255 * x_left[0].permute(1, 2, 0)).detach().cpu(),
+                dtype=np.uint8,
+            )
         )
 
         # Open x_right if it is a path
