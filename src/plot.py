@@ -94,6 +94,9 @@ def add_label_to_image(
 
     sub_img = deepcopy(image[p1[1] : p2[1], p1[0] : p2[0]])
     sub_img_2 = deepcopy(image[p1[1] : p2[1], p1[0] : p2[0]])
+    print(f"{bbox = }")
+    print(f"{p1, p2 = }")
+    print(f"{sub_img.shape = }")
 
     cv2.rectangle(
         sub_img, (0, 0), (p2[0] - p1[0], p2[1] - p1[1]), color, -1, cv2.LINE_AA
@@ -122,8 +125,11 @@ def create_bboxes_image(
     labels: List[str],
     colors_dict: Dict[str, Tuple[int, int, int]],
     scores: List[float] | np.ndarray[Any, np.dtype[np.float_]] | None = None,
+    color_mode: str = "rgb",
 ) -> npt.NDArray:
     image_copy = deepcopy(image)
+    if color_mode == "bgr":
+        image_copy = cv2.cvtColor(image_copy, cv2.COLOR_BGR2RGB)
     # Plot each box
     full_labels: List[str] = [""] * len(bboxes)
     colors: List[Tuple[int, int, int]] = [(128, 128, 128)] * len(bboxes)

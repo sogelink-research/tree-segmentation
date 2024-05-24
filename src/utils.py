@@ -28,6 +28,8 @@ class Folders(Enum):
     FILTERED_FULL_LIDAR = _absolute_path("../data/lidar/filtered/full/")
     FILTERED_CROPPED_LIDAR = _absolute_path("../data/lidar/filtered/cropped/")
 
+    OUTPUT_DIR = _absolute_path("../data/others/model_output")
+
     CHM = _absolute_path("../data/chm/")
 
 

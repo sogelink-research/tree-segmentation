@@ -2,6 +2,8 @@ import os
 import sys
 from typing import Dict, List, Tuple
 
+from ultralytics.utils.loss import v8DetectionLoss
+
 sys.path.append(os.path.abspath("Efficient-Computing/Detection/Gold-YOLO"))
 
 import cv2
@@ -325,24 +327,26 @@ class GD(nn.Module):
         return list(self.model.forward(tuple(x)))
 
 
-class AMF_GD_YOLOv8(Model):
-
+# class AMF_GD_YOLOv8(Model):
+class AMF_GD_YOLOv8(nn.Module):
     def __init__(
         self,
         c_input_left: int,
         c_input_right: int,
+        class_names: Dict[int, str],
         device: torch.device,
         scale: str = "n",
         r: int = 16,
         gd_config_file: str | None = None,
-        class_names: Dict[int, str] = {
-            0: "Tree",
-            1: "Tree_disappeared",
-            2: "Tree_replaced",
-            3: "Tree_new",
-        },
     ) -> None:
         super().__init__()
+
+        class Args:
+            def __init__(self) -> None:
+                self.box = 100.0
+                self.cls = 1.0
+                self.dfl = 10.0
+
         self.class_names = class_names
         self.class_indices = {value: key for key, value in class_names.items()}
 
@@ -366,6 +370,11 @@ class AMF_GD_YOLOv8(Model):
         ]
         out_channels = [channels_list[6], channels_list[8], channels_list[10]]
         self.detect = Detect(len(class_names), out_channels).to(device)
+        self.detect.stride = torch.tensor([8, 16, 32])
+
+        self.args = Args()
+        self.model = nn.ModuleList([self.amfnet, self.gd, self.detect])
+        self.criterion = v8DetectionLoss(self)
 
     def open_image(self, image_path: str) -> torch.Tensor:
         to_tensor_transform = transforms.ToTensor()
@@ -390,9 +399,9 @@ class AMF_GD_YOLOv8(Model):
         # Compute the output
         xs = self.amfnet(x_left, x_right)
         xs = self.gd(xs)
-        self.detect.training = False
+        self.detect.training = True
         y = self.detect(xs)
-        return y[0]
+        return y
 
     def predict(
         self,
@@ -431,7 +440,7 @@ class AMF_GD_YOLOv8(Model):
             origin_image=origin_image,
             origin_image_path=origin_image_path,
             class_names=self.class_names,
-            confidence=0.5,
+            confidence=0.05,
             iou=0.5,
         )
 
@@ -444,14 +453,12 @@ class AMF_GD_YOLOv8(Model):
 
         return (y[0], y[1], result)
 
-    from typing import Union
-
-    def compute_loss(
+    def compute_loss_old(
         self,
         preds: torch.Tensor,
         gt_bboxes: torch.Tensor,
         gt_classes: torch.Tensor,
-        gt_indices: torch.Tensor,
+        gt_indices: torch.Tensor,  # This parameter has changed!
         bboxes_format: str,
     ):
         number_classes = len(self.class_names)
@@ -474,6 +481,16 @@ class AMF_GD_YOLOv8(Model):
 
         return loss_func.forward(pred_bboxes, pred_scores, batch)
 
+    def compute_loss(
+        self,
+        preds: torch.Tensor,
+        gt_bboxes: torch.Tensor,
+        gt_classes: torch.Tensor,
+        gt_indices: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
+        return self.criterion(preds, batch)
+
 
 def extract_bboxes(
     preds: List[torch.Tensor | List[torch.Tensor]],
@@ -485,7 +502,15 @@ def extract_bboxes(
     iou: float,
 ) -> Results:
     """Post-processes predictions and returns a list of Results objects."""
+    # print(f"{len(preds) = }")
+    # print(f"{preds[0].shape = }")
+    # print(f"{preds[1][0].shape = }")
+    # print(f"{preds[1][1].shape = }")
+    # print(f"{preds[1][2].shape = }")
     preds_nms = ops.non_max_suppression(preds, confidence, iou)[0]
+    # print(f"{len(preds_nms) = }")
+    # print(f"{preds_nms.shape = }")
+    # print(f"{preds_nms = }")
     preds_nms[:, :4] = ops.scale_boxes(
         input_img_shape, preds_nms[:, :4], origin_image.shape
     )
