@@ -14,7 +14,6 @@ import torch.nn as nn
 import torchvision.transforms as transforms
 from cbam import CBAM
 from PIL import Image
-from ultralytics.engine.model import Model
 from ultralytics.engine.results import Results
 from ultralytics.models.utils.loss import DETRLoss
 from ultralytics.nn.modules.block import Bottleneck, C2f
@@ -374,7 +373,7 @@ class AMF_GD_YOLOv8(nn.Module):
 
         self.args = Args()
         self.model = nn.ModuleList([self.amfnet, self.gd, self.detect])
-        self.criterion = v8DetectionLoss(self)
+        self.criterion = TrainingLoss(self)
 
     def open_image(self, image_path: str) -> torch.Tensor:
         to_tensor_transform = transforms.ToTensor()
@@ -435,13 +434,14 @@ class AMF_GD_YOLOv8(nn.Module):
 
         # Create the results
         result = extract_bboxes(
-            y,
+            y[0],
             input_img_shape=input_img_shape,
             origin_image=origin_image,
             origin_image_path=origin_image_path,
             class_names=self.class_names,
-            confidence=0.05,
-            iou=0.5,
+            iou_thres=0.5,
+            conf_thres=0.05,
+            number_best=50,
         )
 
         if image_save_path is not None:
@@ -492,25 +492,56 @@ class AMF_GD_YOLOv8(nn.Module):
         return self.criterion(preds, batch)
 
 
+class TrainingLoss(v8DetectionLoss):
+    """Loss used for the training of the model. Based on v8DetectionLoss from ultralytics,
+    with a few small tweaks regarding data format.
+    """
+
+    def preprocess(self, targets, batch_size, scale_tensor):
+        """Preprocesses the target counts and matches with the input batch size to output a tensor."""
+        if targets.shape[0] == 0:
+            out = torch.zeros(batch_size, 0, 5, device=self.device)
+        else:
+            i = targets[:, 0]  # image index
+            _, counts = i.unique(return_counts=True)
+            counts = counts.to(dtype=torch.int32)
+            out = torch.zeros(batch_size, counts.max(), 5, device=self.device)
+            for j in range(batch_size):
+                matches = i == j
+                n = matches.sum()
+                if n:
+                    out[j, :n] = targets[matches, 1:]
+            # out[..., 1:5] = xywh2xyxy(out[..., 1:5].mul_(scale_tensor)) # Original line
+            out[..., 1:5] = out[..., 1:5].mul_(scale_tensor)  # New line
+        return out
+
+
 def extract_bboxes(
-    preds: List[torch.Tensor | List[torch.Tensor]],
+    preds: torch.Tensor,
     input_img_shape: Tuple[int] | torch.Size,
     origin_image: npt.NDArray[np.uint8],
     origin_image_path: str | None,
     class_names: Dict[int, str],
-    confidence: float,
-    iou: float,
+    iou_thres: float,
+    conf_thres: float | None = None,
+    number_best: int | None = None,
 ) -> Results:
-    """Post-processes predictions and returns a list of Results objects."""
-    # print(f"{len(preds) = }")
-    # print(f"{preds[0].shape = }")
-    # print(f"{preds[1][0].shape = }")
-    # print(f"{preds[1][1].shape = }")
-    # print(f"{preds[1][2].shape = }")
-    preds_nms = ops.non_max_suppression(preds, confidence, iou)[0]
-    # print(f"{len(preds_nms) = }")
-    # print(f"{preds_nms.shape = }")
-    # print(f"{preds_nms = }")
+    if number_best is not None:
+        nc = preds.shape[1] - 4
+        max_scores = preds[:, 4 : 4 + nc].amax(1)
+        new_conf_thres = -torch.kthvalue(-max_scores[0], k=number_best)[0].item()
+
+    if conf_thres is None:
+        assert (
+            number_best is not None
+        ), "number_best should not be None if conf_thres is None."
+        preds_nms = ops.non_max_suppression(preds, new_conf_thres, iou_thres)[0]
+
+    else:
+        preds_nms = ops.non_max_suppression(preds, conf_thres, iou_thres)[0]
+        if number_best is not None and preds_nms.shape[0] == 0:
+            preds_nms = ops.non_max_suppression(preds, new_conf_thres, iou_thres)[0]
+
     preds_nms[:, :4] = ops.scale_boxes(
         input_img_shape, preds_nms[:, :4], origin_image.shape
     )

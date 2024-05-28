@@ -229,10 +229,6 @@ def compute_chm(
     os.remove(las_file_name)
     os.remove(dtm_file_name)
     os.remove(dsm_file_name)
-    if verbose:
-        print(
-            f"The following files were removed:\n - {las_file_name}\n - {dtm_file_name}\n - {dsm_file_name}"
-        )
 
     if verbose:
         print(f"CHM calculation completed and saved to {output_tif_name}.")

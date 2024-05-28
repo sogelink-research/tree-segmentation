@@ -78,14 +78,17 @@ def add_label_to_image(
     )
     margin = round(0.5 * baseline)
     p1, p2 = [0, 0], [0, 0]
-    if y0 - h - baseline - lw - 1 >= 0:
+    if y0 - (h + baseline) - (lw + 1) >= 0:
         p1[1] = y0 - (h + baseline) - (lw + 1)
         p2[1] = y0 + margin - (lw + 1)
-    else:
+    elif y1 + (h + baseline + margin) + lw < image.shape[0]:
         p1[1] = y1 + lw
         p2[1] = y1 + (h + baseline + margin) + lw
+    else:
+        p1[1] = y0
+        p2[1] = y0 + (h + baseline) + margin
 
-    if x0 + w + 2 * margin < image.shape[1]:
+    if x0 + (w + 2 * margin) < image.shape[1]:
         p1[0] = x0
         p2[0] = x0 + (w + 2 * margin)
     else:
@@ -94,29 +97,34 @@ def add_label_to_image(
 
     sub_img = deepcopy(image[p1[1] : p2[1], p1[0] : p2[0]])
     sub_img_2 = deepcopy(image[p1[1] : p2[1], p1[0] : p2[0]])
-    print(f"{bbox = }")
-    print(f"{p1, p2 = }")
-    print(f"{sub_img.shape = }")
 
-    cv2.rectangle(
-        sub_img, (0, 0), (p2[0] - p1[0], p2[1] - p1[1]), color, -1, cv2.LINE_AA
-    )
-    alpha = 0.5  # Weight for the rectangle image
-    beta = 1 - alpha  # Weight for the original image
-    gamma = 0  # Offset
-    blended_image = cv2.addWeighted(sub_img, alpha, sub_img_2, beta, gamma)
+    if sub_img.size > 0:
+        cv2.rectangle(
+            sub_img, (0, 0), (p2[0] - p1[0], p2[1] - p1[1]), color, -1, cv2.LINE_AA
+        )
 
-    image[p1[1] : p2[1], p1[0] : p2[0]] = blended_image
-    cv2.putText(
-        img=image,
-        text=label,
-        org=(p1[0] + margin, p2[1] - baseline),
-        fontFace=0,
-        fontScale=font_scale,
-        color=txt_color,
-        thickness=thickness,
-        lineType=cv2.LINE_AA,
-    )
+        alpha = 0.5  # Weight for the rectangle image
+        beta = 1 - alpha  # Weight for the original image
+        gamma = 0  # Offset
+        blended_image = cv2.addWeighted(sub_img, alpha, sub_img_2, beta, gamma)
+
+        image[p1[1] : p2[1], p1[0] : p2[0]] = blended_image
+        cv2.putText(
+            img=image,
+            text=label,
+            org=(p1[0] + margin, p2[1] - baseline),
+            fontFace=0,
+            fontScale=font_scale,
+            color=txt_color,
+            thickness=thickness,
+            lineType=cv2.LINE_AA,
+        )
+    else:
+        print(f"{bbox = }")
+        print(f"{(w, h), baseline = }")
+        print(f"{sub_img.shape = }")
+        print(f"{p1 = }")
+        print(f"{p2 = }")
 
 
 def create_bboxes_image(

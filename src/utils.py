@@ -53,13 +53,16 @@ def create_all_folders() -> None:
         create_folder(folder.value)
 
 
-def download_file(url: str, save_path: str, verbose=True) -> None:
+def download_file(
+    url: str, save_path: str, no_ssl: bool = False, verbose: bool = True
+) -> None:
     """Downloads a file from a URL and saves it at the given path.
     If a file already exists at this path, nothing is downloaded.
 
     Args:
         url (str): URL to download from.
         save_path (str): path to save the downloaded file.
+        no_ssl (bool, optional): if True, the SSL certificate check is skipped. Defaults to False.
         verbose (bool, optional): whether to print messages about the behavior of the function. Defaults to True.
     """
     if os.path.exists(save_path):
@@ -69,7 +72,10 @@ def download_file(url: str, save_path: str, verbose=True) -> None:
             )
         return
     # Send a GET request to the URL
-    response = get(url)
+    if no_ssl:
+        response = get(url, verify=False)
+    else:
+        response = get(url)
 
     # Check if the request was successful (status code 200)
     if response.status_code == 200:

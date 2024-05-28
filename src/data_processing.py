@@ -7,7 +7,10 @@ import numpy as np
 import numpy.typing as npt
 from osgeo import gdal
 from PIL import Image
+from tqdm.notebook import tqdm
 from utils import Folders, create_folder, get_file_base_name, open_json
+
+gdal.UseExceptions()
 
 
 def get_image_path_from_full_annotation_path(annotations: Dict[Any, Any]) -> str:
@@ -203,7 +206,7 @@ def find_annots_repartition(
     )
 
     # Iterate over each bounding box
-    for annot_info in annots:
+    for annot_info in tqdm(annots, leave=False, desc="Placing: Bounding boxes:"):
         annot_value = annot_info["value"]
         x_min = int(round(annot_value["x"] * image_width_factor))
         y_min = int(round(annot_value["y"] * image_height_factor))
@@ -250,13 +253,11 @@ def crop_annots_into_limits(annots_repartition: Dict[Box, List[Annotation]]) -> 
         annots_repartition (Dict[Box, List[Box]]): dictionary associating the
         bounding box of each image with the list of tree bounding boxes that fit in.
     """
-    for limits_box, annots in annots_repartition.items():
+    for limits_box, annots in tqdm(
+        annots_repartition.items(), leave=False, desc="Cropping: Bounding boxes"
+    ):
         for i, annot in enumerate(annots):
-            if annots[i].id == "Nk0K77Bbxd":
-                print(f"CROP: {annot.box = }")
             annots[i].box = crop_box_in_box(annot.box, limits_box)
-            if annots[i].id == "Nk0K77Bbxd":
-                print(f"CROP:{annot.box = }")
 
 
 def annots_coordinates_to_local(
@@ -269,13 +270,11 @@ def annots_coordinates_to_local(
         annots_repartition (Dict[Box, List[Box]]): dictionary associating the
         bounding box of each image with the list of tree bounding boxes that fit in.
     """
-    for limits_box, annots in annots_repartition.items():
+    for limits_box, annots in tqdm(
+        annots_repartition.items(), leave=False, desc="To local: Bounding boxes"
+    ):
         for i, annot in enumerate(annots):
-            if annots[i].id == "Nk0K77Bbxd":
-                print(f"LOCAL: {annot.box = }")
             annots[i].box = compute_box_local_coord(annot.box, limits_box)
-            if annots[i].id == "Nk0K77Bbxd":
-                print(f"LOCAL: {annot.box = }")
 
 
 def save_annots_per_image(
@@ -293,7 +292,11 @@ def save_annots_per_image(
 
     create_folder(output_folder_path)
 
-    for image_box, annots in annots_repartition.items():
+    for image_box, annots in tqdm(
+        annots_repartition.items(),
+        leave=False,
+        desc="Saving annotations: Bounding boxes",
+    ):
         annots_dict = {
             "full_image": {
                 "path": full_image_path_tif,
@@ -326,6 +329,15 @@ def save_annots_per_image(
 
 
 def get_image_box_from_cropped_annotations(cropped_annotations: Dict[Any, Any]) -> Box:
+    """Returns the Box representing the boundaries of the image linked to the
+    cropped annotations.
+
+    Args:
+        cropped_annotations (Dict[Any, Any]): _description_
+
+    Returns:
+        Box: boundaries of the image.
+    """
     coords = cropped_annotations["full_image"]["coordinates_of_cropped_image"]
     return Box(
         x_min=coords["x_min"],
@@ -352,19 +364,21 @@ def crop_image_from_box(image_path: str, crop_box: Box, output_path: str) -> Non
     gdal.Translate(output_path, image_path, srcWin=window)
 
 
-def crop_image_from_cropped_annotations(
-    cropped_annotations: Dict[Any, Any], input_image_path: str, output_folder_path: str
-) -> None:
+def _get_cropped_image_name(cropped_annotations: Dict[Any, Any]) -> str:
     image_box = get_image_box_from_cropped_annotations(cropped_annotations)
-
-    output_file = f"{image_box.short_name()}.tif"
-    output_path = os.path.join(output_folder_path, output_file)
-
-    crop_image_from_box(input_image_path, image_box, output_path)
+    cropped_image_file = f"{image_box.short_name()}.tif"
+    return cropped_image_file
 
 
-def get_coordinates_from_full_image_file_name(file_name: str):
-    return (int(file_name[5:11]), int(file_name[12:18]))
+def get_coordinates_from_full_image_file_name(file_name: str) -> Tuple[int, int]:
+    splitted_name = file_name.split("_")
+    return (int(splitted_name[-4]), int(splitted_name[-3]))
+
+
+def get_bbox_from_full_image_file_name(file_name: str) -> Box:
+    x, y = get_coordinates_from_full_image_file_name(file_name)
+    image_size = 10000
+    return Box(x_min=x, y_min=y - image_size, x_max=x + image_size, y_max=y)
 
 
 def crop_all_rgb_and_chm_images_from_annotations_folder(
@@ -372,7 +386,6 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
     resolution: float,
     full_rgb_path: str,
 ):
-    # TODO: Add a check to skip if the files already exist
     # Create the folders
     image_prefix = get_file_base_name(full_rgb_path)
     rgb_output_folder_path = os.path.join(Folders.CROPPED_IMAGES.value, image_prefix)
@@ -410,27 +423,40 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
     )
 
     # Iterate over the cropped annotations
-    for file_name in os.listdir(annotations_folder_path):
+    for file_name in tqdm(
+        os.listdir(annotations_folder_path),
+        leave=False,
+        desc="Cropping images: Cropped annotations",
+    ):
         annotations_file_path = os.path.join(annotations_folder_path, file_name)
         if os.path.splitext(annotations_file_path)[1] == ".json":
             # Get the annotations
             cropped_annotations = open_json(annotations_file_path)
+            output_file = _get_cropped_image_name(cropped_annotations)
+            image_box = get_image_box_from_cropped_annotations(cropped_annotations)
+
             # Create the cropped RGB image
-            crop_image_from_cropped_annotations(
-                cropped_annotations, full_rgb_path, rgb_output_folder_path
-            )
+            rgb_output_path = os.path.join(rgb_output_folder_path, output_file)
+            if not os.path.exists(rgb_output_path):
+                crop_image_from_box(full_rgb_path, image_box, rgb_output_path)
+
             # Create the cropped unfiltered CHM image
-            crop_image_from_cropped_annotations(
-                cropped_annotations,
-                full_chm_unfiltered_path,
-                chm_unfiltered_output_folder_path,
+            chm_unfiltered_output_path = os.path.join(
+                chm_unfiltered_output_folder_path, output_file
             )
+            if not os.path.exists(full_chm_unfiltered_path):
+                crop_image_from_box(
+                    full_chm_unfiltered_path, image_box, chm_unfiltered_output_path
+                )
+
             # Create the cropped filtered CHM image
-            crop_image_from_cropped_annotations(
-                cropped_annotations,
-                full_chm_filtered_path,
-                chm_filtered_output_folder_path,
+            chm_filtered_output_path = os.path.join(
+                chm_filtered_output_folder_path, output_file
             )
+            if not os.path.exists(full_chm_filtered_path):
+                crop_image_from_box(
+                    full_chm_filtered_path, image_box, chm_filtered_output_path
+                )
 
 
 class ImageData:

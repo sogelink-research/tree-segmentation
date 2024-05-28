@@ -90,9 +90,12 @@ def filter_classification_las(input_las: str, output_las: str) -> None:
     pipeline.execute()
 
 
-def download_lidar_names_shapefile() -> str:
+def download_lidar_names_shapefile(verbose: bool = True) -> str:
     """Downloads the Shapefile describing the organization of the LiDAR GeoTiles.
     The download is skipped if the file already exists.
+
+    Args:
+        verbose (bool, optional): whether to print messages about the behavior of the function. Defaults to True.
 
     Returns:
         str: the path to the Shapefile.
@@ -103,6 +106,7 @@ def download_lidar_names_shapefile() -> str:
         download_file(
             "https://static.fwrite.org/2022/01/TOP-AHN_subunit_compat.zip",
             shapefile_path,
+            verbose,
         )
         with zipfile.ZipFile(shapefile_path, "r") as zip_ref:
             zip_ref.extractall(
@@ -157,7 +161,7 @@ def get_lidar_files_from_image(
     return intersection_file_names
 
 
-def get_geotiles_url(file_name: str) -> str:
+def _get_geotiles_url(file_name: str) -> str:
     """Returns the URL that can be used to download the given file from GeoTiles.
     See https://geotiles.citg.tudelft.nl.
 
@@ -185,7 +189,7 @@ def download_and_remove_overlap_geotiles(
 
     lidar_file_paths = []
     for file_name in lidar_file_names:
-        url = get_geotiles_url(file_name)
+        url = _get_geotiles_url(file_name)
         # Create the paths
         geotiles_with_overlap_path = os.path.join(
             Folders.GEOTILES_LIDAR.value, f"{file_name}.LAZ"
