@@ -1,27 +1,33 @@
 import os
 
 from chm import compute_chm, compute_dtm
-from tqdm import tqdm
+from data_processing import Box
+from lidar_preprocessing import crop_las
 
 if __name__ == "__main__":
-    # point_cloud_folder = "data/point_clouds_cropped/122000_484000"
-    # chm_folder = "data/CHM_cropped_0p08/122000_484000"
-    # for file_name in tqdm(os.listdir(point_cloud_folder)):
-    #     input_file_path = os.path.join(point_cloud_folder, file_name)
-    #     if os.path.splitext(file_name)[1] in [".laz", ".LAZ"]:
-    #         output_file_name = f"{os.path.splitext(file_name)[0]}_chm.tif"
-    #         output_file_path = os.path.join(chm_folder, output_file_name)
-    #         if os.path.isfile(input_file_path):
-    #             compute_chm(input_file_path, output_file_path, verbose=True)
-    #             print(output_file_path)
-    #             break
-    #     elif os.path.splitext(file_name)[1] in [".las", ".LAS"]:
-    #         os.remove(input_file_path)
+    x_min = 122100
+    y_min = 483800
+    size = 100
+    crop_box = Box(x_min=x_min, y_min=y_min, x_max=x_min + size, y_max=y_min + size)
+    crop_las(
+        "data/lidar/unfiltered/full/122000_484000.laz",
+        "data/lidar/unfiltered/full/122000_484000_cropped.laz",
+        crop_box,
+    )
+    full_size = 1000
+    size_ratio = size / full_size
     compute_dtm(
         "data/lidar/unfiltered/full/122000_484000_cropped.laz",
-        # "data/122000_484000_filtered.tif",
-        width=12500,
-        height=12500,
+        width=round(12500 * size_ratio),
+        height=round(12500 * size_ratio),
         resolution=0.08,
         verbose=True,
     )
+    # compute_chm(
+    #     "data/lidar/unfiltered/full/122000_484000_cropped.laz",
+    #     "data/lidar/unfiltered/full/122000_484000_cropped_unfiltered_chm.tif",
+    #     width=round(12500 * size_ratio),
+    #     height=round(12500 * size_ratio),
+    #     resolution=0.08,
+    #     verbose=True,
+    # )

@@ -113,13 +113,6 @@ def compute_dtm(
 
     pipeline_json = [
         las_file_name,
-        # {
-        #     "type": "filters.smrf",
-        #     "window": 33,
-        #     "slope": 1.0,
-        #     "threshold": 0.15,
-        #     "cell": 1.0,
-        # },
         {"type": "filters.range", "limits": "Classification[2:2]"},
         {
             "type": "writers.gdal",
@@ -147,7 +140,7 @@ def compute_dtm(
     band = new_ds.GetRasterBand(1)
 
     gdal.FillNodata(
-        targetBand=band, maskBand=None, maxSearchDist=100, smoothingIterations=0
+        targetBand=band, maskBand=None, maxSearchDist=200, smoothingIterations=20
     )
 
     # new_ds.GetRasterBand(1).WriteArray(band.ReadAsArray())
