@@ -10,8 +10,21 @@ from data_processing import Box
 type Number = float | int
 
 
-def get_bounding_boxes(bboxes_path: str) -> Tuple[List[Box], List[str]]:
-    with open(bboxes_path, "r") as file:
+def get_bounding_boxes(
+    annotations_path: str, dismissed_classes: List[str] = []
+) -> Tuple[List[Box], List[str]]:
+    """Reads an annotation file and returns all the bounding boxes positions and labels.
+
+    Args:
+        bboxes_path (str): path to the file containing the annotations.
+        dismissed_classes (List[str], optional): list of classes for which the
+        bounding boxes are ignored. Defaults to [].
+
+    Returns:
+        Tuple[List[Box], List[str]]: (bboxes, labels) with bboxes of size (n, 4)
+        and labels of size (n)
+    """
+    with open(annotations_path, "r") as file:
         # Load the annotation data
         bboxes_json = json.load(file)
 
@@ -19,15 +32,16 @@ def get_bounding_boxes(bboxes_path: str) -> Tuple[List[Box], List[str]]:
         bboxes = []
         labels = []
         for bbox in bboxes_json["bounding_boxes"]:
-            bboxes.append(
-                Box(
-                    x_min=bbox["x_min"],
-                    y_min=bbox["y_min"],
-                    x_max=bbox["x_max"],
-                    y_max=bbox["y_max"],
+            if bbox["label"] not in dismissed_classes:
+                bboxes.append(
+                    Box(
+                        x_min=bbox["x_min"],
+                        y_min=bbox["y_min"],
+                        x_max=bbox["x_max"],
+                        y_max=bbox["y_max"],
+                    )
                 )
-            )
-            labels.append(bbox["label"])
+                labels.append(bbox["label"])
     return bboxes, labels
 
 

@@ -1,12 +1,18 @@
+import json
 import os
+import random
 from collections import defaultdict
-from typing import Callable, Dict, Iterable, List, Tuple
+from typing import Callable, Dict, Iterable, List, Sequence, Tuple
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
 from albumentations import pytorch as Atorch
+from data_processing import ImageData
+from IPython import display
+from ipywidgets import Output
 from layers import AMF_GD_YOLOv8
 from plot import create_bboxes_image, get_bounding_boxes
 from skimage import io
@@ -171,43 +177,37 @@ def normalize_chm(image_chm: torch.Tensor) -> torch.Tensor:
 class TreeDataset(Dataset):
     """Tree dataset."""
 
-    # TODO: Change to take a list of files instead of a folder? (to separate train and validation)
-
     def __init__(
         self,
-        annotations_folder_path: str,
-        rgb_folder_path: str,
-        chm_folder_path: str,
+        files_paths_list: List[Dict[str, str]],
         labels_to_index: Dict[str, int],
         labels_to_color: Dict[str, Tuple[int, int, int]],
+        dismissed_classes: List[str] = [],
         transform_spatial: Callable | None = None,
         transform_pixel: Callable | None = None,
     ) -> None:
         """A dataset holding the necessary data for training a model on bounding boxes with
-        RGB anc CHM data.
+        RGB and CHM data.
 
         Args:
-            annotations_folder_path (str): The path to the folder containing the annotations.
-            rgb_folder_path (str): The path to the folder containing the RGB images.
-            chm_folder_path (str): The path to the folder containing the CHM images.
-            labels_to_index (Dict[str, int]): Dictionary associating a label name with an index.
-            labels_to_color (Dict[str, Tuple[int, int, int]]): Dictionary associating a label name with a color.
-            transform_spatial (Callable | None, optional): The spatial augmentations applied to CHM and RGB images. Defaults to None.
-            transform_pixel (Callable | None, optional): The pixel augmentations applied to RGB images. Defaults to None.
+            files_paths_list (List[Dict[str, str]]): list of dictionaries containing the paths to RGB, CHM and annotations.
+            labels_to_index (Dict[str, int]): dictionary associating a label name with an index.
+            labels_to_color (Dict[str, Tuple[int, int, int]]): dictionary associating a label name with a color.
+            dismissed_classes (List[str], optional): list of classes for which the bounding boxes are ignored. Defaults to [].
+            transform_spatial (Callable | None, optional): spatial augmentations applied to CHM and RGB images. Defaults to None.
+            transform_pixel (Callable | None, optional): pixel augmentations applied to RGB images. Defaults to None.
         """
-        self.annotations_list: List[str] = []
-        self.bboxes: Dict[str, List[List[float]]] = {}
-        self.labels: Dict[str, List[int]] = {}
-        for file_name in os.listdir(annotations_folder_path):
-            annotations_file_path = os.path.join(annotations_folder_path, file_name)
-            base_name = get_file_base_name(annotations_file_path)
-            self.annotations_list.append(base_name)
-            bboxes, labels = get_bounding_boxes(annotations_file_path)
-            self.bboxes[base_name] = [bbox.as_list() for bbox in bboxes]
-            self.labels[base_name] = [labels_to_index[label] for label in labels]
+        self.files_paths_list = files_paths_list
+        self.bboxes: List[List[List[float]]] = []
+        self.labels: List[List[int]] = []
+        for i, files_dict in enumerate(files_paths_list):
+            annotations_file_path = files_dict["annotations"]
+            bboxes, labels = get_bounding_boxes(
+                annotations_file_path, dismissed_classes
+            )
+            self.bboxes.append([bbox.as_list() for bbox in bboxes])
+            self.labels.append([labels_to_index[label] for label in labels])
 
-        self.rgb_folder_path = rgb_folder_path
-        self.chm_folder_path = chm_folder_path
         self.labels_to_index = labels_to_index
         self.labels_to_str = {value: key for key, value in self.labels_to_index.items()}
         self.labels_to_color = labels_to_color
@@ -215,22 +215,22 @@ class TreeDataset(Dataset):
         self.transform_pixel = transform_pixel
 
     def __len__(self) -> int:
-        return len(self.annotations_list)
+        return len(self.files_paths_list)
 
     def get_unnormalized(self, idx) -> Dict[str, torch.Tensor]:
         # if torch.is_tensor(idx):
         #     idx = idx.tolist()
 
         # Read the images
-        base_name = self.annotations_list[idx]
-        rgb_path = os.path.join(self.rgb_folder_path, f"{base_name}.tif")
+        files_paths = self.files_paths_list[idx]
+        rgb_path = files_paths["rgb"]
         image_rgb = io.imread(rgb_path)
-        chm_path = os.path.join(self.chm_folder_path, f"{base_name}.tif")
+        chm_path = files_paths["chm"]
         image_chm = io.imread(chm_path)
 
         # Get bboxes and labels
-        bboxes = self.bboxes[base_name]
-        labels = self.labels[base_name]
+        bboxes = self.bboxes[idx]
+        labels = self.labels[idx]
 
         # Apply the spatial transform to the two images, bboxes and labels
         if self.transform_spatial is not None:
@@ -269,8 +269,8 @@ class TreeDataset(Dataset):
         return sample
 
     def get_rgb_image(self, idx) -> np.ndarray:
-        base_name = self.annotations_list[idx]
-        rgb_path = os.path.join(self.rgb_folder_path, f"{base_name}.tif")
+        files_paths = self.files_paths_list[idx]
+        rgb_path = files_paths["rgb"]
         image_rgb = io.imread(rgb_path)
         return image_rgb
 
@@ -370,30 +370,83 @@ class TreeDataLoader(DataLoader):
             persistent_workers=persistent_workers,
             pin_memory_device=pin_memory_device,
         )
-        
 
-class MetricMonitor:
-    def __init__(self, float_precision=3):
+
+class TrainingMetrics:
+    def __init__(self, float_precision: int = 3) -> None:
         self.float_precision = float_precision
         self.reset()
 
     def reset(self):
-        self.metrics = defaultdict(lambda: {"val": 0.0, "count": 0, "avg": 0.0})
+        self.metrics = defaultdict(
+            lambda: defaultdict(lambda: {"epochs": [], "vals": []})
+        )
+        self.metrics_loop = defaultdict(
+            lambda: defaultdict(lambda: {"val": 0.0, "count": 0, "avg": 0.0})
+        )
 
-    def update(self, metric_name: str, val: float, count: int = 1):
-        metric = self.metrics[metric_name]
+        self.out = Output()
+        display.display(self.out)
+
+    def end_loop(self, epoch: int):
+        for metric_name, metric_dict in self.metrics_loop.items():
+            for category_name, category_dict in metric_dict.items():
+                metric = self.metrics[metric_name][category_name]
+                metric["epochs"].append(epoch)
+                metric["vals"].append(category_dict["avg"])
+        self.metrics_loop = defaultdict(
+            lambda: defaultdict(lambda: {"val": 0.0, "count": 0, "avg": 0.0})
+        )
+
+    def update(self, category_name: str, metric_name: str, val: float, count: int = 1):
+        metric = self.metrics_loop[metric_name][category_name]
 
         metric["val"] += val
         metric["count"] += count
         metric["avg"] = metric["val"] / metric["count"]
 
-    def __str__(self):
-        return " | ".join(
-            [
-                f"{metric_name}: {metric["avg"]:.{self.float_precision}f}"
-                for (metric_name, metric) in self.metrics.items()
-            ]
-        )
+    def visualize(self):
+        # Inspired from https://gitlab.com/robindar/dl-scaman_checker/-/blob/main/src/dl_scaman_checker/TP01.py
+        with self.out:
+            metrics_index: Dict[str, int] = {}
+            categories_index: Dict[str, int] = {}
+            for i, (metric_name, metric_dict) in enumerate(self.metrics.items()):
+                metrics_index[metric_name] = i
+                for category_name in metric_dict.keys():
+                    if category_name not in categories_index.keys():
+                        categories_index[category_name] = len(categories_index)
+
+            nrows = len(metrics_index)
+            cmap = plt.get_cmap("tab10")
+
+            categories_colors = {
+                label: cmap(i) for i, label in enumerate(categories_index.keys())
+            }
+
+            fig = plt.figure(1, figsize=(6, 5 * nrows))
+
+            for metric_name, metric_dict in self.metrics.items():
+                ax = fig.add_subplot(nrows, 1, metrics_index[metric_name] + 1)
+                for category_name, category_dict in metric_dict.items():
+                    epochs = category_dict["epochs"]
+                    values = category_dict["vals"]
+                    fmt = "-" if len(epochs) > 100 else "-o"
+                    ax.plot(
+                        epochs,
+                        values,
+                        fmt,
+                        color=categories_colors[category_name],
+                        label=category_name,
+                    )
+                    ax.grid(alpha=0.5)
+                    ax.set_xlabel("Epoch")
+                    ax.set_yscale("log")
+                    ax.set_ylabel(metric_name)
+                ax.set_title(f"{metric_name}")
+            plt.tight_layout()
+            plt.legend()
+            plt.show()
+            display.clear_output(wait=True)
 
 
 def perfect_preds(
@@ -447,14 +500,14 @@ def train(
     train_loader: TreeDataLoader,
     model: AMF_GD_YOLOv8,
     optimizer: torch.optim.Optimizer,
-    epoch: int,
     device: torch.device,
     accumulation_steps: int,
     running_accumulation_step: int,
+    training_metrics: TrainingMetrics,
 ) -> int:
-    metric_monitor = MetricMonitor()
     model.train()
-    stream = tqdm(train_loader, leave=False)
+    stream = tqdm(train_loader, leave=False, desc="Training")
+    # stream.set_description(f"Epoch: {epoch}. Training.")
     for data in stream:
         image_rgb: torch.Tensor = data["image_rgb"]
         image_chm: torch.Tensor = data["image_chm"]
@@ -472,7 +525,7 @@ def train(
         total_loss = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)[0]
 
         batch_size = image_rgb.shape[0]
-        metric_monitor.update("Loss", total_loss.item(), batch_size)
+        training_metrics.update("Training", "Loss", total_loss.item(), batch_size)
 
         total_loss.backward()
 
@@ -482,17 +535,19 @@ def train(
             optimizer.zero_grad()
 
         running_accumulation_step += 1
-        stream.set_description(f"Epoch: {epoch}. Train.      {metric_monitor}")
 
     return running_accumulation_step
 
 
 def validate(
-    val_loader: TreeDataLoader, model: AMF_GD_YOLOv8, epoch: int, device: torch.device
+    val_loader: TreeDataLoader,
+    model: AMF_GD_YOLOv8,
+    device: torch.device,
+    training_metrics: TrainingMetrics,
 ):
-    metric_monitor = MetricMonitor()
     model.eval()
-    stream = tqdm(val_loader, leave=False)
+    stream = tqdm(val_loader, leave=False, desc="Validation")
+    # stream.set_description(f"Epoch: {epoch}. Validation.")
     with torch.no_grad():
         for data in stream:
             image_rgb: torch.Tensor = data["image_rgb"]
@@ -513,9 +568,7 @@ def validate(
             ]
 
             batch_size = image_rgb.shape[0]
-            metric_monitor.update("Loss", total_loss.item(), batch_size)
-
-            stream.set_description(f"Epoch: {epoch}. Validation. {metric_monitor}")
+            training_metrics.update("Validation", "Loss", total_loss.item(), batch_size)
 
 
 def test_save_output_image(
@@ -548,7 +601,7 @@ def test_save_output_image(
                 scores = []
 
             # Save the image if there is at least one bounding box
-            if (len(bboxes) > 0):
+            if len(bboxes) > 0:
                 bboxes_image = create_bboxes_image(
                     image=initial_rgb,
                     bboxes=bboxes,
@@ -558,19 +611,20 @@ def test_save_output_image(
                     color_mode="bgr",
                 )
 
-                output_name = f"Validation_bboxes_{epoch}_{saved_images}_{len(bboxes)}.png"
+                output_name = (
+                    f"Validation_bboxes_{epoch}_{saved_images}_{len(bboxes)}.png"
+                )
                 output_path = os.path.join(Folders.OUTPUT_DIR.value, output_name)
                 cv2.imwrite(output_path, bboxes_image)
 
             saved_images += 1
             if saved_images >= number_images:
                 break
-          
-            
+
+
 def train_and_validate(
     model: AMF_GD_YOLOv8,
-    train_dataset: TreeDataset,
-    val_dataset: TreeDataset,
+    datasets: Dict[str, TreeDataset],
     lr: float,
     epochs: int,
     batch_size: int,
@@ -578,22 +632,25 @@ def train_and_validate(
     accumulate: int,
     device: torch.device,
 ) -> nn.Module:
+
+    assert all(key in datasets for key in ["training", "validation", "test"])
+
     train_loader = TreeDataLoader(
-        train_dataset,
+        datasets["training"],
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
         pin_memory=True,
     )
     val_loader = TreeDataLoader(
-        val_dataset,
+        datasets["validation"],
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
     )
     test_loader = TreeDataLoader(
-        val_dataset,
+        datasets["test"],
         batch_size=1,
         shuffle=False,
         num_workers=1,
@@ -604,8 +661,10 @@ def train_and_validate(
         optimizer, lambda i: 1 / np.sqrt(i + 2), last_epoch=-1
     )
 
-    accumulation_steps = round(accumulate / batch_size)
+    accumulation_steps = max(round(accumulate / batch_size), 1)
     running_accumulation_step = 0
+
+    training_metrics = TrainingMetrics()
 
     test_save_output_image(
         model=model, test_loader=test_loader, epoch=0, device=device, number_images=2
@@ -615,12 +674,12 @@ def train_and_validate(
             train_loader,
             model,
             optimizer,
-            epoch,
             device,
             accumulation_steps,
             running_accumulation_step,
+            training_metrics,
         )
-        validate(val_loader, model, epoch, device)
+        validate(val_loader, model, device, training_metrics)
         if epoch % 1 == 0:
             test_save_output_image(
                 model=model,
@@ -630,5 +689,153 @@ def train_and_validate(
                 number_images=2,
             )
         scheduler.step()
+
+        training_metrics.end_loop(epoch)
+        training_metrics.visualize()
     return model
 
+
+def get_all_files_iteratively(folder_path: str) -> List[str]:
+    """Finds iteratively all the files below the input folder.
+
+    Args:
+        folder_path (str): folder to look into.
+
+    Returns:
+        List[str]: the list of all the files.
+    """
+    all_files = []
+    for dirpath, dirnames, filenames in os.walk(folder_path):
+        for filename in filenames:
+            all_files.append(os.path.join(dirpath, filename))
+    return all_files
+
+
+def split_files_into_lists(
+    folder_path: str,
+    sets_ratios: Sequence[int | float],
+    sets_names: List[str],
+    random_seed: int | None = None,
+) -> Dict[str, List[str]]:
+    """Splits files in a folder into multiple lists based on specified ratios.
+
+    Args:
+        folder_path (str): path to the folder containing the files.
+        sets_ratios (List[int | float]): the proportions for each list.
+        sets_names (List[str]): the keys for the dictionary
+        random_seed (int | None, optional): a seed for the randomization. Defaults to None.
+
+    Returns:
+        Dict[str, List[str]]: a dictionary where each key from the input names is linked
+        with a list of files.
+    """
+    files = get_all_files_iteratively(folder_path)
+    total_ratio = sum(sets_ratios)
+    ratios = [r / total_ratio for r in sets_ratios]
+
+    if random_seed is not None:
+        random.seed(random_seed)
+    random.shuffle(files)
+    split_indices = [0] * (len(ratios) + 1)
+    split_indices[-1] = len(files)
+    sum_ratios = 0.0
+    for i in range(len(ratios) - 1):
+        sum_ratios += ratios[i]
+        split_indices[i + 1] = int(round(len(files) * (sum_ratios)))
+
+    files_dict = {}
+    for i in range(len(ratios)):
+        files_dict[sets_names[i]] = files[split_indices[i] : split_indices[i + 1]]
+
+    return files_dict
+
+
+def create_and_save_splitted_datasets(
+    rgb_folder_path: str,
+    chm_folder_path: str,
+    annotations_folder_path: str,
+    sets_ratios: Sequence[int | float],
+    sets_names: List[str],
+    save_path: str,
+    random_seed: int | None = None,
+) -> None:
+    files_dict = split_files_into_lists(
+        folder_path=rgb_folder_path,
+        sets_ratios=sets_ratios,
+        sets_names=sets_names,
+        random_seed=random_seed,
+    )
+    all_files_dict = {}
+    for set_name, set_files in files_dict.items():
+        all_files_dict[set_name] = []
+        for rgb_file in set_files:
+            full_image = os.path.join(
+                Folders.FULL_IMAGES.value,
+                f"{os.path.basename(os.path.dirname(rgb_file))}.tif",
+            )
+            image_data = ImageData(full_image)
+
+            chm_file = rgb_file.replace(rgb_folder_path, chm_folder_path).replace(
+                image_data.base_name, image_data.coord_name
+            )
+
+            annotations_file = rgb_file.replace(
+                rgb_folder_path, annotations_folder_path
+            ).replace(".tif", ".json")
+
+            new_dict = {
+                "rgb": rgb_file,
+                "chm": chm_file,
+                "annotations": annotations_file,
+            }
+            all_files_dict[set_name].append(new_dict)
+
+    with open(save_path, "w") as f:
+        json.dump(all_files_dict, f)
+
+
+def load_tree_datasets_from_split(
+    data_split_file_path: str,
+    labels_to_index: Dict[str, int],
+    labels_to_color: Dict[str, Tuple[int, int, int]],
+    dismissed_classes: List[str] = [],
+    transform_spatial_training: Callable | None = None,
+    transform_pixel_training: Callable | None = None,
+) -> Dict[str, TreeDataset]:
+    with open(data_split_file_path, "r") as f:
+        data_split = json.load(f)
+
+    tree_datasets = {}
+    tree_datasets["training"] = TreeDataset(
+        data_split["training"],
+        labels_to_index=labels_to_index,
+        labels_to_color=labels_to_color,
+        dismissed_classes=dismissed_classes,
+        transform_spatial=transform_spatial_training,
+        transform_pixel=transform_pixel_training,
+    )
+
+    tree_datasets["validation"] = TreeDataset(
+        data_split["validation"],
+        labels_to_index=labels_to_index,
+        labels_to_color=labels_to_color,
+        dismissed_classes=dismissed_classes,
+        transform_spatial=None,
+        transform_pixel=None,
+    )
+
+    if "test" in data_split:
+        test_data = data_split["test"]
+    else:
+        test_data = data_split["validation"]
+
+    tree_datasets["test"] = TreeDataset(
+        test_data,
+        labels_to_index=labels_to_index,
+        labels_to_color=labels_to_color,
+        dismissed_classes=dismissed_classes,
+        transform_spatial=None,
+        transform_pixel=None,
+    )
+
+    return tree_datasets

@@ -168,6 +168,7 @@ def find_annots_repartition(
     cropping_limits_y: npt.NDArray[np.int_],
     annotations: Dict[Any, Any],
     visibility_threshold: float,
+    dismissed_classes: List[str] | None = None,
 ) -> Dict[Box, List[Annotation]]:
     """Find the bounding boxes that fit in every image. The bounding boxes are taken
     if at least `visibility_threshold` of their area is within the image. The images
@@ -178,11 +179,13 @@ def find_annots_repartition(
     dismissed. Every image that intersects with such a bounding box is rejected.
 
     Args:
-        cropping_limits_x (npt.NDArray[np.int_]): limits of the images on the x axis
-        cropping_limits_y (npt.NDArray[np.int_]): limits of the images on the y axis
+        cropping_limits_x (npt.NDArray[np.int_]): limits of the images on the x axis.
+        cropping_limits_y (npt.NDArray[np.int_]): limits of the images on the y axis.
         annotations (Dict[Any, Any]): dictionary obtained from the json file
-        containing the annotations, directly from Label Studio
-        visibility_threshold (float): The threshold to select the bounding boxes
+        containing the annotations, directly from Label Studio.
+        visibility_threshold (float): threshold to select the bounding boxes.
+        dismissed_classes (List[str] | None): classes to ignore. The bounding boxes of this
+        class will be dismissed. Defaults to None.
 
     Returns:
         Dict[Box, List[Box]]: dictionary associating the bounding box of each image
@@ -190,6 +193,9 @@ def find_annots_repartition(
         not cropped to entirely fit in the image, and their coordinates are in the
         full image frame.
     """
+    if dismissed_classes is None:
+        dismissed_classes = []
+
     annots_repartition: Dict[Box, List[Annotation]] = {
         Box(x_limits[0], y_limits[0], x_limits[1], y_limits[1]): []
         for y_limits in cropping_limits_y
@@ -238,9 +244,10 @@ def find_annots_repartition(
                 del annots_repartition[key]
         # If it is a tree, add it to the image if it fits in
         else:
-            for limit_box in annots_repartition:
-                if intersection_ratio(annot.box, limit_box) > visibility_threshold:
-                    annots_repartition[limit_box].append(deepcopy(annot))
+            if annot.label not in dismissed_classes:
+                for limit_box in annots_repartition:
+                    if intersection_ratio(annot.box, limit_box) > visibility_threshold:
+                        annots_repartition[limit_box].append(deepcopy(annot))
 
     return annots_repartition
 
@@ -444,7 +451,7 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
             chm_unfiltered_output_path = os.path.join(
                 chm_unfiltered_output_folder_path, output_file
             )
-            if not os.path.exists(full_chm_unfiltered_path):
+            if not os.path.exists(chm_unfiltered_output_path):
                 crop_image_from_box(
                     full_chm_unfiltered_path, image_box, chm_unfiltered_output_path
                 )
@@ -453,7 +460,7 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
             chm_filtered_output_path = os.path.join(
                 chm_filtered_output_folder_path, output_file
             )
-            if not os.path.exists(full_chm_filtered_path):
+            if not os.path.exists(chm_filtered_output_path):
                 crop_image_from_box(
                     full_chm_filtered_path, image_box, chm_filtered_output_path
                 )
