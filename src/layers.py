@@ -512,7 +512,6 @@ class TrainingLoss(v8DetectionLoss):
                 if n:
                     out[j, :n] = targets[matches, 1:]
             # out[..., 1:5] = xywh2xyxy(out[..., 1:5].mul_(scale_tensor)) # Original line
-            out[..., 1:5] = out[..., 1:5].mul_(scale_tensor)  # New line
         return out
 
 
