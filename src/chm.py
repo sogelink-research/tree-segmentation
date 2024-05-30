@@ -8,6 +8,7 @@ import numpy as np
 import pdal
 from osgeo import gdal
 
+
 gdal.UseExceptions()
 
 
@@ -87,7 +88,6 @@ def compute_dsm(
     ]
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
-    metadata = pipeline.metadata
     if verbose:
         print(f"Done: {count} points found. Saved at {output_tif_name}")
     return output_tif_name
@@ -129,7 +129,6 @@ def compute_dtm(
     ]
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
-    metadata = pipeline.metadata
 
     old_ds = gdal.Open(output_tif_name_temp)
 
@@ -139,9 +138,7 @@ def compute_dtm(
 
     band = new_ds.GetRasterBand(1)
 
-    gdal.FillNodata(
-        targetBand=band, maskBand=None, maxSearchDist=200, smoothingIterations=20
-    )
+    gdal.FillNodata(targetBand=band, maskBand=None, maxSearchDist=200, smoothingIterations=20)
 
     # new_ds.GetRasterBand(1).WriteArray(band.ReadAsArray())
 
@@ -251,7 +248,6 @@ def compute_laz_minus_ground_height(laz_file_name: str, verbose: bool = False):
 
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
-    metadata = pipeline.metadata
     if verbose:
         print(f"Done: {count} points found.")
 

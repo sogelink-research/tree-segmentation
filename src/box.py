@@ -11,7 +11,9 @@ class Box:
         self.y_max = float(y_max)
 
     def __str__(self) -> str:
-        return f"(x_min: {self.x_min}, y_min: {self.y_min}, x_max: {self.x_max}, y_max: {self.y_max})"
+        return (
+            f"(x_min: {self.x_min}, y_min: {self.y_min}, x_max: {self.x_max}, y_max: {self.y_max})"
+        )
 
     def __repr__(self) -> str:
         return f"({self.x_min}, {self.y_min}, {self.x_max}, {self.y_max})"
@@ -148,9 +150,7 @@ def box_pixels_cropped_to_full(to_modify: Box, cropped_frame: Box) -> Box:
     )
 
 
-def box_pixels_to_coordinates(
-    box: Box, image_pixels_box: Box, image_coordinates_box: Box
-) -> Box:
+def box_pixels_to_coordinates(box: Box, image_pixels_box: Box, image_coordinates_box: Box) -> Box:
     """Converts the coordinates of a Box from pixels in an image to geographical
     coordinates.
 
@@ -171,27 +171,17 @@ def box_pixels_to_coordinates(
         image_pixels_box.y_max - image_pixels_box.y_min
     )
 
-    new_x_min = (
-        box.x_min - image_pixels_box.x_min
-    ) * x_factor + image_coordinates_box.x_min
-    new_x_max = (
-        box.x_max - image_pixels_box.x_min
-    ) * x_factor + image_coordinates_box.x_min
+    new_x_min = (box.x_min - image_pixels_box.x_min) * x_factor + image_coordinates_box.x_min
+    new_x_max = (box.x_max - image_pixels_box.x_min) * x_factor + image_coordinates_box.x_min
 
-    new_y_min = (
-        image_pixels_box.y_max - box.y_max
-    ) * y_factor + image_coordinates_box.y_min
-    new_y_max = (
-        image_pixels_box.y_max - box.y_min
-    ) * y_factor + image_coordinates_box.y_min
+    new_y_min = (image_pixels_box.y_max - box.y_max) * y_factor + image_coordinates_box.y_min
+    new_y_max = (image_pixels_box.y_max - box.y_min) * y_factor + image_coordinates_box.y_min
 
     new_box = Box(x_min=new_x_min, y_min=new_y_min, x_max=new_x_max, y_max=new_y_max)
     return new_box
 
 
-def box_coordinates_to_pixels(
-    box: Box, image_coordinates_box: Box, image_pixels_box: Box
-) -> Box:
+def box_coordinates_to_pixels(box: Box, image_coordinates_box: Box, image_pixels_box: Box) -> Box:
     """Converts the coordinates of a Box from geographical coordinates to pixels
     in an image.
 
@@ -212,19 +202,11 @@ def box_coordinates_to_pixels(
         image_coordinates_box.y_max - image_coordinates_box.y_min
     )
 
-    new_x_min = (
-        box.x_min - image_coordinates_box.x_min
-    ) * x_factor + image_pixels_box.x_min
-    new_x_max = (
-        box.x_max - image_coordinates_box.x_min
-    ) * x_factor + image_pixels_box.x_min
+    new_x_min = (box.x_min - image_coordinates_box.x_min) * x_factor + image_pixels_box.x_min
+    new_x_max = (box.x_max - image_coordinates_box.x_min) * x_factor + image_pixels_box.x_min
 
-    new_y_min = (
-        image_coordinates_box.y_max - box.y_max
-    ) * y_factor + image_pixels_box.y_min
-    new_y_max = (
-        image_coordinates_box.y_max - box.y_min
-    ) * y_factor + image_pixels_box.y_min
+    new_y_min = (image_coordinates_box.y_max - box.y_max) * y_factor + image_pixels_box.y_min
+    new_y_max = (image_coordinates_box.y_max - box.y_min) * y_factor + image_pixels_box.y_min
 
     new_box = Box(x_min=new_x_min, y_min=new_y_min, x_max=new_x_max, y_max=new_y_max)
     return new_box

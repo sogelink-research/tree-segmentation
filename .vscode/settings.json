@@ -23,6 +23,7 @@
     "notebook.formatOnSave.enabled": true,
     // Spell check
     "cSpell.words": [
+        "abspath",
         "albumentations",
         "ALLOC",
         "amax",
@@ -31,9 +32,11 @@
         "annot",
         "annots",
         "ascontiguousarray",
+        "astype",
         "Atorch",
         "avgs",
         "bboxes",
+        "blokindeling",
         "cbam",
         "CLAHE",
         "cmap",
@@ -41,8 +44,11 @@
         "DETR",
         "dtype",
         "figsize",
+        "gdaldriver",
+        "geocoords",
         "Geodan",
         "geotiles",
+        "getcwd",
         "imread",
         "imsave",
         "imwrite",
@@ -56,12 +62,16 @@
         "optim",
         "osgeo",
         "pdal",
+        "perceel",
         "preds",
         "proba",
         "QGIS",
         "rectanglelabels",
         "repvgg",
+        "returnnumber",
+        "shapefile",
         "skimage",
+        "smrf",
         "SPPF",
         "stds",
         "thres",
@@ -82,4 +92,11 @@
     "python.analysis.extraPaths": [
         "./src/Efficient-Computing/Detection/Gold-YOLO"
     ],
+    // Format files
+    "formatFiles.excludedFolders": [
+        "src/Efficient-Computing",
+        "models",
+        "data"
+    ],
+    "formatFiles.extensionsToInclude": "py,ipynb"
 }

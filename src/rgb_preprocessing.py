@@ -2,10 +2,11 @@ import os
 import zipfile
 from typing import Tuple
 
-from data_processing import get_coordinates_bbox_from_full_image_file_name
 from osgeo import ogr
 from shapely.geometry import box
 from shapely.wkt import dumps
+
+from data_processing import get_coordinates_bbox_from_full_image_file_name
 from utils import Folders, download_file, get_file_base_name
 
 
@@ -62,9 +63,7 @@ def download_rgb_names_shapefile(verbose: bool = True) -> str:
                 os.path.join(os.path.dirname(shapefile_path), "2023_HRL_blokindeling")
             )
 
-    return os.path.join(
-        Folders.IMAGES.value, "2023_HRL_blokindeling", "Blokindeling_2023.shp"
-    )
+    return os.path.join(Folders.IMAGES.value, "2023_HRL_blokindeling", "Blokindeling_2023.shp")
 
 
 def _get_block_perceel_from_image_file_name(image_file_name: str) -> Tuple[str, str]:

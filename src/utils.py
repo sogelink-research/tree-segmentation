@@ -53,9 +53,7 @@ def create_all_folders() -> None:
         create_folder(folder.value)
 
 
-def download_file(
-    url: str, save_path: str, no_ssl: bool = False, verbose: bool = True
-) -> None:
+def download_file(url: str, save_path: str, no_ssl: bool = False, verbose: bool = True) -> None:
     """Downloads a file from a URL and saves it at the given path.
     If a file already exists at this path, nothing is downloaded.
 
@@ -67,9 +65,7 @@ def download_file(
     """
     if os.path.exists(save_path):
         if verbose:
-            print(
-                f"Download skipped.\nThere is already a file at '{os.path.abspath(save_path)}'."
-            )
+            print(f"Download skipped.\nThere is already a file at '{os.path.abspath(save_path)}'.")
         return
     # Send a GET request to the URL
     if no_ssl:
@@ -88,9 +84,7 @@ def download_file(
             print(f"Done.\nSaved at '{os.path.abspath(save_path)}'.")
     else:
         if verbose:
-            print(
-                f"Failed to download file from '{url}'. Status code: {response.status_code}"
-            )
+            print(f"Failed to download file from '{url}'. Status code: {response.status_code}")
 
 
 def measure_execution_time(func):

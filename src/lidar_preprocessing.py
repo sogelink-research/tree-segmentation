@@ -5,22 +5,20 @@ from typing import List, Tuple
 
 import laspy
 import pdal
-from data_processing import Box, ImageData
 from osgeo import ogr
 from shapely.geometry import box
 from shapely.wkt import dumps
+
+from box import Box
+from data_processing import ImageData
 from utils import Folders, download_file
 
 
 def merge_crop_las(input_las_list: List[str], output_las: str, crop_box: Box) -> None:
-    bounds = (
-        f"([{crop_box.x_min},{crop_box.x_max}],[{crop_box.y_min},{crop_box.y_max}])"
-    )
+    bounds = f"([{crop_box.x_min},{crop_box.x_max}],[{crop_box.y_min},{crop_box.y_max}])"
     pipeline_list = []
     for index, input_las in enumerate(input_las_list):
-        pipeline_list.append(
-            {"type": "readers.las", "filename": input_las, "tag": f"A{index}"}
-        )
+        pipeline_list.append({"type": "readers.las", "filename": input_las, "tag": f"A{index}"})
     pipeline_list.extend(
         [
             {
@@ -36,9 +34,7 @@ def merge_crop_las(input_las_list: List[str], output_las: str, crop_box: Box) ->
 
 
 def crop_las(input_las: str, output_las: str, crop_box: Box) -> None:
-    bounds = (
-        f"([{crop_box.x_min},{crop_box.x_max}],[{crop_box.y_min},{crop_box.y_max}])"
-    )
+    bounds = f"([{crop_box.x_min},{crop_box.x_max}],[{crop_box.y_min},{crop_box.y_max}])"
     pipeline_list = [
         {
             "type": "readers.las",
@@ -51,9 +47,7 @@ def crop_las(input_las: str, output_las: str, crop_box: Box) -> None:
     pipeline.execute()
 
 
-def remove_las_overlap_from_geotiles(
-    input_las: str, output_las: str, overlap: int
-) -> None:
+def remove_las_overlap_from_geotiles(input_las: str, output_las: str, overlap: int) -> None:
     with laspy.open(input_las, mode="r") as las_file:
         # Get the bounding box information from the header
         x_min = las_file.header.min[0] + overlap
@@ -113,9 +107,7 @@ def download_lidar_names_shapefile(verbose: bool = True) -> str:
                 os.path.join(os.path.dirname(shapefile_path), "TOP-AHN_subunit_compat")
             )
 
-    return os.path.join(
-        Folders.LIDAR.value, "TOP-AHN_subunit_compat", "TOP-AHN_subunit_compat.shp"
-    )
+    return os.path.join(Folders.LIDAR.value, "TOP-AHN_subunit_compat", "TOP-AHN_subunit_compat.shp")
 
 
 def get_lidar_files_from_image(
@@ -174,9 +166,7 @@ def _get_geotiles_url(file_name: str) -> str:
     return f"https://geotiles.citg.tudelft.nl/AHN4_T/{file_name}.LAZ"
 
 
-def download_and_remove_overlap_geotiles(
-    lidar_file_names: List[str], overlap: int
-) -> List[str]:
+def download_and_remove_overlap_geotiles(lidar_file_names: List[str], overlap: int) -> List[str]:
     """Downloads the LiDAR files from GeoTiles and removes the overlap.
 
     Args:
@@ -191,9 +181,7 @@ def download_and_remove_overlap_geotiles(
     for file_name in lidar_file_names:
         url = _get_geotiles_url(file_name)
         # Create the paths
-        geotiles_with_overlap_path = os.path.join(
-            Folders.GEOTILES_LIDAR.value, f"{file_name}.LAZ"
-        )
+        geotiles_with_overlap_path = os.path.join(Folders.GEOTILES_LIDAR.value, f"{file_name}.LAZ")
         geotiles_without_overlap_path = os.path.join(
             Folders.GEOTILES_NO_OVERLAP_LIDAR.value, f"{file_name}.LAZ"
         )
@@ -208,9 +196,7 @@ def download_and_remove_overlap_geotiles(
     return lidar_file_paths
 
 
-def create_full_lidar(
-    lidar_file_paths: List[str], image_data: ImageData
-) -> Tuple[str, str]:
+def create_full_lidar(lidar_file_paths: List[str], image_data: ImageData) -> Tuple[str, str]:
     """Merges and crops the given LiDAR files to the area of the given image.
 
     Args:
