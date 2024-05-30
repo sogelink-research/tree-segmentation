@@ -1,39 +1,85 @@
 {
     // Generic settings :
     "editor.formatOnSave": true, // Format files on save
-    "formatFiles.runOrganizeImports": true, // Sort imports when formatting
     "editor.codeActionsOnSave": {
-        "source.organizeImports": "explicit"
+        "source.organizeImports": "explicit" // Organize imports on save
     },
-    // Python
     "[python]": {
-        "editor.defaultFormatter": "ms-python.black-formatter", // Use Black formatter for python
-        "editor.formatOnType": true
+        "editor.defaultFormatter": "ms-python.black-formatter", // Use Black formatter for Python
     },
-    "python.analysis.typeCheckingMode": "basic", // or "strict" : use stricter python type checking
+    "black-formatter.args": [
+        "--line-length",
+        "100"
+    ],
+    "isort.args": [
+        "--profile",
+        "black",
+        "--lines-after-imports",
+        "2"
+    ],
+    "ruff.organizeImports": false,
+    "python.analysis.typeCheckingMode": "basic", // Use basic type checking for Python
+    // Jupyter notebooks
+    "notebook.formatOnSave.enabled": true,
     // Spell check
     "cSpell.words": [
+        "albumentations",
+        "ALLOC",
+        "amax",
         "amfnet",
+        "amfs",
         "annot",
         "annots",
+        "ascontiguousarray",
+        "Atorch",
+        "avgs",
         "bboxes",
+        "cbam",
+        "CLAHE",
+        "cmap",
         "convolutional",
+        "DETR",
         "dtype",
+        "figsize",
         "Geodan",
         "geotiles",
+        "imread",
+        "imsave",
+        "imwrite",
+        "ipywidgets",
+        "keepdim",
+        "kthvalue",
         "laspy",
         "multispectral",
+        "ndarray",
+        "nrows",
+        "optim",
         "osgeo",
         "pdal",
+        "preds",
+        "proba",
+        "QGIS",
         "rectanglelabels",
+        "repvgg",
+        "skimage",
+        "SPPF",
+        "stds",
+        "thres",
+        "torchvision",
         "tqdm",
+        "ultralytics",
+        "unsqueeze",
         "voxels",
-        "YOLO"
+        "xlabel",
+        "xywh",
+        "xyxy",
+        "ylabel",
+        "YOLO",
+        "yolov",
+        "yscale"
     ],
     // Imports paths
     "python.analysis.extraPaths": [
         "./src/Efficient-Computing/Detection/Gold-YOLO"
     ],
-    // Jupyter notebooks
-    "notebook.formatOnSave.enabled": true,
 }
