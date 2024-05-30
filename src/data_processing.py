@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import numpy.typing as npt
+from box import Box, box_crop_in_box, box_pixels_full_to_cropped, intersection_ratio
 from osgeo import gdal
 from PIL import Image
 from tqdm.notebook import tqdm
@@ -15,9 +16,7 @@ gdal.UseExceptions()
 
 def get_image_path_from_full_annotation_path(annotations: Dict[Any, Any]) -> str:
     # Get the path to the full image
-    image_path = annotations["task"]["data"]["image"].replace(
-        "/data/local-files/?d=", "/"
-    )
+    image_path = annotations["task"]["data"]["image"].replace("/data/local-files/?d=", "/")
     image_path_tif = image_path.replace(".png", ".tif")
 
     # Keep the relative path
@@ -58,88 +57,6 @@ def get_cropping_limits(
         ]
     )
     return cropping_limits_x, cropping_limits_y
-
-
-class Box:
-    def __init__(self, x_min: float, y_min: float, x_max: float, y_max: float) -> None:
-        self.x_min = float(x_min)
-        self.y_min = float(y_min)
-        self.x_max = float(x_max)
-        self.y_max = float(y_max)
-
-    def __str__(self) -> str:
-        return f"(x_min: {self.x_min}, y_min: {self.y_min}, x_max: {self.x_max}, y_max: {self.y_max})"
-
-    def __repr__(self) -> str:
-        return f"({self.x_min}, {self.y_min}, {self.x_max}, {self.y_max})"
-
-    def __hash__(self) -> int:
-        return (self.x_min, self.y_min, self.x_max, self.y_max).__hash__()
-
-    def area(self) -> float:
-        return (self.x_max - self.x_min) * (self.y_max - self.y_min)
-
-    def short_name(self) -> str:
-        return f"{round(self.x_min)}_{round(self.y_min)}_{round(self.x_max)}_{round(self.y_max)}"
-
-    def as_list(self) -> List[float]:
-        """Returns the Box as a list.
-
-        Returns:
-            List[float]: [x_min, y_min, x_max, y_max]
-        """
-        return [self.x_min, self.y_min, self.x_max, self.y_max]
-
-
-def intersection(box1: Box, box2: Box) -> float:
-    if ((box1.x_min <= box2.x_max) and (box1.x_max >= box2.x_min)) and (
-        (box1.y_min <= box2.y_max) and (box1.y_max >= box2.y_min)
-    ):
-        # Calculate the intersection coordinates
-        inter_x_min = max(box1.x_min, box2.x_min)
-        inter_y_min = max(box1.y_min, box2.y_min)
-        inter_x_max = min(box1.x_max, box2.x_max)
-        inter_y_max = min(box1.y_max, box2.y_max)
-
-        # Compute the area of the intersection
-        area = (inter_x_max - inter_x_min) * (inter_y_max - inter_y_min)
-        return area
-    else:
-        # No intersection, return 0
-        return 0
-
-
-def intersection_ratio(annot: Box, limits: Box) -> float:
-    """Computes (Area of the intersection of annot and limits) / (Area of annot)
-
-    Args:
-        annot (Box): the bounding box
-        limits (Box): the limits in which we want to put it
-
-    Returns:
-        float: (Area of the intersection of annot and limits) / (Area of annot)
-    """
-    if annot.area() == 0:
-        raise ValueError("The area of annot is 0.")
-    return intersection(annot, limits) / annot.area()
-
-
-def crop_box_in_box(to_crop: Box, limits: Box) -> Box:
-    return Box(
-        x_min=max(to_crop.x_min, limits.x_min),
-        y_min=max(to_crop.y_min, limits.y_min),
-        x_max=min(to_crop.x_max, limits.x_max),
-        y_max=min(to_crop.y_max, limits.y_max),
-    )
-
-
-def compute_box_local_coord(to_modify: Box, frame: Box):
-    return Box(
-        x_min=to_modify.x_min - frame.x_min,
-        y_min=to_modify.y_min - frame.y_min,
-        x_max=to_modify.x_max - frame.x_min,
-        y_max=to_modify.y_max - frame.y_min,
-    )
 
 
 class Annotation:
@@ -216,12 +133,8 @@ def find_annots_repartition(
         annot_value = annot_info["value"]
         x_min = int(round(annot_value["x"] * image_width_factor))
         y_min = int(round(annot_value["y"] * image_height_factor))
-        x_max = int(
-            round((annot_value["x"] + annot_value["width"]) * image_width_factor)
-        )
-        y_max = int(
-            round((annot_value["y"] + annot_value["height"]) * image_height_factor)
-        )
+        x_max = int(round((annot_value["x"] + annot_value["width"]) * image_width_factor))
+        y_max = int(round((annot_value["y"] + annot_value["height"]) * image_height_factor))
         id = annot_info["id"]
         label = annot_value["rectanglelabels"][0]
 
@@ -264,7 +177,7 @@ def crop_annots_into_limits(annots_repartition: Dict[Box, List[Annotation]]) -> 
         annots_repartition.items(), leave=False, desc="Cropping: Bounding boxes"
     ):
         for i, annot in enumerate(annots):
-            annots[i].box = crop_box_in_box(annot.box, limits_box)
+            annots[i].box = box_crop_in_box(annot.box, limits_box)
 
 
 def annots_coordinates_to_local(
@@ -281,7 +194,7 @@ def annots_coordinates_to_local(
         annots_repartition.items(), leave=False, desc="To local: Bounding boxes"
     ):
         for i, annot in enumerate(annots):
-            annots[i].box = compute_box_local_coord(annot.box, limits_box)
+            annots[i].box = box_pixels_full_to_cropped(annot.box, limits_box)
 
 
 def save_annots_per_image(
@@ -382,10 +295,15 @@ def get_coordinates_from_full_image_file_name(file_name: str) -> Tuple[int, int]
     return (int(splitted_name[-4]), int(splitted_name[-3]))
 
 
-def get_bbox_from_full_image_file_name(file_name: str) -> Box:
+def get_coordinates_bbox_from_full_image_file_name(file_name: str) -> Box:
     x, y = get_coordinates_from_full_image_file_name(file_name)
-    image_size = 10000
+    image_size = 1000
     return Box(x_min=x, y_min=y - image_size, x_max=x + image_size, y_max=y)
+
+
+def get_pixels_bbox_from_full_image_file_name(file_name: str) -> Box:
+    image_size = 12500
+    return Box(x_min=0, y_min=0, x_max=image_size, y_max=image_size)
 
 
 def crop_all_rgb_and_chm_images_from_annotations_folder(
@@ -452,18 +370,12 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
                 chm_unfiltered_output_folder_path, output_file
             )
             if not os.path.exists(chm_unfiltered_output_path):
-                crop_image_from_box(
-                    full_chm_unfiltered_path, image_box, chm_unfiltered_output_path
-                )
+                crop_image_from_box(full_chm_unfiltered_path, image_box, chm_unfiltered_output_path)
 
             # Create the cropped filtered CHM image
-            chm_filtered_output_path = os.path.join(
-                chm_filtered_output_folder_path, output_file
-            )
+            chm_filtered_output_path = os.path.join(chm_filtered_output_folder_path, output_file)
             if not os.path.exists(chm_filtered_output_path):
-                crop_image_from_box(
-                    full_chm_filtered_path, image_box, chm_filtered_output_path
-                )
+                crop_image_from_box(full_chm_filtered_path, image_box, chm_filtered_output_path)
 
 
 class ImageData:

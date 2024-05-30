@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple
 
 from ultralytics.utils.loss import v8DetectionLoss
 
+
 sys.path.append(os.path.abspath("Efficient-Computing/Detection/Gold-YOLO"))
 
 import cv2
@@ -12,7 +13,6 @@ import numpy.typing as npt
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
-from cbam import CBAM
 from PIL import Image
 from ultralytics.engine.results import Results
 from ultralytics.models.utils.loss import DETRLoss
@@ -20,9 +20,11 @@ from ultralytics.nn.modules.block import Bottleneck, C2f
 from ultralytics.nn.modules.conv import Conv
 from ultralytics.nn.modules.head import Detect
 from ultralytics.utils import ops
-from utils import download_file
 from yolov6.models.yolo import build_network, make_divisible
 from yolov6.utils.config import Config
+
+from cbam import CBAM
+from utils import download_file
 
 
 def get_scale_constants(scale: str) -> Tuple[float, float, float]:
@@ -79,8 +81,7 @@ class C2f0(C2f):
         self.cv1 = Conv0(c1, 2 * self.c, 1, 1)
         self.cv2 = Conv0((2 + n) * self.c, c2, 1)  # optional act=FReLU(c2)
         self.m = nn.ModuleList(
-            Bottleneck0(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0)
-            for _ in range(n)
+            Bottleneck0(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) for _ in range(n)
         )
 
 
@@ -134,7 +135,7 @@ class YOLOv8Backbone(nn.Module):
                 round(self.INPUT_SIZE * shape[0] / shape[1]),
                 self.INPUT_SIZE,
             )
-        resize = transforms.Resize(resized_shape, antialias=True)  # type: ignore # antialias=True helps preventing a warning
+        resize = transforms.Resize(resized_shape, antialias=True)
         return resize(x)
 
     def forward(
@@ -168,9 +169,7 @@ class YOLOv8Backbone(nn.Module):
         if first_conv not in first_conv_values:
             raise Exception(f"first_conv must be chosen among {first_conv_values}.")
         if first_conv == "exact" and self.c_input != 3:
-            raise Exception(
-                "first_conv == 'exact' is only possible if self.c_input == 3."
-            )
+            raise Exception("first_conv == 'exact' is only possible if self.c_input == 3.")
         if state_path is None:
             state_path = f"../models/yolov8{self.scale}.pt"
         if isinstance(state_path, str):
@@ -179,9 +178,7 @@ class YOLOv8Backbone(nn.Module):
                     url = f"https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8{self.scale}.pt"
                     download_file(url, state_path)
                 else:
-                    raise Exception(
-                        f"There is no file at {os.path.abspath(state_path)}."
-                    )
+                    raise Exception(f"There is no file at {os.path.abspath(state_path)}.")
         state_dict = torch.load(state_path)
 
         # Dictionary of equivalence between layers
@@ -286,9 +283,7 @@ class AMFNet(nn.Module):
             ]
         )
 
-    def forward(
-        self, x_left: torch.Tensor, x_right: torch.Tensor
-    ) -> List[torch.Tensor]:
+    def forward(self, x_left: torch.Tensor, x_right: torch.Tensor) -> List[torch.Tensor]:
         layers = [2, 3, 4, 5]
         left_outputs: Tuple[torch.Tensor] = self.yolo_backbone_left(x_left, layers)
         right_outputs: Tuple[torch.Tensor] = self.yolo_backbone_right(x_right, layers)
@@ -326,7 +321,6 @@ class GD(nn.Module):
         return list(self.model.forward(tuple(x)))
 
 
-# class AMF_GD_YOLOv8(Model):
 class AMF_GD_YOLOv8(nn.Module):
     def __init__(
         self,
@@ -334,6 +328,7 @@ class AMF_GD_YOLOv8(nn.Module):
         c_input_right: int,
         class_names: Dict[int, str],
         device: torch.device,
+        name: str,
         scale: str = "n",
         r: int = 16,
         gd_config_file: str | None = None,
@@ -348,6 +343,7 @@ class AMF_GD_YOLOv8(nn.Module):
 
         self.class_names = class_names
         self.class_indices = {value: key for key, value in class_names.items()}
+        self.name = name
 
         # AMFNet structure
         self.amfnet = AMFNet(c_input_left, c_input_right, scale, r).to(device)
@@ -363,8 +359,7 @@ class AMF_GD_YOLOv8(nn.Module):
         channels_list = [
             make_divisible(i * width, 8)
             for i in (
-                self.gd_config.model.backbone.out_channels
-                + self.gd_config.model.neck.out_channels
+                self.gd_config.model.backbone.out_channels + self.gd_config.model.neck.out_channels
             )
         ]
         out_channels = [channels_list[6], channels_list[8], channels_list[10]]
@@ -498,7 +493,7 @@ class TrainingLoss(v8DetectionLoss):
     """
 
     def preprocess(self, targets, batch_size, scale_tensor):
-        """Preprocesses the target counts and matches with the input batch size to output a tensor."""
+        """Pre-processes the target counts and matches with the input batch size to output a tensor."""
         if targets.shape[0] == 0:
             out = torch.zeros(batch_size, 0, 5, device=self.device)
         else:
@@ -531,9 +526,7 @@ def extract_bboxes(
         new_conf_thres = -torch.kthvalue(-max_scores[0], k=number_best)[0].item()
 
     if conf_thres is None:
-        assert (
-            number_best is not None
-        ), "number_best should not be None if conf_thres is None."
+        assert number_best is not None, "number_best should not be None if conf_thres is None."
         preds_nms = ops.non_max_suppression(preds, new_conf_thres, iou_thres)[0]
 
     else:
@@ -541,12 +534,8 @@ def extract_bboxes(
         if number_best is not None and preds_nms.shape[0] == 0:
             preds_nms = ops.non_max_suppression(preds, new_conf_thres, iou_thres)[0]
 
-    preds_nms[:, :4] = ops.scale_boxes(
-        input_img_shape, preds_nms[:, :4], origin_image.shape
-    )
-    return Results(
-        origin_image, path=origin_image_path, names=class_names, boxes=preds_nms
-    )
+    preds_nms[:, :4] = ops.scale_boxes(input_img_shape, preds_nms[:, :4], origin_image.shape)
+    return Results(origin_image, path=origin_image_path, names=class_names, boxes=preds_nms)
 
 
 def swap_image_b_r(image: Image.Image) -> Image.Image:
@@ -570,9 +559,7 @@ def xywh2xyxy(x):
     Returns:
         y (np.ndarray | torch.Tensor): The bounding box coordinates in (x1, y1, x2, y2) format.
     """
-    assert (
-        x.shape[-1] == 4
-    ), f"input shape last dimension expected 4 but input shape is {x.shape}"
+    assert x.shape[-1] == 4, f"input shape last dimension expected 4 but input shape is {x.shape}"
     y = (
         torch.empty_like(x) if isinstance(x, torch.Tensor) else np.empty_like(x)
     )  # faster than clone/copy

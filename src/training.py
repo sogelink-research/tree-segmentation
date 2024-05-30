@@ -4,20 +4,23 @@ import random
 from collections import defaultdict
 from typing import Callable, Dict, Iterable, List, Sequence, Tuple
 
-import cv2
+import geojson
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
 from albumentations import pytorch as Atorch
-from data_processing import ImageData
 from IPython import display
 from ipywidgets import Output
-from layers import AMF_GD_YOLOv8
-from plot import create_bboxes_image, get_bounding_boxes
 from skimage import io
 from torch.utils.data import DataLoader, Dataset, Sampler
 from tqdm.notebook import tqdm
+
+from box import Box
+from data_processing import ImageData, get_coordinates_from_full_image_file_name
+from geojson_conversions import merge_geojson_feature_collections, save_geojson
+from layers import AMF_GD_YOLOv8
+from plot import create_geojson_output, get_bounding_boxes
 from utils import Folders, get_file_base_name
 
 
@@ -34,13 +37,15 @@ class InvalidPathException(Exception):
         if type == "any":
             message = f"The path {path} (absolute path is {os.path.abspath(path)}) is invalid."
         elif type == "file":
-            message = f"The path {path} (absolute path is {os.path.abspath(path)}) is not a valid file."
-        elif type == "folder":
-            message = f"The path {path} (absolute path is {os.path.abspath(path)}) is not a valid folder."
-        else:
-            raise ValueError(
-                f'No InvalidPathException for type "{type}" is implemented.'
+            message = (
+                f"The path {path} (absolute path is {os.path.abspath(path)}) is not a valid file."
             )
+        elif type == "folder":
+            message = (
+                f"The path {path} (absolute path is {os.path.abspath(path)}) is not a valid folder."
+            )
+        else:
+            raise ValueError(f'No InvalidPathException for type "{type}" is implemented.')
         super().__init__(message)
 
 
@@ -106,35 +111,6 @@ def _compute_channels_mean_and_std_file(
     return mean, std
 
 
-def create_gt_bboxes_image(
-    annotations_path: str,
-    rgb_path: str,
-    class_colors: Dict[str, Tuple[int, int, int]],
-    output_path: str | None = None,
-) -> np.ndarray:
-    """Creates and returns an image with the ground truth bounding boxes. The image can also be
-    saved directly if a path is given.
-
-    Args:
-        annotations_path (str): Path to the file containing the annotations.
-        rgb_path (str): Path to the file containing the image.
-        class_colors (Dict[str, Tuple[int, int, int]]): Dictionary associating a color to each
-        class name.
-        output_path (str | None, optional): An optional path to save the created image at.
-        Defaults to None.
-
-    Returns:
-        np.ndarray: The image with the bounding boxes.
-    """
-    rgb_image = io.imread(rgb_path)
-    bboxes, labels = get_bounding_boxes(annotations_path)
-    bboxes_list = [bbox.as_list() for bbox in bboxes]
-    image = create_bboxes_image(rgb_image, bboxes_list, labels, class_colors)
-    if output_path is not None:
-        io.imsave(output_path, image)
-    return image
-
-
 def normalize_rgb(image_rgb: torch.Tensor) -> torch.Tensor:
     """Normalizes the RGB image given as input, with values computed using 2023_122000_484000_RGB_hrl.tif
 
@@ -182,6 +158,10 @@ class TreeDataset(Dataset):
         files_paths_list: List[Dict[str, str]],
         labels_to_index: Dict[str, int],
         labels_to_color: Dict[str, Tuple[int, int, int]],
+        proba_drop_rgb: float = 0.0,
+        labels_transformation_drop_rgb: Dict[str, str | None] | None = None,
+        proba_drop_chm: float = 0.0,
+        labels_transformation_drop_chm: Dict[str, str | None] | None = None,
         dismissed_classes: List[str] = [],
         transform_spatial: Callable | None = None,
         transform_pixel: Callable | None = None,
@@ -190,37 +170,136 @@ class TreeDataset(Dataset):
         RGB and CHM data.
 
         Args:
-            files_paths_list (List[Dict[str, str]]): list of dictionaries containing the paths to RGB, CHM and annotations.
+            files_paths_list (List[Dict[str, str]]): list of dictionaries containing the paths to
+            RGB, CHM and annotations.
             labels_to_index (Dict[str, int]): dictionary associating a label name with an index.
-            labels_to_color (Dict[str, Tuple[int, int, int]]): dictionary associating a label name with a color.
-            dismissed_classes (List[str], optional): list of classes for which the bounding boxes are ignored. Defaults to [].
-            transform_spatial (Callable | None, optional): spatial augmentations applied to CHM and RGB images. Defaults to None.
-            transform_pixel (Callable | None, optional): pixel augmentations applied to RGB images. Defaults to None.
+            labels_to_color (Dict[str, Tuple[int, int, int]]): dictionary associating a label name
+            with a color.
+            proba_drop_rgb (float, optional): probability to drop the RGB image and replace it by a
+            tensor of zeros. Default to 0.0.
+            labels_transformation_drop_rgb (Dict[str, str] | None): indicates the labels that
+            change to another label if the RGB image is dropped. Is mandatory if proba_drop_rgb > 0.
+            Defaults to None.
+            proba_drop_chm (float, optional): probability to drop the CHM image and replace it by a
+            tensor of zeros. Default to 0.0.
+            labels_transformation_drop_chm (Dict[str, str] | None): indicates the labels that
+            change to another label if the CHM image is dropped. Is mandatory if proba_drop_chm > 0.
+            Defaults to None.
+            dismissed_classes (List[str], optional): list of classes for which the bounding boxes
+            are ignored. Defaults to [].
+            transform_spatial (Callable | None, optional): spatial augmentations applied to CHM and
+            RGB images. Defaults to None.
+            transform_pixel (Callable | None, optional): pixel augmentations applied to RGB images.
+            Defaults to None.
         """
+
+        assert (
+            0.0 <= proba_drop_rgb <= 1.0
+        ), f"proba_drop_rgb must be between 0 and 1: {proba_drop_rgb} is wrong."
+        assert (
+            0.0 <= proba_drop_chm <= 1.0
+        ), f"proba_drop_rgb must be between 0 and 1: {proba_drop_chm} is wrong."
+        assert (
+            0.0 <= proba_drop_rgb + proba_drop_chm <= 1.0
+        ), f"(proba_drop_rgb + proba_drop_chm) must be between 0 and 1: {proba_drop_rgb + proba_drop_chm} is wrong."
+        assert (
+            proba_drop_rgb == 0.0 or labels_transformation_drop_rgb is not None
+        ), "If (proba_drop_rgb > 0.0), then labels_transformation_drop_rgb must be a dictionary."
+        assert (
+            proba_drop_chm == 0.0 or labels_transformation_drop_chm is not None
+        ), "If (proba_drop_chm > 0.0), then labels_transformation_drop_chm must be a dictionary."
+
         self.files_paths_list = files_paths_list
         self.bboxes: List[List[List[float]]] = []
         self.labels: List[List[int]] = []
         for i, files_dict in enumerate(files_paths_list):
             annotations_file_path = files_dict["annotations"]
-            bboxes, labels = get_bounding_boxes(
-                annotations_file_path, dismissed_classes
-            )
+            bboxes, labels = get_bounding_boxes(annotations_file_path, dismissed_classes)
             self.bboxes.append([bbox.as_list() for bbox in bboxes])
             self.labels.append([labels_to_index[label] for label in labels])
 
         self.labels_to_index = labels_to_index
         self.labels_to_str = {value: key for key, value in self.labels_to_index.items()}
         self.labels_to_color = labels_to_color
+        self.proba_drop_rgb = proba_drop_rgb
+        self.labels_transformation_drop_rgb = labels_transformation_drop_rgb
+        self.proba_drop_chm = proba_drop_chm
+        self.labels_transformation_drop_chm = labels_transformation_drop_chm
         self.transform_spatial = transform_spatial
         self.transform_pixel = transform_pixel
 
     def __len__(self) -> int:
         return len(self.files_paths_list)
 
-    def get_unnormalized(self, idx) -> Dict[str, torch.Tensor]:
-        # if torch.is_tensor(idx):
-        #     idx = idx.tolist()
+    def random_chm_rgb_drop(
+        self,
+        image_rgb: np.ndarray,
+        image_chm: np.ndarray,
+        bboxes: List[List[float]],
+        labels: List[int],
+    ) -> Tuple[np.ndarray, np.ndarray, List[List[float]], List[int]]:
+        """Randomly drops the RGB or the CHM image with probabilities specified during
+        initialization. The bounding boxes labels are modified accordingly.
 
+        Args:
+            image_rgb (np.ndarray): RGB image.
+            image_chm (np.ndarray): CHM image
+            bboxes (List[List[float]]): bounding boxes.
+            labels (List[int]): class labels.
+
+        Raises:
+            TypeError: if self.labels_transformation_drop_rgb is None but the methods wants to drop
+            RGB.
+            TypeError: if self.labels_transformation_drop_chm is None but the methods wants to drop
+            CHM.
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray, List[List[float]], List[int]]: (RGB image, CHM image,
+            bounding boxes, class labels) after modification.
+        """
+        random_val = random.random()
+        if random_val < self.proba_drop_rgb:
+            # Drop RGB
+            if self.labels_transformation_drop_rgb is None:
+                raise TypeError("self.labels_transformation_drop_rgb shouldn't be None here.")
+            image_rgb = np.zeros_like(image_rgb)
+            # Replace the labels
+            drop: List[int] = []
+            for i, label in enumerate(labels):
+                label_str = self.labels_to_str[label]
+                new_label_str = self.labels_transformation_drop_rgb[label_str]
+                if new_label_str is None:
+                    drop.append(i)
+                else:
+                    new_label = self.labels_to_index[new_label_str]
+                    labels[i] = new_label
+            # Remove the bounding boxes to drop
+            for idx in reversed(drop):
+                bboxes.pop(idx)
+                labels.pop(idx)
+
+        elif random_val < self.proba_drop_rgb + self.proba_drop_chm:
+            # Drop CHM
+            if self.labels_transformation_drop_chm is None:
+                raise TypeError("self.labels_transformation_drop_chm shouldn't be None here.")
+            image_chm = np.zeros_like(image_chm)
+            # Replace the labels
+            drop: List[int] = []
+            for i, label in enumerate(labels):
+                label_str = self.labels_to_str[label]
+                new_label_str = self.labels_transformation_drop_chm[label_str]
+                if new_label_str is None:
+                    drop.append(i)
+                else:
+                    new_label = self.labels_to_index[new_label_str]
+                    labels[i] = new_label
+            # Remove the bounding boxes to drop
+            for idx in reversed(drop):
+                bboxes.pop(idx)
+                labels.pop(idx)
+        return image_rgb, image_chm, bboxes, labels
+
+    def get_not_normalized(self, idx: int) -> Dict[str, torch.Tensor]:
         # Read the images
         files_paths = self.files_paths_list[idx]
         rgb_path = files_paths["rgb"]
@@ -250,6 +329,10 @@ class TreeDataset(Dataset):
             transformed = self.transform_pixel(image=image_rgb)
             image_rgb = transformed["image"]
 
+        image_rgb, image_chm, bboxes, labels = self.random_chm_rgb_drop(
+            image_rgb, image_chm, bboxes, labels
+        )
+
         to_tensor = Atorch.ToTensorV2()
 
         sample = {
@@ -261,23 +344,71 @@ class TreeDataset(Dataset):
         }
         return sample
 
-    def __getitem__(self, idx):
-        sample = self.get_unnormalized(idx)
+    def __getitem__(self, idx: int):
+        sample = self.get_not_normalized(idx)
         sample["image_rgb"] = normalize_rgb(sample["image_rgb"])
         sample["image_chm"] = normalize_chm(sample["image_chm"])
 
         return sample
 
-    def get_rgb_image(self, idx) -> np.ndarray:
+    def get_rgb_image(self, idx: int) -> np.ndarray:
+        """Returns the RGB image corresponding to the index.
+
+        Args:
+            idx (int): index of the data.
+
+        Returns:
+            np.ndarray: RGB image.
+        """
         files_paths = self.files_paths_list[idx]
         rgb_path = files_paths["rgb"]
         image_rgb = io.imread(rgb_path)
         return image_rgb
 
+    def get_full_coords_name(self, idx: int) -> str:
+        """Returns the full coordinates name of the data corresponding to the image.
 
-def tree_dataset_collate_fn(
-    batch: List[Dict[str, torch.Tensor]]
-) -> Dict[str, torch.Tensor]:
+        Args:
+            idx (int): index of the data.
+
+        Returns:
+            str: full coordinates name (with full image coordinates and cropped pixels).
+        """
+        full_image_name = self.get_full_image_name(idx)
+        full_image_coords = get_coordinates_from_full_image_file_name(full_image_name)
+        coord_name = self.get_cropped_coords_name(idx)
+        return "_".join([str(full_image_coords[0]), str(full_image_coords[1]), coord_name])
+
+    def get_cropped_coords_name(self, idx: int) -> str:
+        """Return the pixel coordinates name of the data.
+
+        Args:
+            idx (int): index of the data.
+
+        Returns:
+            str: pixel coordinates name of the data.
+        """
+        files_paths = self.files_paths_list[idx]
+        rgb_path = files_paths["rgb"]
+        coord_name = get_file_base_name(rgb_path)
+        return coord_name
+
+    def get_full_image_name(self, idx: int) -> str:
+        """Returns the name of the full image from which the data comes.
+
+        Args:
+            idx (int): index of the data.
+
+        Returns:
+            str: name of the full image (without any extension).
+        """
+        files_paths = self.files_paths_list[idx]
+        rgb_path = files_paths["rgb"]
+        full_image_name = os.path.basename(os.path.dirname(rgb_path))
+        return full_image_name
+
+
+def tree_dataset_collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
     """Custom collate function for a Dataloader taking a TreeDataset.
 
     Args:
@@ -378,9 +509,7 @@ class TrainingMetrics:
         self.reset()
 
     def reset(self):
-        self.metrics = defaultdict(
-            lambda: defaultdict(lambda: {"epochs": [], "vals": []})
-        )
+        self.metrics = defaultdict(lambda: defaultdict(lambda: {"epochs": [], "avgs": []}))
         self.metrics_loop = defaultdict(
             lambda: defaultdict(lambda: {"val": 0.0, "count": 0, "avg": 0.0})
         )
@@ -393,7 +522,7 @@ class TrainingMetrics:
             for category_name, category_dict in metric_dict.items():
                 metric = self.metrics[metric_name][category_name]
                 metric["epochs"].append(epoch)
-                metric["vals"].append(category_dict["avg"])
+                metric["avgs"].append(category_dict["avg"])
         self.metrics_loop = defaultdict(
             lambda: defaultdict(lambda: {"val": 0.0, "count": 0, "avg": 0.0})
         )
@@ -405,7 +534,10 @@ class TrainingMetrics:
         metric["count"] += count
         metric["avg"] = metric["val"] / metric["count"]
 
-    def visualize(self):
+    def get_last(self, category_name: str, metric_name: str):
+        return self.metrics_loop[metric_name][category_name]["avg"]
+
+    def visualize(self, save_path: str | None = None):
         # Inspired from https://gitlab.com/robindar/dl-scaman_checker/-/blob/main/src/dl_scaman_checker/TP01.py
         with self.out:
             metrics_index: Dict[str, int] = {}
@@ -416,12 +548,10 @@ class TrainingMetrics:
                     if category_name not in categories_index.keys():
                         categories_index[category_name] = len(categories_index)
 
-            nrows = len(metrics_index)
+            nrows = max(len(metrics_index), 1)
             cmap = plt.get_cmap("tab10")
 
-            categories_colors = {
-                label: cmap(i) for i, label in enumerate(categories_index.keys())
-            }
+            categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
 
             fig = plt.figure(1, figsize=(6, 5 * nrows))
 
@@ -429,7 +559,7 @@ class TrainingMetrics:
                 ax = fig.add_subplot(nrows, 1, metrics_index[metric_name] + 1)
                 for category_name, category_dict in metric_dict.items():
                     epochs = category_dict["epochs"]
-                    values = category_dict["vals"]
+                    values = category_dict["avgs"]
                     fmt = "-" if len(epochs) > 100 else "-o"
                     ax.plot(
                         epochs,
@@ -444,7 +574,14 @@ class TrainingMetrics:
                     ax.set_ylabel(metric_name)
                 ax.set_title(f"{metric_name}")
             plt.tight_layout()
-            plt.legend()
+
+            has_legend, _ = plt.gca().get_legend_handles_labels()
+            if any(label != "" for label in has_legend):
+                plt.legend()
+
+            if save_path is not None:
+                plt.savefig(save_path, dpi=200)
+
             plt.show()
             display.clear_output(wait=True)
 
@@ -475,9 +612,9 @@ def perfect_preds(
             torch.cat(
                 (
                     pred,
-                    torch.zeros(
-                        (pred.shape[0], pred.shape[1], 8400 - pred.shape[2])
-                    ).to(pred.device),
+                    torch.zeros((pred.shape[0], pred.shape[1], 8400 - pred.shape[2])).to(
+                        pred.device
+                    ),
                 ),
                 dim=2,
             )
@@ -507,7 +644,6 @@ def train(
 ) -> int:
     model.train()
     stream = tqdm(train_loader, leave=False, desc="Training")
-    # stream.set_description(f"Epoch: {epoch}. Training.")
     for data in stream:
         image_rgb: torch.Tensor = data["image_rgb"]
         image_chm: torch.Tensor = data["image_chm"]
@@ -544,10 +680,9 @@ def validate(
     model: AMF_GD_YOLOv8,
     device: torch.device,
     training_metrics: TrainingMetrics,
-):
+) -> float:
     model.eval()
     stream = tqdm(val_loader, leave=False, desc="Validation")
-    # stream.set_description(f"Epoch: {epoch}. Validation.")
     with torch.no_grad():
         for data in stream:
             image_rgb: torch.Tensor = data["image_rgb"]
@@ -563,12 +698,12 @@ def validate(
             gt_indices = gt_indices.to(device, non_blocking=True)
 
             output = model(image_rgb, image_chm)
-            total_loss = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)[
-                0
-            ]
+            total_loss = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)[0]
 
             batch_size = image_rgb.shape[0]
             training_metrics.update("Validation", "Loss", total_loss.item(), batch_size)
+
+    return training_metrics.get_last("Validation", "Loss")
 
 
 def test_save_output_image(
@@ -576,21 +711,30 @@ def test_save_output_image(
     test_loader: TreeDataLoader,
     epoch: int,
     device: torch.device,
-    number_images: int = 1,
+    no_rgb: bool = False,
+    no_chm: bool = False,
+    save_path: str | None = None,
 ):
-    saved_images = 0
-    number_images = min(len(test_loader), number_images)
     model.eval()
+    geojson_outputs: List[geojson.FeatureCollection] = []
     with torch.no_grad():
-        for data in test_loader:
+        for data in tqdm(test_loader, leave=False, desc="Exporting output"):
             image_rgb: torch.Tensor = data["image_rgb"]
+            if no_rgb:
+                image_rgb = torch.zeros_like(image_rgb)
             image_chm: torch.Tensor = data["image_chm"]
+            if no_chm:
+                image_chm = torch.zeros_like(image_chm)
             image_rgb = image_rgb.to(device, non_blocking=True)
             image_chm = image_chm.to(device, non_blocking=True)
             results = model.predict(image_rgb, image_chm)[2]
 
-            initial_rgb = test_loader.dataset.get_rgb_image(data["image_indices"])
-            colors_dict = test_loader.dataset.labels_to_color
+            idx = data["image_indices"]
+
+            # initial_rgb = test_loader.dataset.get_rgb_image(idx)
+            # full_coords_name = test_loader.dataset.get_full_coords_name(idx)
+            # colors_dict = test_loader.dataset.labels_to_color
+
             if results.boxes is not None:
                 bboxes = results.boxes.xyxy.tolist()
                 labels = [results.names[cls.item()] for cls in results.boxes.cls]
@@ -601,40 +745,43 @@ def test_save_output_image(
                 scores = []
 
             # Save the image if there is at least one bounding box
-            if len(bboxes) > 0:
-                bboxes_image = create_bboxes_image(
-                    image=initial_rgb,
-                    bboxes=bboxes,
-                    labels=labels,
-                    colors_dict=colors_dict,
-                    scores=scores,
-                    color_mode="bgr",
-                )
+            # bboxes_image = create_bboxes_image(
+            #     image=initial_rgb,
+            #     bboxes=bboxes,
+            #     labels=labels,
+            #     colors_dict=colors_dict,
+            #     scores=scores,
+            #     color_mode="bgr",
+            # )
 
-                output_name = (
-                    f"Validation_bboxes_{epoch}_{saved_images}_{len(bboxes)}.png"
-                )
-                output_path = os.path.join(Folders.OUTPUT_DIR.value, output_name)
-                cv2.imwrite(output_path, bboxes_image)
+            # output_name = f"Output_{epoch}ep_{full_coords_name}.png"
+            # output_path = os.path.join(Folders.OUTPUT_DIR.value, output_name)
+            # cv2.imwrite(output_path, bboxes_image)
 
-            saved_images += 1
-            if saved_images >= number_images:
-                break
+            # Store the bounding boxes in a GeoJSON file
+            full_image_name = test_loader.dataset.get_full_image_name(idx)
+            cropped_coords_name = test_loader.dataset.get_cropped_coords_name(idx)
+            bboxes_as_box = [Box.from_list(bbox) for bbox in bboxes]
+            geojson_features = create_geojson_output(
+                full_image_name, cropped_coords_name, bboxes_as_box, labels, scores
+            )
+            geojson_outputs.append(geojson_features)
+
+    geojson_outputs_merged = merge_geojson_feature_collections(geojson_outputs)
+    if save_path is None:
+        geojson_save_name = f"{model.name}_output_{epoch}ep.geojson"
+        geojson_save_path = os.path.join(Folders.OUTPUT_DIR.value, geojson_save_name)
+    else:
+        geojson_save_path = save_path
+    save_geojson(geojson_outputs_merged, geojson_save_path)
 
 
-def train_and_validate(
-    model: AMF_GD_YOLOv8,
+def initialize_dataloaders(
     datasets: Dict[str, TreeDataset],
-    lr: float,
-    epochs: int,
     batch_size: int,
     num_workers: int,
-    accumulate: int,
-    device: torch.device,
-) -> nn.Module:
-
+) -> Tuple[TreeDataLoader, TreeDataLoader, TreeDataLoader]:
     assert all(key in datasets for key in ["training", "validation", "test"])
-
     train_loader = TreeDataLoader(
         datasets["training"],
         batch_size=batch_size,
@@ -656,6 +803,24 @@ def train_and_validate(
         num_workers=1,
         pin_memory=True,
     )
+    return train_loader, val_loader, test_loader
+
+
+def train_and_validate(
+    model: AMF_GD_YOLOv8,
+    datasets: Dict[str, TreeDataset],
+    lr: float,
+    epochs: int,
+    batch_size: int,
+    num_workers: int,
+    accumulate: int,
+    device: torch.device,
+    save_outputs: bool,
+) -> nn.Module:
+
+    train_loader, val_loader, test_loader = initialize_dataloaders(
+        datasets, batch_size, num_workers
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer, lambda i: 1 / np.sqrt(i + 2), last_epoch=-1
@@ -666,10 +831,18 @@ def train_and_validate(
 
     training_metrics = TrainingMetrics()
 
-    test_save_output_image(
-        model=model, test_loader=test_loader, epoch=0, device=device, number_images=2
-    )
+    best_model = model
+    best_loss = np.inf
+
+    if save_outputs:
+        test_save_output_image(
+            model=model,
+            test_loader=test_loader,
+            epoch=0,
+            device=device,
+        )
     for epoch in tqdm(range(1, epochs + 1), desc="Epoch"):
+        training_metrics.visualize()
         running_accumulation_step = train(
             train_loader,
             model,
@@ -679,20 +852,28 @@ def train_and_validate(
             running_accumulation_step,
             training_metrics,
         )
-        validate(val_loader, model, device, training_metrics)
-        if epoch % 1 == 0:
+        current_loss = validate(val_loader, model, device, training_metrics)
+        if save_outputs and epoch % 1 == 0:
             test_save_output_image(
                 model=model,
                 test_loader=test_loader,
                 epoch=epoch,
                 device=device,
-                number_images=2,
             )
         scheduler.step()
 
+        # Store the best model
+        if current_loss < best_loss:
+            best_model = model
+            best_loss = current_loss
+
         training_metrics.end_loop(epoch)
-        training_metrics.visualize()
-    return model
+
+    # Save the plot showing the evolution of the metrics
+    training_metrics_name = f"{model.name}_training_metrics_plot.png"
+    training_metrics_path = os.path.join(Folders.OUTPUT_DIR.value, training_metrics_name)
+    training_metrics.visualize(save_path=training_metrics_path)
+    return best_model
 
 
 def get_all_files_iteratively(folder_path: str) -> List[str]:
@@ -779,9 +960,9 @@ def create_and_save_splitted_datasets(
                 image_data.base_name, image_data.coord_name
             )
 
-            annotations_file = rgb_file.replace(
-                rgb_folder_path, annotations_folder_path
-            ).replace(".tif", ".json")
+            annotations_file = rgb_file.replace(rgb_folder_path, annotations_folder_path).replace(
+                ".tif", ".json"
+            )
 
             new_dict = {
                 "rgb": rgb_file,
@@ -801,6 +982,10 @@ def load_tree_datasets_from_split(
     dismissed_classes: List[str] = [],
     transform_spatial_training: Callable | None = None,
     transform_pixel_training: Callable | None = None,
+    proba_drop_rgb: float = 0.0,
+    labels_transformation_drop_rgb: Dict[str, str | None] | None = None,
+    proba_drop_chm: float = 0.0,
+    labels_transformation_drop_chm: Dict[str, str | None] | None = None,
 ) -> Dict[str, TreeDataset]:
     with open(data_split_file_path, "r") as f:
         data_split = json.load(f)
@@ -810,6 +995,10 @@ def load_tree_datasets_from_split(
         data_split["training"],
         labels_to_index=labels_to_index,
         labels_to_color=labels_to_color,
+        proba_drop_rgb=proba_drop_rgb,
+        labels_transformation_drop_rgb=labels_transformation_drop_rgb,
+        proba_drop_chm=proba_drop_chm,
+        labels_transformation_drop_chm=labels_transformation_drop_chm,
         dismissed_classes=dismissed_classes,
         transform_spatial=transform_spatial_training,
         transform_pixel=transform_pixel_training,
@@ -819,6 +1008,10 @@ def load_tree_datasets_from_split(
         data_split["validation"],
         labels_to_index=labels_to_index,
         labels_to_color=labels_to_color,
+        proba_drop_rgb=0.0,
+        labels_transformation_drop_rgb=None,
+        proba_drop_chm=0.0,
+        labels_transformation_drop_chm=None,
         dismissed_classes=dismissed_classes,
         transform_spatial=None,
         transform_pixel=None,
@@ -833,6 +1026,10 @@ def load_tree_datasets_from_split(
         test_data,
         labels_to_index=labels_to_index,
         labels_to_color=labels_to_color,
+        proba_drop_rgb=0.0,
+        labels_transformation_drop_rgb=None,
+        proba_drop_chm=0.0,
+        labels_transformation_drop_chm=None,
         dismissed_classes=dismissed_classes,
         transform_spatial=None,
         transform_pixel=None,

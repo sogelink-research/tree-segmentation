@@ -3,9 +3,18 @@ from copy import deepcopy
 from typing import Any, Dict, List, Tuple
 
 import cv2
+import geojson
 import numpy as np
 import numpy.typing as npt
-from data_processing import Box
+from skimage import io
+
+from box import Box, box_pixels_cropped_to_full, box_pixels_to_coordinates
+from data_processing import (
+    get_coordinates_bbox_from_full_image_file_name,
+    get_pixels_bbox_from_full_image_file_name,
+)
+from geojson_conversions import bboxes_to_geojson_feature_collection, save_geojson
+
 
 type Number = float | int
 
@@ -87,9 +96,7 @@ def add_label_to_image(
         round(bbox[2]),
         round(bbox[3]),
     )
-    (w, h), baseline = cv2.getTextSize(
-        label, 0, fontScale=font_scale, thickness=thickness
-    )
+    (w, h), baseline = cv2.getTextSize(label, 0, fontScale=font_scale, thickness=thickness)
     margin = round(0.5 * baseline)
     p1, p2 = [0, 0], [0, 0]
     if y0 - (h + baseline) - (lw + 1) >= 0:
@@ -113,9 +120,7 @@ def add_label_to_image(
     sub_img_2 = deepcopy(image[p1[1] : p2[1], p1[0] : p2[0]])
 
     if sub_img.size > 0:
-        cv2.rectangle(
-            sub_img, (0, 0), (p2[0] - p1[0], p2[1] - p1[1]), color, -1, cv2.LINE_AA
-        )
+        cv2.rectangle(sub_img, (0, 0), (p2[0] - p1[0], p2[1] - p1[1]), color, -1, cv2.LINE_AA)
 
         alpha = 0.5  # Weight for the rectangle image
         beta = 1 - alpha  # Weight for the original image
@@ -168,3 +173,74 @@ def create_bboxes_image(
         add_label_to_image(image_copy, bbox, full_labels[i], colors[i])
 
     return image_copy
+
+
+def create_gt_bboxes_image(
+    annotations_path: str,
+    rgb_path: str,
+    class_colors: Dict[str, Tuple[int, int, int]],
+    output_path: str | None = None,
+) -> np.ndarray:
+    """Creates and returns an image with the ground truth bounding boxes. The image can also be
+    saved directly if a path is given.
+
+    Args:
+        annotations_path (str): Path to the file containing the annotations.
+        rgb_path (str): Path to the file containing the image.
+        class_colors (Dict[str, Tuple[int, int, int]]): Dictionary associating a color to each
+        class name.
+        output_path (str | None, optional): An optional path to save the created image at.
+        Defaults to None.
+
+    Returns:
+        np.ndarray: The image with the bounding boxes.
+    """
+    rgb_image = io.imread(rgb_path)
+    bboxes, labels = get_bounding_boxes(annotations_path)
+    bboxes_list = [bbox.as_list() for bbox in bboxes]
+    image = create_bboxes_image(rgb_image, bboxes_list, labels, class_colors)
+    if output_path is not None:
+        io.imsave(output_path, image)
+    return image
+
+
+def create_geojson_output(
+    full_image_name: str,
+    cropped_coords_name: str,
+    bboxes: List[Box],
+    labels: List[str],
+    scores: List[float] | None,
+    add_image_limits: bool = True,
+    save_path: str | None = None,
+) -> geojson.FeatureCollection:
+    full_image_coordinates_box = get_coordinates_bbox_from_full_image_file_name(full_image_name)
+    full_image_pixels_box = get_pixels_bbox_from_full_image_file_name(full_image_name)
+    cropped_image_pixels_box = Box.from_short_name(cropped_coords_name)
+    full_image_bboxes = [
+        box_pixels_cropped_to_full(bbox, cropped_image_pixels_box) for bbox in bboxes
+    ]
+    geocoords_bboxes = [
+        box_pixels_to_coordinates(bbox, full_image_pixels_box, full_image_coordinates_box)
+        for bbox in full_image_bboxes
+    ]
+
+    if add_image_limits:
+        geocoords_bboxes.append(
+            box_pixels_to_coordinates(
+                cropped_image_pixels_box,
+                full_image_pixels_box,
+                full_image_coordinates_box,
+            )
+        )
+        labels.append("Image_limits")
+        if scores is not None:
+            scores.append(-1)
+
+    feature_collection = bboxes_to_geojson_feature_collection(
+        geocoords_bboxes, labels, scores=scores
+    )
+
+    if save_path is not None:
+        save_geojson(feature_collection, save_path)
+
+    return feature_collection

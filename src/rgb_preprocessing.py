@@ -2,7 +2,7 @@ import os
 import zipfile
 from typing import Tuple
 
-from data_processing import get_bbox_from_full_image_file_name
+from data_processing import get_coordinates_bbox_from_full_image_file_name
 from osgeo import ogr
 from shapely.geometry import box
 from shapely.wkt import dumps
@@ -68,7 +68,7 @@ def download_rgb_names_shapefile(verbose: bool = True) -> str:
 
 
 def _get_block_perceel_from_image_file_name(image_file_name: str) -> Tuple[str, str]:
-    bbox = get_bbox_from_full_image_file_name(image_file_name)
+    bbox = get_coordinates_bbox_from_full_image_file_name(image_file_name)
 
     # Create a box geometry representing the extent of the TIF image
     bbox_shapely = box(

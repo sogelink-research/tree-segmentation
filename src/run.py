@@ -1,7 +1,7 @@
 import os
 
+from box import Box
 from chm import compute_chm, compute_dtm
-from data_processing import Box
 from lidar_preprocessing import crop_las
 
 if __name__ == "__main__":

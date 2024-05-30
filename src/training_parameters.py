@@ -1,6 +1,13 @@
 import albumentations as A
 import cv2
 
+
+# TODO: Replace the labels like this:
+# - Tree_unsure -> Remove this one
+# - Tree_disappeared -> Tree_CHM
+# - Tree_replaced -> Tree_incoherent
+# - Tree_new -> Tree_RGB
+
 crop_size = 640
 distort_steps = 30
 distort_limit = 0.2
@@ -44,7 +51,7 @@ transform_spatial = A.Compose(
     bbox_params=bbox_params,
 )
 
-transform_pixel = A.Compose(
+transform_pixel_rgb = A.Compose(
     [
         A.Sharpen(p=0.25),
         A.RingingOvershoot(p=0.5),
@@ -53,9 +60,31 @@ transform_pixel = A.Compose(
         A.GaussNoise(p=0.5),
         A.FancyPCA(alpha=1.0, p=0.5),
         A.Emboss(p=0.5),
-        A.Blur(p=0.5),
         A.RandomBrightnessContrast(p=1.0),
-        A.ChannelDropout(p=0.25),
         A.CLAHE(clip_limit=2.0, p=0.25),
+        A.ChannelDropout(channel_drop_range=(1, 1), p=0.25),
     ],
 )
+
+transform_pixel_chm = A.Compose(
+    [
+        A.GaussNoise(var_limit=(0, 1.0), mean=0, p=0.5),
+    ],
+)
+
+proba_drop_rgb = 0.3
+labels_transformation_drop_rgb = {
+    "Tree": "Tree_disappeared",
+    "Tree_unsure": "Tree_disappeared",
+    "Tree_disappeared": "Tree_disappeared",
+    "Tree_replaced": "Tree_disappeared",
+    "Tree_new": None,
+}
+proba_drop_chm = 0.3
+labels_transformation_drop_chm = {
+    "Tree": "Tree_new",
+    "Tree_unsure": "Tree_new",
+    "Tree_disappeared": None,
+    "Tree_replaced": "Tree_new",
+    "Tree_new": "Tree_new",
+}
