@@ -2,12 +2,6 @@ import albumentations as A
 import cv2
 
 
-# TODO: Replace the labels like this:
-# - Tree_unsure -> Remove this one
-# - Tree_disappeared -> Tree_CHM
-# - Tree_replaced -> Tree_incoherent
-# - Tree_new -> Tree_RGB
-
 crop_size = 640
 distort_steps = 30
 distort_limit = 0.2
