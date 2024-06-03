@@ -2,6 +2,8 @@ data/*
 !data/annotations/
 data/annotations/*
 !data/annotations/full/
+!data/annotations/qgis/
+!data/annotations/label_studio/
 
 models/*
 
