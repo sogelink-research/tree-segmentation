@@ -9,7 +9,7 @@
 - Try to find how to add pixel augmentations to the CHM
 - Maybe try using AutoAlbumentations to find the best augmentations
 - If possible at one point, improve path manipulation
-- Change the labels t oa simpler and more understandable format:
+- Change the labels to a simpler and more understandable format:
     - "Tree" remains.
     - "Tree_unsure" should be removed. I could consider adding "Vegetation" or something like this for low vegetation.
     - "Tree_disappeared" becomes "Tree_LiDAR".

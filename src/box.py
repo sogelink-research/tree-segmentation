@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Sequence
+from typing import List, Sequence, Tuple
 
 
 class Box:
@@ -44,6 +44,14 @@ class Box:
             List[float]: [x_min, y_min, x_max, y_max].
         """
         return [self.x_min, self.y_min, self.x_max, self.y_max]
+
+    def as_tuple(self) -> Tuple[float, float, float, float]:
+        """Returns the Box as a tuple.
+
+        Returns:
+            Tuple[float, float, float, float]: (x_min, y_min, x_max, y_max).
+        """
+        return (self.x_min, self.y_min, self.x_max, self.y_max)
 
     @staticmethod
     def from_short_name(short_name: str) -> Box:

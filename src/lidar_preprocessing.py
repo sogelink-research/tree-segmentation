@@ -10,7 +10,7 @@ from shapely.geometry import box
 from shapely.wkt import dumps
 
 from box import Box
-from data_processing import ImageData
+from utils import ImageData
 from utils import Folders, download_file
 
 

@@ -1,12 +1,17 @@
 import os
 import zipfile
-from typing import Tuple
+from typing import List, Tuple
 
 from osgeo import ogr
 from shapely.geometry import box
 from shapely.wkt import dumps
+import geojson
+from shapely.geometry import Polygon
+import numpy as np
 
-from data_processing import get_coordinates_bbox_from_full_image_file_name
+from box import Box
+from geojson_conversions import get_bbox_polygon
+from utils import get_coordinates_bbox_from_full_image_file_name
 from utils import Folders, download_file, get_file_base_name
 
 
@@ -25,18 +30,21 @@ def _get_rgb_download_url(image_name_with_ext: str) -> str:
     return f"https://ns_hwh.fundaments.nl/hwh-ortho/2023/Ortho/{parcel_int}/{block}/beelden_tif_tegels/{image_name_with_ext}"
 
 
-def download_rgb_image(file_name: str, verbose: bool = True) -> None:
+def download_rgb_image_from_file_name(file_name: str, verbose: bool = True) -> str:
     """Downloads the RGB image corresponding to the given image.
 
     Args:
         file_name (str): the name or path of the image to download.
         verbose (bool, optional): whether to print messages about the behavior of the function.. Defaults to True.
+
+    Returns:
+        str: the path to the downloaded file.
     """
     image_name = f"{get_file_base_name(file_name)}.tif"
     image_url = _get_rgb_download_url(image_name)
-    print(image_url)
     image_path = os.path.join(Folders.FULL_IMAGES.value, image_name)
     download_file(image_url, image_path, verbose)
+    return image_path
 
 
 def download_rgb_names_shapefile(verbose: bool = True) -> str:
@@ -105,3 +113,62 @@ def _get_block_perceel_from_image_file_name(image_file_name: str) -> Tuple[str, 
         raise Exception("No corresponding block and parcel was found for this image.")
 
     return block, parcel
+
+
+def _get_block_perceel_from_polygon(polygon: geojson.Polygon) -> Tuple[List[str], List[str]]:
+    polygon_ogr = ogr.CreateGeometryFromWkt(Polygon(polygon["coordinates"][0]).wkt)
+
+    # Path to your shapefile
+    shapefile_path = download_rgb_names_shapefile()
+
+    # Open the shapefile
+    driver = ogr.GetDriverByName("ESRI Shapefile")
+    shp_ds = driver.Open(shapefile_path, 0)
+    layer = shp_ds.GetLayer()
+
+    # Get the intersection between TIF image and Shapefile
+    blocks = []
+    parcels = []
+    for feature in layer:
+        geom = feature.GetGeometryRef()
+        if geom.Intersects(polygon_ogr):
+            blocks.append(feature.GetField("BLOK"))
+            parcels.append(feature.GetField("PERCEEL"))
+            break
+
+    # Close the data source
+    shp_ds.Destroy()
+
+    if len(blocks) == 0:
+        raise Exception("No corresponding block and parcel was found for this image.")
+
+    return blocks, parcels
+
+
+def _get_rgb_name_from_box(box: Box) -> str:
+    return f"2023_{round(box.x_min)}_{round(box.y_max)}_RGB_hrl.tif"
+
+
+def download_rgb_image_from_polygon(polygon: geojson.Polygon, verbose: bool = True) -> List[str]:
+    """Downloads the RGB image corresponding to the given GeoJSON Polygon.
+
+    Args:
+        file_name (str): the name or path of the image to download.
+        verbose (bool, optional): whether to print messages about the behavior of the function.. Defaults to True.
+
+    Returns:
+        List[str]: the paths to the images.
+    """
+    bbox = get_bbox_polygon(polygon)
+    step = 1000
+    images_paths: List[str] = []
+    for x in np.arange(bbox.x_min - bbox.x_min % step, bbox.x_max - bbox.x_max % step, step):
+        print(x)
+        for y in np.arange(bbox.y_min, bbox.y_max, step):
+            print(y)
+            file_name = _get_rgb_name_from_box(
+                Box(round(x), round(y), round(x) + step, round(y) + step)
+            )
+            images_paths.append(download_rgb_image_from_file_name(file_name, verbose))
+
+    return images_paths

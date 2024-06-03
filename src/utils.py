@@ -2,9 +2,15 @@ import json
 import os
 from enum import Enum
 from time import time
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from requests import get
+from osgeo import gdal
+
+from box import Box
+
+
+gdal.UseExceptions()
 
 
 def _absolute_path(relative_path: str) -> str:
@@ -65,7 +71,7 @@ def download_file(url: str, save_path: str, no_ssl: bool = False, verbose: bool 
     """
     if os.path.exists(save_path):
         if verbose:
-            print(f"Download skipped.\nThere is already a file at '{os.path.abspath(save_path)}'.")
+            print(f"Download skipped: there is already a file at '{os.path.abspath(save_path)}'.")
         return
     # Send a GET request to the URL
     if no_ssl:
@@ -107,3 +113,48 @@ def get_file_base_name(file_path: str) -> str:
 def open_json(json_file_path: str) -> Dict[Any, Any]:
     with open(json_file_path, "r") as file:
         return json.load(file)
+
+
+def get_coordinates_from_full_image_file_name(file_name: str) -> Tuple[int, int]:
+    splitted_name = file_name.split("_")
+    return (int(splitted_name[-4]), int(splitted_name[-3]))
+
+
+def get_coordinates_bbox_from_full_image_file_name(file_name: str) -> Box:
+    x, y = get_coordinates_from_full_image_file_name(file_name)
+    image_size = 1000
+    return Box(x_min=x, y_min=y - image_size, x_max=x + image_size, y_max=y)
+
+
+def get_pixels_bbox_from_full_image_file_name(file_name: str) -> Box:
+    image_size = 12500
+    return Box(x_min=0, y_min=0, x_max=image_size, y_max=image_size)
+
+
+class ImageData:
+    def __init__(self, image_path: str) -> None:
+        self.path = image_path
+        # self._init_properties()
+        self.base_name = get_file_base_name(self.path)
+        self.coord_name = f"{round(self.coord_box.x_min)}_{round(self.coord_box.y_max)}"
+        # self.coord_box = get_coordinates_bbox_from_full_image_file_name(self.base_name)
+        # self.pixel_box = get_pixels_bbox_from_full_image_file_name(self.base_name)
+
+    def _init_properties(self):
+        ds = gdal.Open(self.path)
+
+        # Get the geotransform and projection
+        gt = ds.GetGeoTransform()
+
+        # Get the extent of the TIF image
+        x_min = gt[0]
+        y_max = gt[3]
+        x_max = x_min + gt[1] * ds.RasterXSize
+        y_min = y_max + gt[5] * ds.RasterYSize
+
+        self.coord_box = Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max)
+        self.width_pixel: int = ds.RasterXSize
+        self.height_pixel: int = ds.RasterYSize
+        self.pixel_box = Box(x_min=0, y_min=0, x_max=self.width_pixel, y_max=self.height_pixel)
+
+        ds = None

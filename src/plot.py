@@ -9,7 +9,7 @@ import numpy.typing as npt
 from skimage import io
 
 from box import Box, box_pixels_cropped_to_full, box_pixels_to_coordinates
-from data_processing import (
+from utils import (
     get_coordinates_bbox_from_full_image_file_name,
     get_pixels_bbox_from_full_image_file_name,
 )

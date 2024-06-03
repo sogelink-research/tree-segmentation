@@ -66,7 +66,7 @@ transform_pixel_chm = A.Compose(
     ],
 )
 
-proba_drop_rgb = 0.3
+proba_drop_rgb = 0.333
 labels_transformation_drop_rgb = {
     "Tree": "Tree_disappeared",
     "Tree_unsure": "Tree_disappeared",
@@ -74,7 +74,7 @@ labels_transformation_drop_rgb = {
     "Tree_replaced": "Tree_disappeared",
     "Tree_new": None,
 }
-proba_drop_chm = 0.3
+proba_drop_chm = 0.333
 labels_transformation_drop_chm = {
     "Tree": "Tree_new",
     "Tree_unsure": "Tree_new",
