@@ -2,9 +2,15 @@ import json
 import os
 from enum import Enum
 from time import time
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from requests import get
+from osgeo import gdal
+
+from box import Box
+
+
+gdal.UseExceptions()
 
 
 def _absolute_path(relative_path: str) -> str:
@@ -53,23 +59,25 @@ def create_all_folders() -> None:
         create_folder(folder.value)
 
 
-def download_file(url: str, save_path: str, verbose=True) -> None:
+def download_file(url: str, save_path: str, no_ssl: bool = False, verbose: bool = True) -> None:
     """Downloads a file from a URL and saves it at the given path.
     If a file already exists at this path, nothing is downloaded.
 
     Args:
         url (str): URL to download from.
         save_path (str): path to save the downloaded file.
+        no_ssl (bool, optional): if True, the SSL certificate check is skipped. Defaults to False.
         verbose (bool, optional): whether to print messages about the behavior of the function. Defaults to True.
     """
     if os.path.exists(save_path):
         if verbose:
-            print(
-                f"Download skipped.\nThere is already a file at '{os.path.abspath(save_path)}'."
-            )
+            print(f"Download skipped: there is already a file at '{os.path.abspath(save_path)}'.")
         return
     # Send a GET request to the URL
-    response = get(url)
+    if no_ssl:
+        response = get(url, verify=False)
+    else:
+        response = get(url)
 
     # Check if the request was successful (status code 200)
     if response.status_code == 200:
@@ -82,9 +90,7 @@ def download_file(url: str, save_path: str, verbose=True) -> None:
             print(f"Done.\nSaved at '{os.path.abspath(save_path)}'.")
     else:
         if verbose:
-            print(
-                f"Failed to download file from '{url}'. Status code: {response.status_code}"
-            )
+            print(f"Failed to download file from '{url}'. Status code: {response.status_code}")
 
 
 def measure_execution_time(func):
@@ -107,3 +113,48 @@ def get_file_base_name(file_path: str) -> str:
 def open_json(json_file_path: str) -> Dict[Any, Any]:
     with open(json_file_path, "r") as file:
         return json.load(file)
+
+
+def get_coordinates_from_full_image_file_name(file_name: str) -> Tuple[int, int]:
+    splitted_name = file_name.split("_")
+    return (int(splitted_name[-4]), int(splitted_name[-3]))
+
+
+def get_coordinates_bbox_from_full_image_file_name(file_name: str) -> Box:
+    x, y = get_coordinates_from_full_image_file_name(file_name)
+    image_size = 1000
+    return Box(x_min=x, y_min=y - image_size, x_max=x + image_size, y_max=y)
+
+
+def get_pixels_bbox_from_full_image_file_name(file_name: str) -> Box:
+    image_size = 12500
+    return Box(x_min=0, y_min=0, x_max=image_size, y_max=image_size)
+
+
+class ImageData:
+    def __init__(self, image_path: str) -> None:
+        self.path = image_path
+        # self._init_properties()
+        self.base_name = get_file_base_name(self.path)
+        self.coord_name = f"{round(self.coord_box.x_min)}_{round(self.coord_box.y_max)}"
+        # self.coord_box = get_coordinates_bbox_from_full_image_file_name(self.base_name)
+        # self.pixel_box = get_pixels_bbox_from_full_image_file_name(self.base_name)
+
+    def _init_properties(self):
+        ds = gdal.Open(self.path)
+
+        # Get the geotransform and projection
+        gt = ds.GetGeoTransform()
+
+        # Get the extent of the TIF image
+        x_min = gt[0]
+        y_max = gt[3]
+        x_max = x_min + gt[1] * ds.RasterXSize
+        y_min = y_max + gt[5] * ds.RasterYSize
+
+        self.coord_box = Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max)
+        self.width_pixel: int = ds.RasterXSize
+        self.height_pixel: int = ds.RasterYSize
+        self.pixel_box = Box(x_min=0, y_min=0, x_max=self.width_pixel, y_max=self.height_pixel)
+
+        ds = None

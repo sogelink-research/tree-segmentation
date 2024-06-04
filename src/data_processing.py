@@ -3,18 +3,39 @@ import os
 from copy import deepcopy
 from typing import Any, Dict, List, Tuple
 
+import geojson
 import numpy as np
 import numpy.typing as npt
 from osgeo import gdal
 from PIL import Image
-from utils import Folders, create_folder, get_file_base_name, open_json
+from tqdm.notebook import tqdm
+
+from box import (
+    Box,
+    box_coordinates_to_pixels,
+    box_pixels_to_coordinates,
+    box_crop_in_box,
+    box_pixels_full_to_cropped,
+    intersection_ratio,
+)
+from geojson_conversions import get_bbox_polygon
+from utils import (
+    Folders,
+    ImageData,
+    create_folder,
+    get_coordinates_from_full_image_file_name,
+    get_file_base_name,
+    open_json,
+)
+
+from shapely.geometry import Polygon, box
+
+gdal.UseExceptions()
 
 
-def get_image_path_from_full_annotation_path(annotations: Dict[Any, Any]) -> str:
+def _old_get_image_path_from_full_annotation_path(annotations: Dict[Any, Any]) -> str:
     # Get the path to the full image
-    image_path = annotations["task"]["data"]["image"].replace(
-        "/data/local-files/?d=", "/"
-    )
+    image_path = annotations["task"]["data"]["image"].replace("/data/local-files/?d=", "/")
     image_path_tif = image_path.replace(".png", ".tif")
 
     # Keep the relative path
@@ -32,8 +53,10 @@ def get_cropping_limits(
     image_width, image_height = image.size
 
     # Calculate the number of rows and columns needed
-    num_cols = int(np.ceil((image_width - overlap) / (tile_size - overlap)))
-    num_rows = int(np.ceil((image_height - overlap) / (tile_size - overlap)))
+    # num_cols = int(np.ceil((image_width - overlap) / (tile_size - overlap)))
+    # num_rows = int(np.ceil((image_height - overlap) / (tile_size - overlap)))
+    num_cols = (image_width - overlap) // (tile_size - overlap)
+    num_rows = (image_height - overlap) // (tile_size - overlap)
 
     # Get the limits of all the cropped images
     cropping_limits_x = np.array(
@@ -57,94 +80,12 @@ def get_cropping_limits(
     return cropping_limits_x, cropping_limits_y
 
 
-class Box:
-    def __init__(self, x_min: float, y_min: float, x_max: float, y_max: float) -> None:
-        self.x_min = float(x_min)
-        self.y_min = float(y_min)
-        self.x_max = float(x_max)
-        self.y_max = float(y_max)
-
-    def __str__(self) -> str:
-        return f"(x_min: {self.x_min}, y_min: {self.y_min}, x_max: {self.x_max}, y_max: {self.y_max})"
-
-    def __repr__(self) -> str:
-        return f"({self.x_min}, {self.y_min}, {self.x_max}, {self.y_max})"
-
-    def __hash__(self) -> int:
-        return (self.x_min, self.y_min, self.x_max, self.y_max).__hash__()
-
-    def area(self) -> float:
-        return (self.x_max - self.x_min) * (self.y_max - self.y_min)
-
-    def short_name(self) -> str:
-        return f"{round(self.x_min)}_{round(self.y_min)}_{round(self.x_max)}_{round(self.y_max)}"
-
-    def as_list(self) -> List[float]:
-        """Returns the Box as a list.
-
-        Returns:
-            List[float]: [x_min, y_min, x_max, y_max]
-        """
-        return [self.x_min, self.y_min, self.x_max, self.y_max]
-
-
-def intersection(box1: Box, box2: Box) -> float:
-    if ((box1.x_min <= box2.x_max) and (box1.x_max >= box2.x_min)) and (
-        (box1.y_min <= box2.y_max) and (box1.y_max >= box2.y_min)
-    ):
-        # Calculate the intersection coordinates
-        inter_x_min = max(box1.x_min, box2.x_min)
-        inter_y_min = max(box1.y_min, box2.y_min)
-        inter_x_max = min(box1.x_max, box2.x_max)
-        inter_y_max = min(box1.y_max, box2.y_max)
-
-        # Compute the area of the intersection
-        area = (inter_x_max - inter_x_min) * (inter_y_max - inter_y_min)
-        return area
-    else:
-        # No intersection, return 0
-        return 0
-
-
-def intersection_ratio(annot: Box, limits: Box) -> float:
-    """Computes (Area of the intersection of annot and limits) / (Area of annot)
-
-    Args:
-        annot (Box): the bounding box
-        limits (Box): the limits in which we want to put it
-
-    Returns:
-        float: (Area of the intersection of annot and limits) / (Area of annot)
-    """
-    if annot.area() == 0:
-        raise ValueError("The area of annot is 0.")
-    return intersection(annot, limits) / annot.area()
-
-
-def crop_box_in_box(to_crop: Box, limits: Box) -> Box:
-    return Box(
-        x_min=max(to_crop.x_min, limits.x_min),
-        y_min=max(to_crop.y_min, limits.y_min),
-        x_max=min(to_crop.x_max, limits.x_max),
-        y_max=min(to_crop.y_max, limits.y_max),
-    )
-
-
-def compute_box_local_coord(to_modify: Box, frame: Box):
-    return Box(
-        x_min=to_modify.x_min - frame.x_min,
-        y_min=to_modify.y_min - frame.y_min,
-        x_max=to_modify.x_max - frame.x_min,
-        y_max=to_modify.y_max - frame.y_min,
-    )
-
-
 class Annotation:
     def __init__(
         self,
         box: Box,
-        id: str,
         label: str,
+        id: str | None,
     ) -> None:
         self.box = box
         self.id = id
@@ -160,11 +101,12 @@ class Annotation:
         return (self.box, self.label).__hash__()
 
 
-def find_annots_repartition(
+def _old_find_annots_repartition(
     cropping_limits_x: npt.NDArray[np.int_],
     cropping_limits_y: npt.NDArray[np.int_],
     annotations: Dict[Any, Any],
     visibility_threshold: float,
+    dismissed_classes: List[str] | None = None,
 ) -> Dict[Box, List[Annotation]]:
     """Find the bounding boxes that fit in every image. The bounding boxes are taken
     if at least `visibility_threshold` of their area is within the image. The images
@@ -175,11 +117,13 @@ def find_annots_repartition(
     dismissed. Every image that intersects with such a bounding box is rejected.
 
     Args:
-        cropping_limits_x (npt.NDArray[np.int_]): limits of the images on the x axis
-        cropping_limits_y (npt.NDArray[np.int_]): limits of the images on the y axis
+        cropping_limits_x (npt.NDArray[np.int_]): limits of the images on the x axis.
+        cropping_limits_y (npt.NDArray[np.int_]): limits of the images on the y axis.
         annotations (Dict[Any, Any]): dictionary obtained from the json file
-        containing the annotations, directly from Label Studio
-        visibility_threshold (float): The threshold to select the bounding boxes
+        containing the annotations, directly from Label Studio.
+        visibility_threshold (float): threshold to select the bounding boxes.
+        dismissed_classes (List[str] | None): classes to ignore. The bounding boxes of this
+        class will be dismissed. Defaults to None.
 
     Returns:
         Dict[Box, List[Box]]: dictionary associating the bounding box of each image
@@ -187,6 +131,9 @@ def find_annots_repartition(
         not cropped to entirely fit in the image, and their coordinates are in the
         full image frame.
     """
+    if dismissed_classes is None:
+        dismissed_classes = []
+
     annots_repartition: Dict[Box, List[Annotation]] = {
         Box(x_limits[0], y_limits[0], x_limits[1], y_limits[1]): []
         for y_limits in cropping_limits_y
@@ -203,16 +150,12 @@ def find_annots_repartition(
     )
 
     # Iterate over each bounding box
-    for annot_info in annots:
+    for annot_info in tqdm(annots, leave=False, desc="Placing: Bounding boxes:"):
         annot_value = annot_info["value"]
         x_min = int(round(annot_value["x"] * image_width_factor))
         y_min = int(round(annot_value["y"] * image_height_factor))
-        x_max = int(
-            round((annot_value["x"] + annot_value["width"]) * image_width_factor)
-        )
-        y_max = int(
-            round((annot_value["y"] + annot_value["height"]) * image_height_factor)
-        )
+        x_max = int(round((annot_value["x"] + annot_value["width"]) * image_width_factor))
+        y_max = int(round((annot_value["y"] + annot_value["height"]) * image_height_factor))
         id = annot_info["id"]
         label = annot_value["rectanglelabels"][0]
 
@@ -235,9 +178,102 @@ def find_annots_repartition(
                 del annots_repartition[key]
         # If it is a tree, add it to the image if it fits in
         else:
+            if annot.label not in dismissed_classes:
+                for limit_box in annots_repartition:
+                    if intersection_ratio(annot.box, limit_box) > visibility_threshold:
+                        annots_repartition[limit_box].append(deepcopy(annot))
+
+    return annots_repartition
+
+
+def find_annots_repartition(
+    cropping_limits_x: npt.NDArray[np.int_],
+    cropping_limits_y: npt.NDArray[np.int_],
+    annotations: geojson.FeatureCollection,
+    image_data: ImageData,
+    visibility_threshold: float,
+    dismissed_classes: List[str] | None = None,
+) -> Dict[Box, List[Annotation]]:
+    """Find the bounding boxes that fit in every image. The bounding boxes are taken
+    if at least `visibility_threshold` of their area is within the image. The images
+    are a grid defined using `cropping_limits_x` and `cropping_limits_y`. The
+    bounding boxes are read from `annotations`.
+
+    Also, the bounding boxes labeled as "Not_labeled" are used as areas that should be
+    dismissed. Every image that intersects with such a bounding box is rejected.
+
+    Args:
+        cropping_limits_x (npt.NDArray[np.int_]): limits of the images on the x axis.
+        cropping_limits_y (npt.NDArray[np.int_]): limits of the images on the y axis.
+        annotations (geojson.FeatureCollection): features obtained from the GeoJSON file
+        containing the annotations, directly from Label Studio.
+        image_data (ImageData): data of the image.
+        visibility_threshold (float): threshold to select the bounding boxes.
+        dismissed_classes (List[str] | None): classes to ignore. The bounding boxes of this
+        class will be dismissed. Defaults to None.
+
+    Returns:
+        Dict[Box, List[Box]]: dictionary associating the bounding box of each image
+        with the list of tree bounding boxes that fit in. The tree bounding boxes are
+        not cropped to entirely fit in the image, and their coordinates are in the
+        full image frame.
+    """
+    if not isinstance(annotations, geojson.FeatureCollection):
+        raise TypeError('"annotations" should be a FeatureCollection.')
+
+    if dismissed_classes is None:
+        dismissed_classes = []
+
+    annots_repartition: Dict[Box, List[Annotation]] = {
+        Box(x_limits[0], y_limits[0], x_limits[1], y_limits[1]): []
+        for y_limits in cropping_limits_y
+        for x_limits in cropping_limits_x
+    }
+    annots = annotations["features"]
+
+    image_pixel_box = image_data.pixel_box
+    image_coord_box = image_data.coord_box
+
+    # Iterate over each polygon
+    for annot_info in tqdm(annots, leave=False, desc="Placing: Bounding boxes:"):
+        label = annot_info["properties"]["label"]
+        # If it is a polygon showing non labeled space, remove the image if it intersects with it
+        if label == "Not_labeled":
+            removal_polygon = Polygon(annot_info["geometry"]["coordinates"]).wkt
+            keys_to_delete: List[Box] = []
+            # Find the keys to delete
             for limit_box in annots_repartition:
-                if intersection_ratio(annot.box, limit_box) > visibility_threshold:
-                    annots_repartition[limit_box].append(deepcopy(annot))
+                limit_box_global = box_pixels_to_coordinates(
+                    limit_box,
+                    image_pixels_box=image_pixel_box,
+                    image_coordinates_box=image_coord_box,
+                )
+                limit_polygon = box(*limit_box_global.as_tuple()).wkt
+                if limit_polygon.intersects(removal_polygon):
+                    keys_to_delete.append(limit_box)
+
+            # Delete the keys
+            for key in keys_to_delete:
+                del annots_repartition[key]
+
+        # If it is a tree, add it to the image if it fits in
+        else:
+            polygon = annot_info["geometry"]
+            bbox = get_bbox_polygon(polygon)
+            bbox_local = box_coordinates_to_pixels(
+                bbox, image_coordinates_box=image_coord_box, image_pixels_box=image_pixel_box
+            )
+            id = annot_info["properties"]["id"]
+
+            annot = Annotation(
+                box=bbox_local,
+                label=label,
+                id=id,
+            )
+            if annot.label not in dismissed_classes:
+                for limit_box in annots_repartition:
+                    if intersection_ratio(annot.box, limit_box) > visibility_threshold:
+                        annots_repartition[limit_box].append(deepcopy(annot))
 
     return annots_repartition
 
@@ -250,13 +286,11 @@ def crop_annots_into_limits(annots_repartition: Dict[Box, List[Annotation]]) -> 
         annots_repartition (Dict[Box, List[Box]]): dictionary associating the
         bounding box of each image with the list of tree bounding boxes that fit in.
     """
-    for limits_box, annots in annots_repartition.items():
+    for limits_box, annots in tqdm(
+        annots_repartition.items(), leave=False, desc="Cropping: Bounding boxes"
+    ):
         for i, annot in enumerate(annots):
-            if annots[i].id == "Nk0K77Bbxd":
-                print(f"CROP: {annot.box = }")
-            annots[i].box = crop_box_in_box(annot.box, limits_box)
-            if annots[i].id == "Nk0K77Bbxd":
-                print(f"CROP:{annot.box = }")
+            annots[i].box = box_crop_in_box(annot.box, limits_box)
 
 
 def annots_coordinates_to_local(
@@ -269,13 +303,11 @@ def annots_coordinates_to_local(
         annots_repartition (Dict[Box, List[Box]]): dictionary associating the
         bounding box of each image with the list of tree bounding boxes that fit in.
     """
-    for limits_box, annots in annots_repartition.items():
+    for limits_box, annots in tqdm(
+        annots_repartition.items(), leave=False, desc="To local: Bounding boxes"
+    ):
         for i, annot in enumerate(annots):
-            if annots[i].id == "Nk0K77Bbxd":
-                print(f"LOCAL: {annot.box = }")
-            annots[i].box = compute_box_local_coord(annot.box, limits_box)
-            if annots[i].id == "Nk0K77Bbxd":
-                print(f"LOCAL: {annot.box = }")
+            annots[i].box = box_pixels_full_to_cropped(annot.box, limits_box)
 
 
 def save_annots_per_image(
@@ -293,7 +325,11 @@ def save_annots_per_image(
 
     create_folder(output_folder_path)
 
-    for image_box, annots in annots_repartition.items():
+    for image_box, annots in tqdm(
+        annots_repartition.items(),
+        leave=False,
+        desc="Saving annotations: Bounding boxes",
+    ):
         annots_dict = {
             "full_image": {
                 "path": full_image_path_tif,
@@ -326,6 +362,15 @@ def save_annots_per_image(
 
 
 def get_image_box_from_cropped_annotations(cropped_annotations: Dict[Any, Any]) -> Box:
+    """Returns the Box representing the boundaries of the image linked to the
+    cropped annotations.
+
+    Args:
+        cropped_annotations (Dict[Any, Any]): _description_
+
+    Returns:
+        Box: boundaries of the image.
+    """
     coords = cropped_annotations["full_image"]["coordinates_of_cropped_image"]
     return Box(
         x_min=coords["x_min"],
@@ -352,19 +397,10 @@ def crop_image_from_box(image_path: str, crop_box: Box, output_path: str) -> Non
     gdal.Translate(output_path, image_path, srcWin=window)
 
 
-def crop_image_from_cropped_annotations(
-    cropped_annotations: Dict[Any, Any], input_image_path: str, output_folder_path: str
-) -> None:
+def _get_cropped_image_name(cropped_annotations: Dict[Any, Any]) -> str:
     image_box = get_image_box_from_cropped_annotations(cropped_annotations)
-
-    output_file = f"{image_box.short_name()}.tif"
-    output_path = os.path.join(output_folder_path, output_file)
-
-    crop_image_from_box(input_image_path, image_box, output_path)
-
-
-def get_coordinates_from_full_image_file_name(file_name: str):
-    return (int(file_name[5:11]), int(file_name[12:18]))
+    cropped_image_file = f"{image_box.short_name()}.tif"
+    return cropped_image_file
 
 
 def crop_all_rgb_and_chm_images_from_annotations_folder(
@@ -372,7 +408,6 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
     resolution: float,
     full_rgb_path: str,
 ):
-    # TODO: Add a check to skip if the files already exist
     # Create the folders
     image_prefix = get_file_base_name(full_rgb_path)
     rgb_output_folder_path = os.path.join(Folders.CROPPED_IMAGES.value, image_prefix)
@@ -410,50 +445,31 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
     )
 
     # Iterate over the cropped annotations
-    for file_name in os.listdir(annotations_folder_path):
+    for file_name in tqdm(
+        os.listdir(annotations_folder_path),
+        leave=False,
+        desc="Cropping images: Cropped annotations",
+    ):
         annotations_file_path = os.path.join(annotations_folder_path, file_name)
         if os.path.splitext(annotations_file_path)[1] == ".json":
             # Get the annotations
             cropped_annotations = open_json(annotations_file_path)
+            output_file = _get_cropped_image_name(cropped_annotations)
+            image_box = get_image_box_from_cropped_annotations(cropped_annotations)
+
             # Create the cropped RGB image
-            crop_image_from_cropped_annotations(
-                cropped_annotations, full_rgb_path, rgb_output_folder_path
-            )
+            rgb_output_path = os.path.join(rgb_output_folder_path, output_file)
+            if not os.path.exists(rgb_output_path):
+                crop_image_from_box(full_rgb_path, image_box, rgb_output_path)
+
             # Create the cropped unfiltered CHM image
-            crop_image_from_cropped_annotations(
-                cropped_annotations,
-                full_chm_unfiltered_path,
-                chm_unfiltered_output_folder_path,
+            chm_unfiltered_output_path = os.path.join(
+                chm_unfiltered_output_folder_path, output_file
             )
+            if not os.path.exists(chm_unfiltered_output_path):
+                crop_image_from_box(full_chm_unfiltered_path, image_box, chm_unfiltered_output_path)
+
             # Create the cropped filtered CHM image
-            crop_image_from_cropped_annotations(
-                cropped_annotations,
-                full_chm_filtered_path,
-                chm_filtered_output_folder_path,
-            )
-
-
-class ImageData:
-    def __init__(self, image_path: str) -> None:
-        self.path = image_path
-        self._init_properties()
-        self.base_name = get_file_base_name(self.path)
-        self.coord_name = f"{round(self.coord_box.x_min)}_{round(self.coord_box.y_max)}"
-
-    def _init_properties(self):
-        ds = gdal.Open(self.path)
-
-        # Get the geotransform and projection
-        gt = ds.GetGeoTransform()
-
-        # Get the extent of the TIF image
-        x_min = gt[0]
-        y_max = gt[3]
-        x_max = x_min + gt[1] * ds.RasterXSize
-        y_min = y_max + gt[5] * ds.RasterYSize
-
-        self.coord_box = Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max)
-        self.width_pixel: int = ds.RasterXSize
-        self.height_pixel: int = ds.RasterYSize
-
-        ds = None
+            chm_filtered_output_path = os.path.join(chm_filtered_output_folder_path, output_file)
+            if not os.path.exists(chm_filtered_output_path):
+                crop_image_from_box(full_chm_filtered_path, image_box, chm_filtered_output_path)

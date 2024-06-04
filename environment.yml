@@ -40,6 +40,7 @@ dependencies:
   - pycocotools>=2.0
   - onnx>=1.10.0 # ONNX export
   - cmake
+  - geojson
 
   # Downloading files
   - requests
@@ -47,7 +48,9 @@ dependencies:
   - pip
   - pip:
       # TODO: use the real tqdm package when this PR https://github.com/tqdm/tqdm/pull/1504 will be finally accepted
-      - git+https://github.com/UFO-101/tqdm.git
+      # - git+https://github.com/UFO-101/tqdm.git
+      - vscode-tqdm
+
       - laspy[lazrs,laszip]
       - pyyaml>=5.3.1
 

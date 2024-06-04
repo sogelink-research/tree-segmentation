@@ -8,6 +8,7 @@ import numpy as np
 import pdal
 from osgeo import gdal
 
+
 gdal.UseExceptions()
 
 
@@ -87,7 +88,6 @@ def compute_dsm(
     ]
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
-    metadata = pipeline.metadata
     if verbose:
         print(f"Done: {count} points found. Saved at {output_tif_name}")
     return output_tif_name
@@ -113,13 +113,6 @@ def compute_dtm(
 
     pipeline_json = [
         las_file_name,
-        # {
-        #     "type": "filters.smrf",
-        #     "window": 33,
-        #     "slope": 1.0,
-        #     "threshold": 0.15,
-        #     "cell": 1.0,
-        # },
         {"type": "filters.range", "limits": "Classification[2:2]"},
         {
             "type": "writers.gdal",
@@ -136,7 +129,6 @@ def compute_dtm(
     ]
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
-    metadata = pipeline.metadata
 
     old_ds = gdal.Open(output_tif_name_temp)
 
@@ -146,9 +138,7 @@ def compute_dtm(
 
     band = new_ds.GetRasterBand(1)
 
-    gdal.FillNodata(
-        targetBand=band, maskBand=None, maxSearchDist=100, smoothingIterations=0
-    )
+    gdal.FillNodata(targetBand=band, maskBand=None, maxSearchDist=200, smoothingIterations=20)
 
     # new_ds.GetRasterBand(1).WriteArray(band.ReadAsArray())
 
@@ -229,10 +219,6 @@ def compute_chm(
     os.remove(las_file_name)
     os.remove(dtm_file_name)
     os.remove(dsm_file_name)
-    if verbose:
-        print(
-            f"The following files were removed:\n - {las_file_name}\n - {dtm_file_name}\n - {dsm_file_name}"
-        )
 
     if verbose:
         print(f"CHM calculation completed and saved to {output_tif_name}.")
@@ -262,7 +248,6 @@ def compute_laz_minus_ground_height(laz_file_name: str, verbose: bool = False):
 
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
-    metadata = pipeline.metadata
     if verbose:
         print(f"Done: {count} points found.")
 
