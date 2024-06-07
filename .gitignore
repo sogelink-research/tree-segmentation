@@ -6,5 +6,6 @@ data/annotations/*
 !data/annotations/label_studio/
 
 models/*
+!models/gd_configs/
 
 **/__pycache__
