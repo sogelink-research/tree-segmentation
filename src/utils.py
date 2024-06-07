@@ -39,6 +39,8 @@ class Folders(Enum):
 
     OUTPUT_DIR = _absolute_path("../data/others/model_output")
 
+    MODELS_AMF_GD_YOLOV8 = _absolute_path("../models/amf_gd_yolov8")
+
     CHM = _absolute_path("../data/chm/")
 
 
