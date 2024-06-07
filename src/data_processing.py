@@ -10,7 +10,7 @@ from osgeo import gdal
 from PIL import Image
 from tqdm.notebook import tqdm
 
-from box import (
+from box_cls import (
     Box,
     box_coordinates_to_pixels,
     box_pixels_to_coordinates,

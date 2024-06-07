@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Sequence, Tuple
+from typing import List, Sequence, Tuple, cast
 
 
 class Box:
@@ -55,11 +55,37 @@ class Box:
 
     @staticmethod
     def from_short_name(short_name: str) -> Box:
-        return Box(*map(int, short_name.split("_")))
+        return Box(*map(float, short_name.split("_")))
 
     @staticmethod
     def from_list(coords_list: Sequence[float | int]) -> Box:
         return Box(*coords_list)
+
+
+class BoxInt(Box):
+    def __init__(self, x_min: int, y_min: int, x_max: int, y_max: int) -> None:
+        self.x_min = round(x_min)
+        self.y_min = round(y_min)
+        self.x_max = round(x_max)
+        self.y_max = round(y_max)
+
+    def area(self) -> int:
+        return round(super().area())
+
+    def as_list(self) -> List[int]:
+        return list(map(round, super().as_list()))
+
+    def as_tuple(self) -> Tuple[int, int, int, int]:
+        int_tuple = tuple(map(round, super().as_tuple()))
+        return cast(Tuple[int, int, int, int], int_tuple)
+
+    @staticmethod
+    def from_short_name(short_name: str) -> BoxInt:
+        return BoxInt(*map(int, short_name.split("_")))
+
+    @staticmethod
+    def from_list(coords_list: Sequence[int]) -> BoxInt:
+        return BoxInt(*coords_list)
 
 
 def intersection(box1: Box, box2: Box) -> float:

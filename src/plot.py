@@ -8,7 +8,7 @@ import numpy as np
 import numpy.typing as npt
 from skimage import io
 
-from box import Box, box_pixels_cropped_to_full, box_pixels_to_coordinates
+from box_cls import Box, box_pixels_cropped_to_full, box_pixels_to_coordinates
 from utils import (
     get_coordinates_bbox_from_full_image_file_name,
     get_pixels_bbox_from_full_image_file_name,
@@ -16,7 +16,7 @@ from utils import (
 from geojson_conversions import bboxes_to_geojson_feature_collection, save_geojson
 
 
-type Number = float | int
+Number = float | int
 
 
 def get_bounding_boxes(

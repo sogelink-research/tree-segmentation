@@ -8,7 +8,7 @@ import shutil
 from requests import get
 from osgeo import gdal
 
-from box import Box
+from box_cls import Box
 
 
 gdal.UseExceptions()

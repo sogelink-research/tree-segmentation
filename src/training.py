@@ -16,7 +16,7 @@ from skimage import io
 from torch.utils.data import DataLoader, Dataset, Sampler
 from tqdm.notebook import tqdm
 
-from box import Box
+from box_cls import Box
 from data_processing import ImageData, get_coordinates_from_full_image_file_name
 from geojson_conversions import merge_geojson_feature_collections, save_geojson
 from layers import AMF_GD_YOLOv8

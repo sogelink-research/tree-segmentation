@@ -7,7 +7,7 @@ channels:
   - nvidia
 
 dependencies:
-  - python>=3.12
+  - python==3.11
   # Images manipulation
   - gdal
   - shapely
@@ -45,6 +45,8 @@ dependencies:
 
   # Downloading files
   - requests
+  - segment-geospatial
+  - leafmap
 
   - pip
   - pip:

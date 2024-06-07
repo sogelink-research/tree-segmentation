@@ -6,7 +6,7 @@ import geojson
 import geojson.utils as geo_utils
 import numpy as np
 
-from box import Box
+from box_cls import Box
 
 
 def bbox_to_geojson_polygon(bbox: Box) -> geojson.Polygon:

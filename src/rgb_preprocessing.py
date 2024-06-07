@@ -9,7 +9,7 @@ import geojson
 from shapely.geometry import Polygon
 import numpy as np
 
-from box import Box
+from box_cls import Box
 from geojson_conversions import get_bbox_polygon
 from utils import get_coordinates_bbox_from_full_image_file_name
 from utils import Folders, download_file, get_file_base_name
