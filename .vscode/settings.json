@@ -53,6 +53,8 @@
         "imsave",
         "imwrite",
         "ipywidgets",
+        "isneginf",
+        "isposinf",
         "keepdim",
         "kthvalue",
         "laspy",
