@@ -3,6 +3,7 @@ import os
 import random
 from collections import defaultdict
 from typing import Callable, Dict, Iterable, List, Sequence, Tuple
+from tifffile import tifffile
 
 import geojson
 import matplotlib.pyplot as plt
@@ -15,6 +16,7 @@ from ipywidgets import Output
 from skimage import io
 from torch.utils.data import DataLoader, Dataset, Sampler
 from tqdm.notebook import tqdm
+from PIL import Image
 
 from box_cls import Box
 from data_processing import ImageData, get_coordinates_from_full_image_file_name
@@ -150,6 +152,10 @@ def normalize_chm(image_chm: torch.Tensor, no_data_replacement: float = 0) -> to
     return (image_chm - mean_chm) / std_chm
 
 
+def is_tif_file(file_path: str) -> bool:
+    return file_path.lower().endswith((".tif", ".tiff"))
+
+
 class TreeDataset(Dataset):
     """Tree dataset."""
 
@@ -246,13 +252,19 @@ class TreeDataset(Dataset):
         return len(self.files_paths_list)
 
     def _read_rgb_image(self, image_path: str) -> np.ndarray:
-        image = io.imread(image_path)
+        if is_tif_file(image_path):
+            image = tifffile.imread(image_path)
+        else:
+            image = np.array(Image.open(image_path))
         if len(image.shape) == 2:
             image = image[..., np.newaxis]
         return image
 
     def _read_chm_image(self, image_path: str) -> np.ndarray:
-        image = io.imread(image_path)
+        if is_tif_file(image_path):
+            image = tifffile.imread(image_path)
+        else:
+            image = np.array(Image.open(image_path))
         if len(image.shape) == 2:
             image = image[..., np.newaxis]
         return image.astype(np.float32)

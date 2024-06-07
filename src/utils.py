@@ -151,12 +151,12 @@ def download_file(url: str, save_path: str, no_ssl: bool = False, verbose: bool 
 
 def measure_execution_time(func):
     def wrapper(*args, **kwargs):
+        print(f"Running {func.__name__}...", end=" ", flush=True)
         start_time = time.time()
-        print(f"Execution of {func.__name__}({args})...")
         result = func(*args, **kwargs)
         end_time = time.time()
         execution_time = end_time - start_time
-        print(f"Done in {round(execution_time, 3)} seconds")
+        print(f"Execution time: {execution_time:.4f} seconds")
         return result
 
     return wrapper

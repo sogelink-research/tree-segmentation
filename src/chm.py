@@ -1,7 +1,6 @@
 import json
 import os
 import subprocess
-import time
 from os.path import splitext
 from typing import Dict, List, Sequence, Tuple
 
@@ -9,24 +8,14 @@ import laspy
 import numpy as np
 import pdal
 from osgeo import gdal
+import rasterio
+import tifffile
+from tqdm.notebook import tqdm
 
-from utils import create_folder, Folders, remove_folder
+from utils import create_folder, Folders, remove_folder, measure_execution_time
 
 
 gdal.UseExceptions()
-
-
-def measure_execution_time(func):
-    def wrapper(*args, **kwargs):
-        print(f"Running {func.__name__}...", end=" ", flush=True)
-        start_time = time.time()
-        result = func(*args, **kwargs)
-        end_time = time.time()
-        execution_time = end_time - start_time
-        print(f"Execution time: {execution_time:.4f} seconds")
-        return result
-
-    return wrapper
 
 
 def create_temp_folder() -> str:
@@ -343,7 +332,7 @@ def compute_full_dtm(
         if verbose:
             print(f"Done: {count} points found. Saved at {output_tif_name}.")
     except Exception as e:
-        pass
+        raise e
     finally:
         remove_folder(temp_folder)
 
@@ -426,7 +415,7 @@ def slow_compute_slices_chm(
         print(subprocess.run([shell_run_path], shell=True))
 
     except Exception as e:
-        pass
+        raise e
     finally:
         remove_folder(temp_folder)
 
@@ -479,8 +468,7 @@ def compute_slice_chm_from_hag_laz(
             "resolution": resolution,
         },
     ]
-    pipeline = pdal.Pipeline(json.dumps(pipeline_json))
-    count = pipeline.execute()
+    pdal.Pipeline(json.dumps(pipeline_json))
 
 
 @measure_execution_time
@@ -521,69 +509,60 @@ def compute_slices_chm(
             )
 
     except Exception as e:
-        pass
+        raise e
     finally:
         remove_folder(temp_folder)
 
 
-# if __name__ == "__main__":
-#     input_path = "data/tests/Small_point_cloud.LAZ"
-#     resolution = 0.08
-#     z_limits_list = [
-#         (-np.inf, 0),
-#         (0, 1),
-#         (1, 2),
-#         (2, 3),
-#         (3, 4),
-#         (4, 5),
-#         (5, 6),
-#         (6, 7),
-#         (7, 8),
-#         (8, 9),
-#         (9, 10),
-#         (10, np.inf),
-#     ]
-#     output_paths = [
-#         f"data/tests/Small_point_cloud_minus_gh_slice_dsm_{i}.tif"
-#         for i in range(len(z_limits_list))
-#     ]
+def merge_all_chms(cropped_images_folders_paths: List[str]):
+    if len(cropped_images_folders_paths) == 0:
+        raise ValueError("cropped_images_folders_paths is empty.")
 
-#     t = time.time()
-#     for i in range(5):
-#         compute_slices_chm(
-#             laz_file_name=input_path,
-#             output_tif_paths=output_paths,
-#             resolution=resolution,
-#             z_limits_list=z_limits_list,
-#         )
-#     print(f"Executed in {time.time() - t:.3f} seconds")
+    folder_path_list = cropped_images_folders_paths[0].split(os.path.sep)
+    output_folder_path = os.path.join(
+        os.path.sep.join(folder_path_list[:-3]),
+        "merged",
+        os.path.sep.join(folder_path_list[-2:]),
+    )
 
-# full_dtm_path = "data/tests/Small_point_cloud_dtm.tif"
-# hag_path = "data/tests/Small_point_cloud_hag.LAZ"
+    create_folder(output_folder_path)
 
-# compute_full_dtm(
-#     input_path,
-#     output_tif_name=full_dtm_path,
-#     resolution=resolution,
-# )
-# compute_laz_minus_ground_height_with_dtm(
-#     input_path, output_laz_name=hag_path, dtm_file_name=full_dtm_path
-# )
-# t = time.time()
-# compute_slices_chm_from_hag_laz(
-#     hag_path,
-#     output_tif_paths=output_paths,
-#     resolution=resolution,
-#     z_limits_list=z_limits_list,
-# )
-# print(f"Executed in {time.time() - t:.3f} seconds")
+    cropped_chms_folders_paths = [
+        folder_path
+        for folder_path in cropped_images_folders_paths
+        if Folders.CHM.value in folder_path
+    ]
 
-# t = time.time()
-# for z_limits, output_path in zip(z_limits_list, output_paths):
-#     compute_slice_chm_from_hag_laz(
-#         hag_path,
-#         output_tif_path=output_path,
-#         resolution=resolution,
-#         z_limits=z_limits,
-#     )
-# print(f"Executed in {time.time() - t:.3f} seconds")
+    for image_name in tqdm(
+        os.listdir(cropped_images_folders_paths[0]), desc="Merging CHMs", leave=False
+    ):
+        all_images_paths = [
+            os.path.join(folder_path, image_name) for folder_path in cropped_chms_folders_paths
+        ]
+        output_path = os.path.join(output_folder_path, image_name)
+
+        # Load images as NumPy arrays
+        with rasterio.open(all_images_paths[0]) as img:
+            crs = img.crs
+            transform = img.transform
+
+        # tifffile is quicker to just open the files
+        images = [tifffile.imread(image_path) for image_path in all_images_paths]
+
+        # Stack images along a new axis to create a multi-channel image
+        multi_channel_image = np.stack(images, axis=-1)
+
+        # Save the result
+        with rasterio.open(
+            output_path,
+            "w",
+            driver="GTiff",
+            height=multi_channel_image.shape[0],
+            width=multi_channel_image.shape[1],
+            count=multi_channel_image.shape[2],
+            dtype=multi_channel_image.dtype,
+            crs=crs,
+            transform=transform,
+        ) as dst:
+            for i in range(multi_channel_image.shape[2]):
+                dst.write(multi_channel_image[:, :, i], i + 1)
