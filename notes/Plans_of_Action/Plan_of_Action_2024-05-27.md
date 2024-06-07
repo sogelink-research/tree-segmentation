@@ -32,7 +32,7 @@ As for this week, there are many things to do now that the main training functio
 
 When all this will be done, it will be time to start exploring new things, such as using **more layers**. This might imply to think about small modifications of the architecture to properly mix information from all kinds of data. The potential layers are the following:
 
-- **Hyperspectral** images
+- **Hyper-spectral** images
 - Multiple layers of **height**, obtained by removing all the points above a certain height above the ground, and computing a CHM on the remaining points.
 
 Finally, it would also be nice to see whether the model that is currently used can output masks instead of bounding boxes, or what would need to change.
