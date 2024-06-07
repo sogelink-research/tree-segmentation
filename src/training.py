@@ -13,7 +13,6 @@ from albumentations import pytorch as Atorch
 from IPython import display
 from ipywidgets import Output
 from PIL import Image
-from skimage import io
 from tifffile import tifffile
 from torch.utils.data import DataLoader, Dataset, Sampler
 from tqdm.notebook import tqdm
@@ -51,26 +50,76 @@ class InvalidPathException(Exception):
         super().__init__(message)
 
 
-def compute_channels_mean_and_std(
+def _compute_channels_mean_std_tensor(
+    image: torch.Tensor,
+    per_channel: bool,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Computes the mean and the standard deviation along every channel of the image given as input.
+
+    Args:
+        image (torch.Tensor): image tensor of shape [w, h] or [c, w, h].
+        per_channel (bool): whether to compute one value for each channel or one for the whole images.
+
+    Returns:
+        Tuple[torch.Tensor, torch.Tensor]: (mean, std), two tensors of shape (c,) if per_channel is
+        True and (1,) otherwise. They contain respectively the mean value and the standard deviation.
+    """
+    if len(image.shape) == 2:
+        image = image.unsqueeze(0)
+    dims = (0, 1) if per_channel else (0, 1, 2)
+    dtype = image.dtype if torch.is_floating_point(image) else torch.float32
+    mean = torch.mean(image.to(dtype), dim=dims).reshape(-1)
+    std = torch.std(image.to(dtype), dim=dims).reshape(-1)
+    return mean, std
+
+
+def _compute_channels_mean_and_std_file(
+    file_path: str,
+    per_channel: bool,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Computes the mean and the standard deviation along every channel of the image given as input.
+
+    Args:
+        file_path (str): path to the image.
+        per_channel (bool): whether to compute one value for each channel or one for the whole images.
+
+    Raises:
+        InvalidPathException: if the input path is not a file.
+
+    Returns:
+        Tuple[torch.Tensor, torch.Tensor]: (mean, std), two tensors of shape (c,) if per_channel is
+        True and (1,) otherwise. They contain respectively the mean value and the standard deviation.
+    """
+    if not os.path.isfile(file_path):
+        raise InvalidPathException(file_path, "file")
+    if is_tif_file(file_path):
+        image = torch.from_numpy(tifffile.imread(file_path))
+    else:
+        image = torch.from_numpy(np.array(Image.open(file_path)))
+    return _compute_channels_mean_std_tensor(image, per_channel)
+
+
+def compute_mean_and_std(
     file_or_folder_path: str,
-) -> Tuple[np.ndarray, np.ndarray]:
+    per_channel: bool,
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """Computes the mean and the standard deviation along every channel of the image(s) given as input
     (either as one file or a directory containing multiple files).
 
     Args:
-        file_or_folder_path (str): Path to the image or the folder of images.
+        file_or_folder_path (str): path to the image or the folder of images.
+        per_channel (bool): whether to compute one value for each channel or one for the whole images.
 
     Raises:
-        InvalidPathException: If the input path is neither a file, nor a directory.
+        InvalidPathException: if the input path is neither a file, nor a directory.
 
     Returns:
-        Tuple[np.ndarray, np.ndarray]: (mean, std), two arrays of shape (c,) where c is the number
-        of channels of the input image(s). They contain respectively the mean value and the standard
-        deviation of all images along each channel.
+        Tuple[torch.Tensor, torch.Tensor]: (mean, std), two tensors of shape (c,) if per_channel is
+        True and (1,) otherwise. They contain respectively the mean value and the standard deviation.
     """
     if os.path.isfile(file_or_folder_path):
         file_path = file_or_folder_path
-        return _compute_channels_mean_and_std_file(file_path)
+        return _compute_channels_mean_and_std_file(file_path, per_channel)
 
     elif os.path.isdir(file_or_folder_path):
         means = []
@@ -78,78 +127,62 @@ def compute_channels_mean_and_std(
         folder_path = file_or_folder_path
         for file_name in os.listdir(folder_path):
             file_path = os.path.join(folder_path, file_name)
-            mean, std = _compute_channels_mean_and_std_file(file_path)
+            mean, std = _compute_channels_mean_and_std_file(file_path, per_channel)
             means.append(mean)
             stds.append(std)
         mean_mean = np.mean(means, axis=0)
         mean_std = np.mean(stds, axis=0)
-        return mean_mean, mean_std
+        return torch.from_numpy(mean_mean), torch.from_numpy(mean_std)
 
     else:
         raise InvalidPathException(file_or_folder_path)
 
 
-def _compute_channels_mean_and_std_file(
-    file_path: str,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Computes the mean and the standard deviation along every channel of the image given as input
+def normalize(
+    image: torch.Tensor,
+    mean: torch.Tensor,
+    std: torch.Tensor,
+    replace_no_data: bool,
+    no_data_replacement: float = 0,
+) -> torch.Tensor:
+    """Normalizes the CHM image given as input.
 
     Args:
-        file_path (str): Path to the image.
-
-    Raises:
-        InvalidPathException: If the input path is not a file.
-
-    Returns:
-        Tuple[np.ndarray, np.ndarray]: (mean, std), two arrays of shape (c,) where c is the number
-        of channels of the input image. They contain respectively the mean value and the standard
-        deviation of all images along each channel.
-    """
-    if not os.path.isfile(file_path):
-        raise InvalidPathException(file_path, "file")
-    image = io.imread(file_path)
-    mean = np.array(np.mean(image, axis=(0, 1))).reshape(-1)
-    std = np.array(np.std(image, axis=(0, 1))).reshape(-1)
-    return mean, std
-
-
-def normalize_rgb(image_rgb: torch.Tensor) -> torch.Tensor:
-    """Normalizes the RGB image given as input, with values computed using 2023_122000_484000_RGB_hrl.tif
-
-    Args:
-        image_rgb (torch.Tensor): The RGB image to normalize (3 channels).
+        image (torch.Tensor): the image to normalize with c channels. Must be of shape [w, h] or [c, w, h].
+        mean (torch.Tensor): the mean to normalize with. Must be of shape [], [1] or [c].
+        std (torch.Tensor): the standard deviation to normalize with. Must be of shape [], [1] or [c].
+        replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
+        before normalization.
+        no_data_replacement (float): the value replacing NO_DATA (-9999) before normalization.
 
     Returns:
-        torch.Tensor: The normalized image, with a mean of 0 and a standard deviation of 1 along each channel.
+        torch.Tensor: the normalized image.
     """
-    # On the whole image
-    mean_rgb = torch.tensor([78.152, 88.417, 86.365]).view(-1, 1, 1)
-    std_rgb = torch.tensor([45.819, 42.492, 38.960]).view(-1, 1, 1)
-    # # On the labeled parts
-    # mean_rgb = torch.tensor([77.692, 89.142, 85.816]).view(-1, 1, 1)
-    # std_rgb = torch.tensor([34.3328, 32.1673, 27.6653]).view(-1, 1, 1)
-    return (image_rgb - mean_rgb) / std_rgb
+    if replace_no_data:
+        image = torch.where(image == -9999, no_data_replacement, image)
 
+    if len(image.shape) == 2:
+        image = image.unsqueeze(0)
 
-def normalize_chm(image_chm: torch.Tensor, no_data_replacement: float = 0) -> torch.Tensor:
-    """Normalizes the CHM image given as input, with values computed using the unfiltered CHM of
-    2023_122000_484000_RGB_hrl.tif with a resolution of 8cm.
-    The NO_DATA values, which are originally equal to -9999, are replaced by 0 before normalization.
+    channels = image.shape[0]
 
-    Args:
-        image_rgb (torch.Tensor): The CHM image to normalize (1 channel).
+    def reshape(tensor: torch.Tensor, name: str) -> torch.Tensor:
+        if len(tensor.shape) == 0:
+            tensor = torch.full((channels,), tensor.item())
+        elif len(tensor.shape) == 1 and tensor.shape[0] == 1:
+            tensor = torch.full((channels,), tensor[0].item())
+        elif len(tensor.shape) == 1 and tensor.shape[0] == channels:
+            pass
+        else:
+            raise ValueError(
+                f"Unsupported shape for `{name}`. It should be a tensor or shape [], [1] or [{channels}]"
+            )
+        return tensor.view(-1, 1, 1)
 
-    Returns:
-        torch.Tensor: The normalized image, with a mean of 0 and a standard deviation of 1 along each channel.
-    """
-    image_chm = torch.where(image_chm == -9999, no_data_replacement, image_chm)
-    # On the whole image
-    mean_chm = 2.4113
-    std_chm = 5.5642
-    # # On the labeled parts
-    # mean_chm = 3.0424
-    # std_chm = 4.5557
-    return (image_chm - mean_chm) / std_chm
+    mean = reshape(mean, "mean")
+    std = reshape(std, "std")
+
+    return (image - mean) / std
 
 
 def is_tif_file(file_path: str) -> bool:
@@ -164,13 +197,18 @@ class TreeDataset(Dataset):
         files_paths_list: List[Dict[str, str]],
         labels_to_index: Dict[str, int],
         labels_to_color: Dict[str, Tuple[int, int, int]],
+        mean_rgb: torch.Tensor,
+        std_rgb: torch.Tensor,
+        mean_chm: torch.Tensor,
+        std_chm: torch.Tensor,
         proba_drop_rgb: float = 0.0,
         labels_transformation_drop_rgb: Dict[str, str | None] | None = None,
         proba_drop_chm: float = 0.0,
         labels_transformation_drop_chm: Dict[str, str | None] | None = None,
         dismissed_classes: List[str] = [],
         transform_spatial: Callable | None = None,
-        transform_pixel: Callable | None = None,
+        transform_pixel_rgb: Callable | None = None,
+        transform_pixel_chm: Callable | None = None,
     ) -> None:
         """A dataset holding the necessary data for training a model on bounding boxes with
         RGB and CHM data.
@@ -181,6 +219,10 @@ class TreeDataset(Dataset):
             labels_to_index (Dict[str, int]): dictionary associating a label name with an index.
             labels_to_color (Dict[str, Tuple[int, int, int]]): dictionary associating a label name
             with a color.
+            mean_rgb (torch.Tensor): mean used to normalize RGB images.
+            std_rgb (torch.Tensor): standard deviation used to normalize RGB images.
+            mean_chm (torch.Tensor): mean used to normalize CHM images.
+            std_chm (torch.Tensor): standard deviation used to normalize CHM images.
             proba_drop_rgb (float, optional): probability to drop the RGB image and replace it by a
             tensor of zeros. Default to 0.0.
             labels_transformation_drop_rgb (Dict[str, str] | None): indicates the labels that
@@ -195,7 +237,9 @@ class TreeDataset(Dataset):
             are ignored. Defaults to [].
             transform_spatial (Callable | None, optional): spatial augmentations applied to CHM and
             RGB images. Defaults to None.
-            transform_pixel (Callable | None, optional): pixel augmentations applied to RGB images.
+            transform_pixel_rgb (Callable | None, optional): pixel augmentations applied to RGB images.
+            Defaults to None.
+            transform_pixel_chm (Callable | None, optional): pixel augmentations applied to CHM images.
             Defaults to None.
         """
 
@@ -227,12 +271,21 @@ class TreeDataset(Dataset):
         self.labels_to_index = labels_to_index
         self.labels_to_str = {value: key for key, value in self.labels_to_index.items()}
         self.labels_to_color = labels_to_color
+
         self.proba_drop_rgb = proba_drop_rgb
         self.labels_transformation_drop_rgb = labels_transformation_drop_rgb
         self.proba_drop_chm = proba_drop_chm
         self.labels_transformation_drop_chm = labels_transformation_drop_chm
+
         self.transform_spatial = transform_spatial
-        self.transform_pixel = transform_pixel
+        self.transform_pixel_rgb = transform_pixel_rgb
+        self.transform_pixel_chm = transform_pixel_chm
+
+        self.mean_rgb = mean_rgb
+        self.std_rgb = std_rgb
+        self.mean_chm = mean_chm
+        self.std_chm = std_chm
+
         self._init_channels_count()
 
     def _init_channels_count(self):
@@ -258,7 +311,7 @@ class TreeDataset(Dataset):
             image = np.array(Image.open(image_path))
         if len(image.shape) == 2:
             image = image[..., np.newaxis]
-        return image
+        return image.astype(np.int8)
 
     def _read_chm_image(self, image_path: str) -> np.ndarray:
         if is_tif_file(image_path):
@@ -363,9 +416,14 @@ class TreeDataset(Dataset):
             labels = transformed_spatial["class_labels"]
 
         # Apply the pixel transform the to RGB image
-        if self.transform_pixel is not None:
-            transformed = self.transform_pixel(image=image_rgb)
+        if self.transform_pixel_rgb is not None:
+            transformed = self.transform_pixel_rgb(image=image_rgb)
             image_rgb = transformed["image"]
+
+        # Apply the pixel transform the to CHM image
+        if self.transform_pixel_chm is not None:
+            transformed = self.transform_pixel_chm(image=image_chm)
+            image_chm = transformed["image"]
 
         image_rgb, image_chm, bboxes, labels = self.random_chm_rgb_drop(
             image_rgb, image_chm, bboxes, labels
@@ -374,8 +432,8 @@ class TreeDataset(Dataset):
         to_tensor = Atorch.ToTensorV2()
 
         sample = {
-            "image_rgb": to_tensor(image=image_rgb)["image"],
-            "image_chm": to_tensor(image=image_chm)["image"],
+            "image_rgb": to_tensor(image=image_rgb)["image"].to(torch.float32),
+            "image_chm": to_tensor(image=image_chm)["image"].to(torch.float32),
             "bboxes": torch.tensor(bboxes),
             "labels": torch.tensor(labels),
             "image_index": idx,
@@ -384,8 +442,16 @@ class TreeDataset(Dataset):
 
     def __getitem__(self, idx: int):
         sample = self.get_not_normalized(idx)
-        sample["image_rgb"] = normalize_rgb(sample["image_rgb"])
-        sample["image_chm"] = normalize_chm(sample["image_chm"])
+        sample["image_rgb"] = normalize(
+            sample["image_rgb"], self.mean_rgb, self.std_rgb, replace_no_data=False
+        )
+        sample["image_chm"] = normalize(
+            sample["image_chm"],
+            self.mean_chm,
+            self.std_chm,
+            replace_no_data=True,
+            no_data_replacement=-5,
+        )
 
         return sample
 
@@ -1017,9 +1083,14 @@ def load_tree_datasets_from_split(
     data_split_file_path: str,
     labels_to_index: Dict[str, int],
     labels_to_color: Dict[str, Tuple[int, int, int]],
+    mean_rgb: torch.Tensor,
+    std_rgb: torch.Tensor,
+    mean_chm: torch.Tensor,
+    std_chm: torch.Tensor,
     dismissed_classes: List[str] = [],
     transform_spatial_training: Callable | None = None,
-    transform_pixel_training: Callable | None = None,
+    transform_pixel_rgb_training: Callable | None = None,
+    transform_pixel_chm_training: Callable | None = None,
     proba_drop_rgb: float = 0.0,
     labels_transformation_drop_rgb: Dict[str, str | None] | None = None,
     proba_drop_chm: float = 0.0,
@@ -1033,26 +1104,36 @@ def load_tree_datasets_from_split(
         data_split["training"],
         labels_to_index=labels_to_index,
         labels_to_color=labels_to_color,
+        mean_rgb=mean_rgb,
+        std_rgb=std_rgb,
+        mean_chm=mean_chm,
+        std_chm=std_chm,
         proba_drop_rgb=proba_drop_rgb,
         labels_transformation_drop_rgb=labels_transformation_drop_rgb,
         proba_drop_chm=proba_drop_chm,
         labels_transformation_drop_chm=labels_transformation_drop_chm,
         dismissed_classes=dismissed_classes,
         transform_spatial=transform_spatial_training,
-        transform_pixel=transform_pixel_training,
+        transform_pixel_rgb=transform_pixel_rgb_training,
+        transform_pixel_chm=transform_pixel_chm_training,
     )
 
     tree_datasets["validation"] = TreeDataset(
         data_split["validation"],
         labels_to_index=labels_to_index,
         labels_to_color=labels_to_color,
+        mean_rgb=mean_rgb,
+        std_rgb=std_rgb,
+        mean_chm=mean_chm,
+        std_chm=std_chm,
         proba_drop_rgb=0.0,
         labels_transformation_drop_rgb=None,
         proba_drop_chm=0.0,
         labels_transformation_drop_chm=None,
         dismissed_classes=dismissed_classes,
         transform_spatial=None,
-        transform_pixel=None,
+        transform_pixel_rgb=None,
+        transform_pixel_chm=None,
     )
 
     if "test" in data_split:
@@ -1064,13 +1145,18 @@ def load_tree_datasets_from_split(
         test_data,
         labels_to_index=labels_to_index,
         labels_to_color=labels_to_color,
+        mean_rgb=mean_rgb,
+        std_rgb=std_rgb,
+        mean_chm=mean_chm,
+        std_chm=std_chm,
         proba_drop_rgb=0.0,
         labels_transformation_drop_rgb=None,
         proba_drop_chm=0.0,
         labels_transformation_drop_chm=None,
         dismissed_classes=dismissed_classes,
         transform_spatial=None,
-        transform_pixel=None,
+        transform_pixel_rgb=None,
+        transform_pixel_chm=None,
     )
 
     return tree_datasets

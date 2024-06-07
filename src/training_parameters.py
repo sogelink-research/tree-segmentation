@@ -31,38 +31,39 @@ bbox_params = A.BboxParams(
 transform_spatial = A.Compose(
     [
         A.RandomCrop(width=crop_size, height=crop_size, p=1.0),
-        A.GridDistortion(
-            num_steps=distort_steps,
-            distort_limit=(-distort_limit, distort_limit),
-            border_mode=cv2.BORDER_CONSTANT,
-            normalized=True,
-            p=0.5,
-        ),
+        # A.GridDistortion(
+        #     num_steps=distort_steps,
+        #     distort_limit=(-distort_limit, distort_limit),
+        #     border_mode=cv2.BORDER_CONSTANT,
+        #     normalized=True,
+        #     p=0.5,
+        # ),
         A.HorizontalFlip(p=0.5),
         A.RandomRotate90(p=1.0),
-        A.Perspective(interpolation=cv2.INTER_LINEAR, p=0.25),
+        # A.Perspective(interpolation=cv2.INTER_LINEAR, p=0.25),
     ],
     bbox_params=bbox_params,
 )
 
 transform_pixel_rgb = A.Compose(
     [
-        A.Sharpen(p=0.25),
-        A.RingingOvershoot(p=0.5),
-        A.RandomGamma(p=1.0),
-        A.GaussianBlur(p=0.5),
+        # A.Sharpen(p=0.25),
+        # A.RingingOvershoot(p=0.5),
+        # A.RandomGamma(p=1.0),
+        # A.GaussianBlur(p=0.5),
         A.GaussNoise(p=0.5),
-        A.FancyPCA(alpha=1.0, p=0.5),
-        A.Emboss(p=0.5),
-        A.RandomBrightnessContrast(p=1.0),
-        A.CLAHE(clip_limit=2.0, p=0.25),
-        A.ChannelDropout(channel_drop_range=(1, 1), p=0.25),
+        # A.FancyPCA(alpha=1.0, p=0.5),
+        # A.Emboss(p=0.5),
+        # A.RandomBrightnessContrast(p=1.0),
+        # A.CLAHE(clip_limit=2.0, p=0.25),
+        A.ChannelDropout(channel_drop_range=(1, 3), p=0.25),
     ],
 )
 
 transform_pixel_chm = A.Compose(
     [
         A.GaussNoise(var_limit=(0, 1.0), mean=0, p=0.5),
+        A.ChannelDropout(channel_drop_range=(1, 6), p=0.5),
     ],
 )
 

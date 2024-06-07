@@ -9,15 +9,19 @@ from typing import Any, Dict, List, Tuple
 import geojson
 import httpx
 import numpy as np
+import rasterio
+import tifffile
 from osgeo import gdal, ogr, osr
 from PIL import Image
 from shapely.geometry import Polygon, box
 from shapely.wkt import dumps
+from tqdm.notebook import tqdm
 
 from box_cls import Box, BoxInt, box_pixels_to_coordinates
 from geojson_conversions import get_bbox_polygon
 from utils import (
     Folders,
+    create_folder,
     download_file,
     get_coordinates_bbox_from_full_image_file_name,
     get_file_base_name,
@@ -192,9 +196,12 @@ def download_cir(
     image_coords_box: Box,
     resolution: float,
     save_path: str,
+    skip_if_file_exists: bool,
     verbose: bool = False,
     **kwargs,
-):
+) -> None:
+    if skip_if_file_exists and os.path.isfile(save_path):
+        return
     url = "https://services.arcgisonline.nl/arcgis/rest/services/Luchtfoto/Luchtfoto_CIR/MapServer/export"
     SESSION = httpx.Client()
 

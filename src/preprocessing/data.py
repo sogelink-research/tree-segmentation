@@ -6,7 +6,9 @@ from typing import Any, Dict, List, Tuple
 import geojson
 import numpy as np
 import numpy.typing as npt
+import rasterio
 import shapely.geometry as shp_geom
+import tifffile
 from osgeo import gdal
 from PIL import Image
 from tqdm.notebook import tqdm
@@ -549,3 +551,56 @@ def crop_all_images_from_annotations_folder(
             remove_all_files_but(cropped_folder_path, files_to_keep)
 
     return cropped_images_folders_paths
+
+
+def merge_tif(cropped_images_folders_paths: List[str]):
+    if len(cropped_images_folders_paths) == 0:
+        raise ValueError("cropped_images_folders_paths is empty.")
+
+    folder_path_list = cropped_images_folders_paths[0].split(os.path.sep)
+    output_folder_path = os.path.join(
+        os.path.sep.join(folder_path_list[:-3]),
+        "merged",
+        os.path.sep.join(folder_path_list[-2:]),
+    )
+
+    create_folder(output_folder_path)
+
+    for image_name in tqdm(
+        os.listdir(cropped_images_folders_paths[0]), desc="Merging TIFs", leave=False
+    ):
+        all_images_paths = [
+            os.path.join(folder_path, image_name) for folder_path in cropped_images_folders_paths
+        ]
+        output_path = os.path.join(output_folder_path, image_name)
+
+        # Load images as NumPy arrays
+        with rasterio.open(all_images_paths[0]) as img:
+            crs = img.crs
+            transform = img.transform
+
+        # tifffile is quicker to just open the files
+        images: List[np.ndarray] = []
+        for image_path in all_images_paths:
+            image = tifffile.imread(image_path)
+            if len(image.shape) == 2:
+                image = image[..., np.newaxis]
+            images.append(image)
+
+        # Stack images along a new axis to create a multi-channel image
+        multi_channel_image = np.concatenate(images, axis=2)
+
+        # Save the result
+        with rasterio.open(
+            output_path,
+            "w",
+            driver="GTiff",
+            height=multi_channel_image.shape[0],
+            width=multi_channel_image.shape[1],
+            count=multi_channel_image.shape[2],
+            dtype=multi_channel_image.dtype,
+            crs=crs,
+            transform=transform,
+        ) as dst:
+            for i in range(multi_channel_image.shape[2]):
+                dst.write(multi_channel_image[:, :, i], i + 1)
