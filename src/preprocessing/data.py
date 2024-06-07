@@ -420,7 +420,7 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
 ):
     # Create the folders
     image_prefix = get_file_base_name(full_rgb_path)
-    rgb_output_folder_path = os.path.join(Folders.CROPPED_IMAGES.value, image_prefix)
+    rgb_output_folder_path = os.path.join(Folders.CROPPED_RGB_IMAGES.value, image_prefix)
     coord1, coord2 = get_coordinates_from_full_image_file_name(image_prefix)
     chm_unfiltered_output_folder_path = os.path.join(
         Folders.CHM.value,

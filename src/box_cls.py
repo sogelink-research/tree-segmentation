@@ -29,6 +29,14 @@ class Box:
         """
         return (self.x_max - self.x_min) * (self.y_max - self.y_min)
 
+    def very_short_name(self) -> str:
+        """Returns the bounding box as a coordinates string similar to images names.
+
+        Returns:
+            str: f"{x_min}_{y_max}" where values are rounded to ints.
+        """
+        return f"{round(self.x_min)}_{round(self.y_max)}"
+
     def short_name(self) -> str:
         """Returns the bounding box as a short coordinates string.
 

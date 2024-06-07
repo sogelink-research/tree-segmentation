@@ -19,7 +19,7 @@ from tqdm.notebook import tqdm
 from PIL import Image
 
 from box_cls import Box
-from data_processing import ImageData, get_coordinates_from_full_image_file_name
+from preprocessing.data import ImageData, get_coordinates_from_full_image_file_name
 from geojson_conversions import merge_geojson_feature_collections, save_geojson
 from layers import AMF_GD_YOLOv8
 from plot import create_geojson_output, get_bounding_boxes
@@ -989,7 +989,7 @@ def create_and_save_splitted_datasets(
         all_files_dict[set_name] = []
         for rgb_file in set_files:
             full_image = os.path.join(
-                Folders.FULL_IMAGES.value,
+                Folders.FULL_RGB_IMAGES.value,
                 f"{os.path.basename(os.path.dirname(rgb_file))}.tif",
             )
             image_data = ImageData(full_image)

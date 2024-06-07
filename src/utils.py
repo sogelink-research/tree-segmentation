@@ -26,8 +26,14 @@ class Folders(Enum):
     CROPPED_ANNOTS = _absolute_path("../data/annotations/cropped/")
 
     IMAGES = _absolute_path("../data/images/")
-    FULL_IMAGES = _absolute_path("../data/images/full/")
-    CROPPED_IMAGES = _absolute_path("../data/images/cropped/")
+
+    RGB_IMAGES = _absolute_path("../data/images/rgb/")
+    FULL_RGB_IMAGES = _absolute_path("../data/images/rgb/full/")
+    CROPPED_RGB_IMAGES = _absolute_path("../data/images/rgb/cropped/")
+
+    CIR_IMAGES = _absolute_path("../data/images/cir/")
+    FULL_CIR_IMAGES = _absolute_path("../data/images/cir/full/")
+    CROPPED_CIR_IMAGES = _absolute_path("../data/images/cir/cropped/")
 
     LIDAR = _absolute_path("../data/lidar/")
     GEOTILES_LIDAR = _absolute_path("../data/lidar/geotiles/")
