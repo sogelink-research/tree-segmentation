@@ -1,0 +1,3 @@
+[submodule "src/Efficient-Computing"]
+	path = src/Efficient-Computing
+	url = git@github.com:huawei-noah/Efficient-Computing.git
