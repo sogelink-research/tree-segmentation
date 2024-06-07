@@ -1,5 +1,3 @@
-name: tree-segment
-
 channels:
   - conda-forge
   - defaults
