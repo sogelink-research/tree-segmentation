@@ -1,6 +1,6 @@
-from copy import deepcopy
-from typing import Dict, List, Tuple, Sequence
 import os
+from copy import deepcopy
+from typing import Dict, List, Sequence, Tuple
 
 import geojson
 import geojson.utils as geo_utils

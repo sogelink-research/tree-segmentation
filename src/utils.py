@@ -1,12 +1,12 @@
 import json
 import os
-from enum import Enum
-import time
-from typing import Any, Dict, List, Tuple
 import shutil
+import time
+from enum import Enum
+from typing import Any, Dict, List, Tuple
 
-from requests import get
 from osgeo import gdal
+from requests import get
 
 from box_cls import Box
 

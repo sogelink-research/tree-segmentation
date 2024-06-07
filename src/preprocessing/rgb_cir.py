@@ -1,32 +1,28 @@
+import concurrent.futures
+import io
+import itertools
+import math
 import os
 import zipfile
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 
-from osgeo import ogr
-from shapely.geometry import box
-from shapely.wkt import dumps
 import geojson
-from shapely.geometry import Polygon
-import numpy as np
-
-from box_cls import Box
-from geojson_conversions import get_bbox_polygon
-from utils import get_coordinates_bbox_from_full_image_file_name
-from utils import Folders, download_file, get_file_base_name
-
-import io
-import math
-import itertools
-import concurrent.futures
-from typing import Any, Dict, List
-from osgeo import gdal, osr
-from box_cls import Box, BoxInt, box_pixels_to_coordinates
 import httpx
 import numpy as np
+from osgeo import gdal, ogr, osr
 from PIL import Image
+from shapely.geometry import Polygon, box
+from shapely.wkt import dumps
 
-
-from utils import measure_execution_time
+from box_cls import Box, BoxInt, box_pixels_to_coordinates
+from geojson_conversions import get_bbox_polygon
+from utils import (
+    Folders,
+    download_file,
+    get_coordinates_bbox_from_full_image_file_name,
+    get_file_base_name,
+    measure_execution_time,
+)
 
 
 def _get_rgb_download_url(image_name_with_ext: str) -> str:

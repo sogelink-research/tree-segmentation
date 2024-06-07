@@ -3,7 +3,6 @@ import os
 import random
 from collections import defaultdict
 from typing import Callable, Dict, Iterable, List, Sequence, Tuple
-from tifffile import tifffile
 
 import geojson
 import matplotlib.pyplot as plt
@@ -13,16 +12,17 @@ import torch.nn as nn
 from albumentations import pytorch as Atorch
 from IPython import display
 from ipywidgets import Output
+from PIL import Image
 from skimage import io
+from tifffile import tifffile
 from torch.utils.data import DataLoader, Dataset, Sampler
 from tqdm.notebook import tqdm
-from PIL import Image
 
 from box_cls import Box
-from preprocessing.data import ImageData, get_coordinates_from_full_image_file_name
 from geojson_conversions import merge_geojson_feature_collections, save_geojson
 from layers import AMF_GD_YOLOv8
 from plot import create_geojson_output, get_bounding_boxes
+from preprocessing.data import ImageData, get_coordinates_from_full_image_file_name
 from utils import Folders, get_file_base_name
 
 

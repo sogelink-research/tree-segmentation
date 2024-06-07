@@ -9,11 +9,11 @@ import numpy.typing as npt
 from skimage import io
 
 from box_cls import Box, box_pixels_cropped_to_full, box_pixels_to_coordinates
+from geojson_conversions import bboxes_to_geojson_feature_collection, save_geojson
 from utils import (
     get_coordinates_bbox_from_full_image_file_name,
     get_pixels_bbox_from_full_image_file_name,
 )
-from geojson_conversions import bboxes_to_geojson_feature_collection, save_geojson
 
 
 Number = float | int

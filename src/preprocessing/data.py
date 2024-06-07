@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Tuple
 import geojson
 import numpy as np
 import numpy.typing as npt
+import shapely.geometry as shp_geom
 from osgeo import gdal
 from PIL import Image
 from tqdm.notebook import tqdm
@@ -13,9 +14,9 @@ from tqdm.notebook import tqdm
 from box_cls import (
     Box,
     box_coordinates_to_pixels,
-    box_pixels_to_coordinates,
     box_crop_in_box,
     box_pixels_full_to_cropped,
+    box_pixels_to_coordinates,
     intersection_ratio,
 )
 from geojson_conversions import get_bbox_polygon
@@ -27,11 +28,10 @@ from utils import (
     get_file_base_name,
     get_files_in_folders,
     open_json,
-    remove_folder,
     remove_all_files_but,
+    remove_folder,
 )
 
-import shapely.geometry as shp_geom
 
 gdal.UseExceptions()
 

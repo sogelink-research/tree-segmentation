@@ -10,8 +10,7 @@ from shapely.geometry import box
 from shapely.wkt import dumps
 
 from box_cls import Box
-from utils import ImageData
-from utils import Folders, download_file
+from utils import Folders, ImageData, download_file
 
 
 def merge_crop_las(input_las_list: List[str], output_las: str, crop_box: Box) -> None:

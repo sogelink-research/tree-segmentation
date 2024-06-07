@@ -7,12 +7,12 @@ from typing import Dict, List, Sequence, Tuple
 import laspy
 import numpy as np
 import pdal
-from osgeo import gdal
 import rasterio
 import tifffile
+from osgeo import gdal
 from tqdm.notebook import tqdm
 
-from utils import create_folder, Folders, remove_folder, measure_execution_time
+from utils import Folders, create_folder, measure_execution_time, remove_folder
 
 
 gdal.UseExceptions()
