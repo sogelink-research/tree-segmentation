@@ -25,10 +25,13 @@ from utils import (
     create_folder,
     get_coordinates_from_full_image_file_name,
     get_file_base_name,
+    get_files_in_folders,
     open_json,
+    remove_folder,
+    remove_all_files_but,
 )
 
-from shapely.geometry import Polygon, box
+import shapely.geometry as shp_geom
 
 gdal.UseExceptions()
 
@@ -239,7 +242,7 @@ def find_annots_repartition(
         label = annot_info["properties"]["label"]
         # If it is a polygon showing non labeled space, remove the image if it intersects with it
         if label == "Not_labeled":
-            removal_polygon = Polygon(annot_info["geometry"]["coordinates"]).wkt
+            removal_polygon = shp_geom.Polygon(annot_info["geometry"]["coordinates"][0])
             keys_to_delete: List[Box] = []
             # Find the keys to delete
             for limit_box in annots_repartition:
@@ -248,7 +251,7 @@ def find_annots_repartition(
                     image_pixels_box=image_pixel_box,
                     image_coordinates_box=image_coord_box,
                 )
-                limit_polygon = box(*limit_box_global.as_tuple()).wkt
+                limit_polygon = shp_geom.box(*limit_box_global.as_tuple())
                 if limit_polygon.intersects(removal_polygon):
                     keys_to_delete.append(limit_box)
 
@@ -314,6 +317,7 @@ def save_annots_per_image(
     annots_repartition: Dict[Box, List[Annotation]],
     output_folder_path: str,
     full_image_path_tif: str,
+    clear_if_not_empty: bool,
 ) -> None:
     """Saves the bounding boxes for each image as a json per image in the given folder
 
@@ -321,8 +325,12 @@ def save_annots_per_image(
         annots_repartition (Dict[Box, List[Annotation]]): dictionary associating the
         bounding box of each image with the list of tree bounding boxes that fit in.
         output_folder_path (str): path to the output folder.
+        full_image_path_tif (str): the path to the full RGB image that is used.
+        clear_if_not_empty (bool): whether to clear the output folder if it is not empty.
     """
 
+    if clear_if_not_empty:
+        remove_folder(output_folder_path)
     create_folder(output_folder_path)
 
     for image_box, annots in tqdm(
@@ -407,6 +415,8 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
     annotations_folder_path: str,
     resolution: float,
     full_rgb_path: str,
+    clear_if_not_empty: bool,
+    remove_unused: bool,
 ):
     # Create the folders
     image_prefix = get_file_base_name(full_rgb_path)
@@ -426,9 +436,16 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
         "cropped",
         f"{coord1}_{coord2}",
     )
+
+    if clear_if_not_empty:
+        remove_folder(rgb_output_folder_path)
+        remove_folder(chm_unfiltered_output_folder_path)
+        remove_folder(chm_filtered_output_folder_path)
+
     create_folder(rgb_output_folder_path)
     create_folder(chm_unfiltered_output_folder_path)
     create_folder(chm_filtered_output_folder_path)
+
     full_chm_unfiltered_path = os.path.join(
         Folders.CHM.value,
         f"{round(resolution*100)}cm",
@@ -444,6 +461,8 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
         f"{coord1}_{coord2}.tif",
     )
 
+    files_to_keep: List[str] = []
+
     # Iterate over the cropped annotations
     for file_name in tqdm(
         os.listdir(annotations_folder_path),
@@ -456,6 +475,7 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
             cropped_annotations = open_json(annotations_file_path)
             output_file = _get_cropped_image_name(cropped_annotations)
             image_box = get_image_box_from_cropped_annotations(cropped_annotations)
+            files_to_keep.append(output_file)
 
             # Create the cropped RGB image
             rgb_output_path = os.path.join(rgb_output_folder_path, output_file)
@@ -473,3 +493,59 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
             chm_filtered_output_path = os.path.join(chm_filtered_output_folder_path, output_file)
             if not os.path.exists(chm_filtered_output_path):
                 crop_image_from_box(full_chm_filtered_path, image_box, chm_filtered_output_path)
+
+    if remove_unused:
+        remove_all_files_but(rgb_output_folder_path, files_to_keep)
+        remove_all_files_but(chm_unfiltered_output_folder_path, files_to_keep)
+        remove_all_files_but(chm_filtered_output_folder_path, files_to_keep)
+
+
+def crop_all_images_from_annotations_folder(
+    annotations_folder_path: str,
+    full_images_folders_paths: List[str],
+    clear_if_not_empty: bool,
+    remove_unused: bool,
+) -> List[str]:
+    full_images_paths = get_files_in_folders(full_images_folders_paths)
+
+    cropped_images_folders_paths = [
+        os.path.splitext(full_image_path.replace("full", "cropped"))[0]
+        for full_image_path in full_images_paths
+    ]
+
+    if clear_if_not_empty:
+        for folder_path in cropped_images_folders_paths:
+            remove_folder(folder_path)
+
+    for folder_path in cropped_images_folders_paths:
+        create_folder(folder_path)
+
+    files_to_keep: List[str] = []
+
+    # Iterate over the cropped annotations
+    for file_name in tqdm(
+        os.listdir(annotations_folder_path),
+        leave=False,
+        desc="Cropping images: Cropped annotations",
+    ):
+        annotations_file_path = os.path.join(annotations_folder_path, file_name)
+        if os.path.splitext(annotations_file_path)[1] == ".json":
+            # Get the annotations
+            cropped_annotations = open_json(annotations_file_path)
+            output_file = _get_cropped_image_name(cropped_annotations)
+            image_box = get_image_box_from_cropped_annotations(cropped_annotations)
+            files_to_keep.append(output_file)
+
+            # Create the cropped images
+            for full_image_path, cropped_folder_path in zip(
+                full_images_paths, cropped_images_folders_paths
+            ):
+                output_path = os.path.join(cropped_folder_path, output_file)
+                if not os.path.exists(output_path):
+                    crop_image_from_box(full_image_path, image_box, output_path)
+
+    if remove_unused:
+        for cropped_folder_path in cropped_images_folders_paths:
+            remove_all_files_but(cropped_folder_path, files_to_keep)
+
+    return cropped_images_folders_paths

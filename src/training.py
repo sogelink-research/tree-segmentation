@@ -129,7 +129,7 @@ def normalize_rgb(image_rgb: torch.Tensor) -> torch.Tensor:
     return (image_rgb - mean_rgb) / std_rgb
 
 
-def normalize_chm(image_chm: torch.Tensor) -> torch.Tensor:
+def normalize_chm(image_chm: torch.Tensor, no_data_replacement: float = 0) -> torch.Tensor:
     """Normalizes the CHM image given as input, with values computed using the unfiltered CHM of
     2023_122000_484000_RGB_hrl.tif with a resolution of 8cm.
     The NO_DATA values, which are originally equal to -9999, are replaced by 0 before normalization.
@@ -140,7 +140,7 @@ def normalize_chm(image_chm: torch.Tensor) -> torch.Tensor:
     Returns:
         torch.Tensor: The normalized image, with a mean of 0 and a standard deviation of 1 along each channel.
     """
-    image_chm = torch.where(image_chm == -9999, 0, image_chm)
+    image_chm = torch.where(image_chm == -9999, no_data_replacement, image_chm)
     # On the whole image
     mean_chm = 2.4113
     std_chm = 5.5642
@@ -227,9 +227,35 @@ class TreeDataset(Dataset):
         self.labels_transformation_drop_chm = labels_transformation_drop_chm
         self.transform_spatial = transform_spatial
         self.transform_pixel = transform_pixel
+        self._init_channels_count()
+
+    def _init_channels_count(self):
+        if len(self) == 0:
+            self.rgb_channels = 0
+            self.chm_channels = 0
+        else:
+            files_paths = self.files_paths_list[0]
+            rgb_path = files_paths["rgb"]
+            image_rgb = self._read_rgb_image(rgb_path)
+            chm_path = files_paths["chm"]
+            image_chm = self._read_chm_image(chm_path)
+            self.rgb_channels = image_rgb.shape[2]
+            self.chm_channels = image_chm.shape[2]
 
     def __len__(self) -> int:
         return len(self.files_paths_list)
+
+    def _read_rgb_image(self, image_path: str) -> np.ndarray:
+        image = io.imread(image_path)
+        if len(image.shape) == 2:
+            image = image[..., np.newaxis]
+        return image
+
+    def _read_chm_image(self, image_path: str) -> np.ndarray:
+        image = io.imread(image_path)
+        if len(image.shape) == 2:
+            image = image[..., np.newaxis]
+        return image.astype(np.float32)
 
     def random_chm_rgb_drop(
         self,
@@ -303,9 +329,9 @@ class TreeDataset(Dataset):
         # Read the images
         files_paths = self.files_paths_list[idx]
         rgb_path = files_paths["rgb"]
-        image_rgb = io.imread(rgb_path)
+        image_rgb = self._read_rgb_image(rgb_path)
         chm_path = files_paths["chm"]
-        image_chm = io.imread(chm_path)
+        image_chm = self._read_chm_image(chm_path)
 
         # Get bboxes and labels
         bboxes = self.bboxes[idx]
@@ -362,7 +388,7 @@ class TreeDataset(Dataset):
         """
         files_paths = self.files_paths_list[idx]
         rgb_path = files_paths["rgb"]
-        image_rgb = io.imread(rgb_path)
+        image_rgb = self._read_rgb_image(rgb_path)
         return image_rgb
 
     def get_full_coords_name(self, idx: int) -> str:

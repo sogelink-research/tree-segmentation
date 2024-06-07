@@ -1,8 +1,9 @@
 import json
 import os
 from enum import Enum
-from time import time
-from typing import Any, Dict, Tuple
+import time
+from typing import Any, Dict, List, Tuple
+import shutil
 
 from requests import get
 from osgeo import gdal
@@ -18,6 +19,8 @@ def _absolute_path(relative_path: str) -> str:
 
 
 class Folders(Enum):
+    DATA = _absolute_path("../data/")
+
     ANNOTS = _absolute_path("../data/annotations/")
     FULL_ANNOTS = _absolute_path("../data/annotations/full/")
     CROPPED_ANNOTS = _absolute_path("../data/annotations/cropped/")
@@ -43,10 +46,10 @@ def create_folder(folder_path: str) -> str:
     """Creates the folder if it doesn't exist, otherwise does nothing.
 
     Args:
-        folder_path (str): path of the folder to create.
+        folder_path (str): path to the folder to create.
 
     Returns:
-        str: the absolute path of the folder.
+        str: the absolute path to the folder.
     """
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
@@ -57,6 +60,59 @@ def create_all_folders() -> None:
     """Creates all the data folders if they don't already exist."""
     for folder in Folders:
         create_folder(folder.value)
+
+
+def remove_folder(folder_path: str) -> bool:
+    """Removes the folder if it exists, as well as its content.
+
+    Args:
+        folder_path (str): path to the folder to remove if it exists.
+
+    Returns:
+        bool: whether a folder was removed.
+    """
+    if os.path.isdir(folder_path):
+        try:
+            shutil.rmtree(folder_path)
+            return True
+        except OSError as e:
+            print("Error: %s - %s." % (e.filename, e.strerror))
+            return False
+    return False
+
+
+def remove_all_files_but(folder_path: str, files_to_keep: List[str]) -> None:
+    """Removes all the files in a folder except some of them.
+
+    Args:
+        folder_path (str): path to the folder where files should be removed.
+        files_to_keep (List[str]): names (without folder path) of the files to keep.
+    """
+    if os.path.isdir(folder_path):
+        for file in os.listdir(folder_path):
+            if file not in files_to_keep:
+                file_path = os.path.join(folder_path, file)
+                try:
+                    os.remove(file_path)
+                except OSError as e:
+                    print("Error: %s - %s." % (e.filename, e.strerror))
+
+
+def get_files_in_folders(folders_paths: List[str]) -> List[str]:
+    """Returns a list containing the paths to all the files in all the folders given as input.
+
+    Args:
+        folders_paths (List[str]): list of paths to folders.
+
+    Returns:
+        List[str]: list of paths to files contained in the folders.
+    """
+    all_files = []
+    for folder_path in folders_paths:
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                all_files.append(os.path.join(root, file))
+    return all_files
 
 
 def download_file(url: str, save_path: str, no_ssl: bool = False, verbose: bool = True) -> None:
@@ -74,6 +130,8 @@ def download_file(url: str, save_path: str, no_ssl: bool = False, verbose: bool 
             print(f"Download skipped: there is already a file at '{os.path.abspath(save_path)}'.")
         return
     # Send a GET request to the URL
+    if verbose:
+        print(f"Downloading {url}...", end=" ", flush=True)
     if no_ssl:
         response = get(url, verify=False)
     else:
@@ -82,8 +140,6 @@ def download_file(url: str, save_path: str, no_ssl: bool = False, verbose: bool 
     # Check if the request was successful (status code 200)
     if response.status_code == 200:
         # Open the file in binary write mode and write the content of the response
-        if verbose:
-            print(f"Downloading {url}...", end=" ", flush=True)
         with open(save_path, "wb") as f:
             f.write(response.content)
         if verbose:
@@ -134,7 +190,7 @@ def get_pixels_bbox_from_full_image_file_name(file_name: str) -> Box:
 class ImageData:
     def __init__(self, image_path: str) -> None:
         self.path = image_path
-        # self._init_properties()
+        self._init_properties()
         self.base_name = get_file_base_name(self.path)
         self.coord_name = f"{round(self.coord_box.x_min)}_{round(self.coord_box.y_max)}"
         # self.coord_box = get_coordinates_bbox_from_full_image_file_name(self.base_name)
