@@ -18,8 +18,8 @@ dependencies:
   - python-pdal
 
   # Pytorch
-  - pytorch>=1.8.0
-  - torchvision>=0.9.0
+  - pytorch>=2.3.0
+  - torchvision>=0.18.0
   - pytorch-cuda=11.8
   # - torchinfo
 
