@@ -2,11 +2,6 @@ import os
 import sys
 from typing import Dict, List, Tuple
 
-from ultralytics.utils.loss import v8DetectionLoss
-
-
-sys.path.append(os.path.abspath("Efficient-Computing/Detection/Gold-YOLO"))
-
 import cv2
 import numpy as np
 import numpy.typing as npt
@@ -20,11 +15,16 @@ from ultralytics.nn.modules.block import Bottleneck, C2f
 from ultralytics.nn.modules.conv import Conv
 from ultralytics.nn.modules.head import Detect
 from ultralytics.utils import ops
-from yolov6.models.yolo import build_network, make_divisible
-from yolov6.utils.config import Config
+from ultralytics.utils.loss import v8DetectionLoss
 
 from cbam import CBAM
 from utils import download_file
+
+
+sys.path.append(os.path.abspath("Efficient-Computing/Detection/Gold-YOLO"))
+
+from yolov6.models.yolo import build_network, make_divisible
+from yolov6.utils.config import Config
 
 
 def get_scale_constants(scale: str) -> Tuple[float, float, float]:

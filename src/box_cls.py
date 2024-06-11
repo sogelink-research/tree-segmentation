@@ -138,6 +138,29 @@ def intersection_ratio(annot: Box, limits: Box) -> float:
     return intersection(annot, limits) / annot.area()
 
 
+def compute_iou(box1: Box, box2: Box) -> float:
+    """Compute the area of the intersection over the area of the union (IoU).
+
+    Args:
+        box1 (Box): first box.
+        box2 (Box): second box.
+
+    Returns:
+        float: IoU.
+    """
+    # Calculate the intersection coordinates
+    inter_x_min = max(box1.x_min, box2.x_min)
+    inter_y_min = max(box1.y_min, box2.y_min)
+    inter_x_max = min(box1.x_max, box2.x_max)
+    inter_y_max = min(box1.y_max, box2.y_max)
+
+    # Compute the area of the intersection
+    inter_area = max(inter_x_max - inter_x_min, 0) * max(inter_y_max - inter_y_min, 0)
+    union_area = box1.area() + box2.area() - inter_area
+
+    return inter_area / union_area if union_area > 0 else 0
+
+
 def box_crop_in_box(to_crop: Box, limits: Box) -> Box:
     """Crops the box so that it fits entirely in the limits.
 

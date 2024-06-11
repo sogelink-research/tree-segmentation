@@ -20,6 +20,7 @@ from tqdm.notebook import tqdm
 from box_cls import Box
 from geojson_conversions import merge_geojson_feature_collections, save_geojson
 from layers import AMF_GD_YOLOv8
+from metrics import hungarian_algorithm
 from plot import create_geojson_output, get_bounding_boxes
 from preprocessing.data import ImageData, get_coordinates_from_full_image_file_name
 from utils import Folders, get_file_base_name
@@ -566,6 +567,34 @@ def tree_dataset_collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, t
     return output_batch
 
 
+def extract_ground_truth_from_dataloader(
+    data: Dict[str, torch.Tensor]
+) -> Tuple[List[List[Box]], List[List[int]]]:
+    """Extracts the ground truth components given the output of a TreeDataLoader.
+
+    Args:
+        data (Dict[str, torch.Tensor]): batch output of a TreeDataLoader.
+
+    Returns:
+        Tuple[List[List[Box]], List[List[int]]]: (gt_bboxes, gt_classes) where each list
+        inside the main list corresponds to one image.
+    """
+    gt_bboxes: torch.Tensor = data["bboxes"]
+    gt_classes: torch.Tensor = data["labels"]
+    gt_indices: torch.Tensor = data["indices"]
+    number_images = data["image_indices"].shape[0]
+
+    bboxes: List[List[Box]] = [[] for _ in range(number_images)]
+    classes: List[List[int]] = [[] for _ in range(number_images)]
+
+    for i in range(number_images):
+        mask = gt_indices == i
+        bboxes[i] = list(map(Box, *gt_bboxes[mask].unbind(dim=0)))
+        classes[i] = list(*gt_classes[mask].unbind(dim=0))
+
+    return bboxes, classes
+
+
 class TreeDataLoader(DataLoader):
     def __init__(
         self,
@@ -878,6 +907,58 @@ def test_save_output_image(
     else:
         geojson_save_path = save_path
     save_geojson(geojson_outputs_merged, geojson_save_path)
+
+
+def compute_metrics(
+    model: AMF_GD_YOLOv8,
+    test_loader: TreeDataLoader,
+    device: torch.device,
+    no_rgb: bool = False,
+    no_chm: bool = False,
+    save_path: str | None = None,
+) -> None:
+    # TODO: Handle batch > 1
+    model.eval()
+    with torch.no_grad():
+        for data in tqdm(test_loader, leave=False, desc="Computing metrics"):
+            # Compute predictions
+            image_rgb: torch.Tensor = data["image_rgb"]
+            if no_rgb:
+                image_rgb = torch.zeros_like(image_rgb)
+            image_chm: torch.Tensor = data["image_chm"]
+            if no_chm:
+                image_chm = torch.zeros_like(image_chm)
+            image_rgb = image_rgb.to(device, non_blocking=True)
+            image_chm = image_chm.to(device, non_blocking=True)
+            results = model.predict(image_rgb, image_chm)[2]
+
+            if results.boxes is not None:
+                pred_bboxes = results.boxes.xyxy.tolist()
+                pred_labels = [results.names[cls.item()] for cls in results.boxes.cls]
+                scores = results.boxes.conf.tolist()
+            else:
+                pred_bboxes = []
+                pred_labels = []
+                scores = []
+
+            # Get ground truth
+            gt_bboxes_per_image, gt_classes_per_image = extract_ground_truth_from_dataloader(data)
+
+            # Compute the matching
+            threshold = 0.5
+            true_pos = hungarian_algorithm(
+                pred_bboxes,
+                pred_labels,
+                gt_bboxes_per_image[0],
+                gt_classes_per_image[0],
+                threshold,
+                agnostic=False,
+            )
+
+            # Add the matching to the list
+
+    # Compute Precision-Recall curve
+    # Compute the sortedAP
 
 
 def initialize_dataloaders(
