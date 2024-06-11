@@ -468,7 +468,8 @@ def compute_slice_chm_from_hag_laz(
             "resolution": resolution,
         },
     ]
-    pdal.Pipeline(json.dumps(pipeline_json))
+    pipeline = pdal.Pipeline(json.dumps(pipeline_json))
+    pipeline.execute()
 
 
 @measure_execution_time
