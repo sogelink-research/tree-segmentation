@@ -1,8 +1,8 @@
 import itertools
 from typing import List, Tuple, TypeVar
 
-from matplotlib import pyplot as plt
 import numpy as np
+from matplotlib import pyplot as plt
 from scipy.optimize import linear_sum_assignment
 from skimage import io
 
@@ -66,6 +66,8 @@ def compute_sorted_ap(
     p = tp0 + fp0
     fn0 = len(unmatched_gt)
 
+    if tp0 == 0:
+        return [], [], 0.0
     aps = [(tp0) / (p + fn0)]
     sorted_ap = sorted_ious[0] * aps[0]
     for k in range(1, tp0):
@@ -82,13 +84,14 @@ def get_sorted_ap_plot(
     save_path: str | None = None,
 ):
     fig = plt.figure(1, figsize=(10, 6))
+    plt.clf()  # Clear the current figure
 
     x = [0.0]
-    y = [aps[0]]
+    y = [aps[0] if len(aps) > 0 else 0.0]
     x.extend(sorted_ious)
     y.extend(aps)
     x.append(1.0)
-    y.append(aps[-1])
+    y.append(0.0)
 
     plt.plot(x, y)
     plt.grid(alpha=0.5)
@@ -107,7 +110,7 @@ def get_sorted_ap_plot(
     if show:
         plt.show()
 
-    return fig
+    plt.close()
 
 
 def main():
