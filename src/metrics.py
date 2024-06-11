@@ -1,8 +1,8 @@
 import itertools
 from typing import List, Tuple, TypeVar
 
+from matplotlib import pyplot as plt
 import numpy as np
-from numpy import typing as npt
 from scipy.optimize import linear_sum_assignment
 from skimage import io
 
@@ -54,6 +54,62 @@ def hungarian_algorithm(
     return matched_pairs, unmatched_pred, unmatched_gt
 
 
+def compute_sorted_ap(
+    matched_pairs: List[Tuple[Tuple[int, int], float]],
+    unmatched_pred: List[int],
+    unmatched_gt: List[int],
+) -> Tuple[List[float], List[float], float]:
+    sorted_ious = sorted(map(lambda t: t[1], matched_pairs))
+
+    tp0 = len(matched_pairs)
+    fp0 = len(unmatched_pred)
+    p = tp0 + fp0
+    fn0 = len(unmatched_gt)
+
+    aps = [(tp0) / (p + fn0)]
+    sorted_ap = sorted_ious[0] * aps[0]
+    for k in range(1, tp0):
+        aps.append((tp0 - k) / (p + fn0 + k))
+        sorted_ap += 0.5 * (sorted_ious[k] - sorted_ious[k - 1]) * (aps[k] + aps[k - 1])
+    return sorted_ious, aps, sorted_ap
+
+
+def get_sorted_ap_plot(
+    sorted_ious: List[float],
+    aps: List[float],
+    sorted_ap: float,
+    show: bool = False,
+    save_path: str | None = None,
+):
+    fig = plt.figure(1, figsize=(10, 6))
+
+    x = [0.0]
+    y = [aps[0]]
+    x.extend(sorted_ious)
+    y.extend(aps)
+    x.append(1.0)
+    y.append(aps[-1])
+
+    plt.plot(x, y)
+    plt.grid(alpha=0.5)
+    plt.xlabel("IoU")
+    plt.ylabel("AP")
+    plt.title(f"Sorted AP = {round(sorted_ap, 4)}")
+    plt.tight_layout()
+
+    has_legend, _ = plt.gca().get_legend_handles_labels()
+    if any(label != "" for label in has_legend):
+        plt.legend()
+
+    if save_path is not None:
+        plt.savefig(save_path, dpi=200)
+
+    if show:
+        plt.show()
+
+    return fig
+
+
 def main():
     # Example usage
     pred_bboxes = [Box(50, 50, 100, 100), Box(30, 30, 50, 50)]
@@ -69,17 +125,21 @@ def main():
     print("Unmatched predictions:\n", unmatched_pred)
     print("Unmatched ground truth:\n", unmatched_gt)
 
-    image = np.zeros((200, 200, 3), dtype=np.uint8)
-    bboxes = [bbox.as_list() for bbox in list(itertools.chain(*[pred_bboxes, gt_bboxes]))]
-    labels = [label for label in list(itertools.chain(*[pred_labels, gt_labels]))]
-    colors_dict = {"1": (255, 0, 0), "2": (0, 255, 0)}
-    scores = None
-    new_image = create_bboxes_image(
-        image, bboxes=bboxes, labels=labels, colors_dict=colors_dict, scores=scores
-    )
-    output_path = "Test.png"
-    if output_path is not None:
-        io.imsave(output_path, new_image)
+    sorted_ious, aps, sorted_ap = compute_sorted_ap(matched_pairs, unmatched_pred, unmatched_gt)
+
+    get_sorted_ap_plot(sorted_ious, aps, sorted_ap, save_path="Test.png")
+
+    # image = np.zeros((200, 200, 3), dtype=np.uint8)
+    # bboxes = [bbox.as_list() for bbox in list(itertools.chain(*[pred_bboxes, gt_bboxes]))]
+    # labels = [label for label in list(itertools.chain(*[pred_labels, gt_labels]))]
+    # colors_dict = {"1": (255, 0, 0), "2": (0, 255, 0)}
+    # scores = None
+    # new_image = create_bboxes_image(
+    #     image, bboxes=bboxes, labels=labels, colors_dict=colors_dict, scores=scores
+    # )
+    # output_path = "Test.png"
+    # if output_path is not None:
+    #     io.imsave(output_path, new_image)
 
 
 if __name__ == "__main__":

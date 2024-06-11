@@ -20,7 +20,7 @@ from tqdm.notebook import tqdm
 from box_cls import Box
 from geojson_conversions import merge_geojson_feature_collections, save_geojson
 from layers import AMF_GD_YOLOv8
-from metrics import hungarian_algorithm
+from metrics import compute_sorted_ap, get_sorted_ap_plot, hungarian_algorithm
 from plot import create_geojson_output, get_bounding_boxes
 from preprocessing.data import ImageData, get_coordinates_from_full_image_file_name
 from utils import Folders, get_file_base_name
@@ -938,8 +938,11 @@ def compute_metrics(
     no_rgb: bool = False,
     no_chm: bool = False,
     save_path: str | None = None,
-) -> None:
+) -> float:
     # TODO: Handle batch > 1
+    matched_pairs: List[Tuple[Tuple[int, int], float]] = []
+    unmatched_pred: List[int] = []
+    unmatched_gt: List[int] = []
     model.eval()
     with torch.no_grad():
         for data in tqdm(test_loader, leave=False, desc="Computing metrics"):
@@ -968,7 +971,7 @@ def compute_metrics(
 
             # Compute the matching
             threshold = 0.5
-            true_pos = hungarian_algorithm(
+            matched_pairs_temp, unmatched_pred_temp, unmatched_gt_temp = hungarian_algorithm(
                 pred_bboxes,
                 pred_labels,
                 gt_bboxes_per_image[0],
@@ -976,11 +979,16 @@ def compute_metrics(
                 threshold,
                 agnostic=False,
             )
+            matched_pairs.extend(matched_pairs_temp)
+            unmatched_pred.extend(unmatched_pred_temp)
+            unmatched_gt.extend(unmatched_gt_temp)
 
-            # Add the matching to the list
+    sorted_ious, aps, sorted_ap = compute_sorted_ap(matched_pairs, unmatched_pred, unmatched_gt)
 
-    # Compute Precision-Recall curve
-    # Compute the sortedAP
+    if save_path is not None:
+        get_sorted_ap_plot(sorted_ious, aps, sorted_ap, show=False, save_path=save_path)
+
+    return sorted_ap
 
 
 def initialize_dataloaders(
