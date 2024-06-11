@@ -15,7 +15,7 @@ from ipywidgets import Output
 from PIL import Image
 from tifffile import tifffile
 from torch.utils.data import DataLoader, Dataset, Sampler
-from tqdm.notebook import tqdm
+from tqdm.auto import tqdm
 
 from box_cls import Box
 from geojson_conversions import merge_geojson_feature_collections, save_geojson
@@ -611,8 +611,8 @@ def extract_ground_truth_from_dataloader(
 
     for i in range(number_images):
         mask = gt_indices == i
-        bboxes[i] = list(map(Box, *gt_bboxes[mask].unbind(dim=0)))
-        classes[i] = list(*gt_classes[mask].unbind(dim=0))
+        bboxes[i] = list(map(Box.from_list, gt_bboxes[mask].tolist()))
+        classes[i] = gt_classes[mask].tolist()
 
     return bboxes, classes
 
@@ -958,7 +958,7 @@ def compute_metrics(
             results = model.predict(image_rgb, image_chm)[2]
 
             if results.boxes is not None:
-                pred_bboxes = results.boxes.xyxy.tolist()
+                pred_bboxes = list(map(Box.from_list, results.boxes.xyxy.tolist()))
                 pred_labels = [results.names[cls.item()] for cls in results.boxes.cls]
                 scores = results.boxes.conf.tolist()
             else:
@@ -986,7 +986,7 @@ def compute_metrics(
     sorted_ious, aps, sorted_ap = compute_sorted_ap(matched_pairs, unmatched_pred, unmatched_gt)
 
     if save_path is not None:
-        get_sorted_ap_plot(sorted_ious, aps, sorted_ap, show=False, save_path=save_path)
+        get_sorted_ap_plot(sorted_ious, aps, sorted_ap, show=True, save_path=save_path)
 
     return sorted_ap
 

@@ -43,11 +43,15 @@ class Folders(Enum):
     FILTERED_FULL_LIDAR = _absolute_path("../data/lidar/filtered/full/")
     FILTERED_CROPPED_LIDAR = _absolute_path("../data/lidar/filtered/cropped/")
 
+    OTHERS_DIR = _absolute_path("../data/others")
     OUTPUT_DIR = _absolute_path("../data/others/model_output")
 
     MODELS_AMF_GD_YOLOV8 = _absolute_path("../models/amf_gd_yolov8")
+    GD_CONFIGS = _absolute_path("../models/gd_configs")
 
     CHM = _absolute_path("../data/chm/")
+
+    GOLD_YOLO = _absolute_path("../src/Efficient-Computing/Detection/Gold-YOLO")
 
 
 def create_folder(folder_path: str) -> str:

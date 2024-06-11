@@ -18,10 +18,10 @@ from ultralytics.utils import ops
 from ultralytics.utils.loss import v8DetectionLoss
 
 from cbam import CBAM
-from utils import download_file
+from utils import Folders, download_file
 
 
-sys.path.append(os.path.abspath("Efficient-Computing/Detection/Gold-YOLO"))
+sys.path.append(Folders.GOLD_YOLO.value)
 
 from yolov6.models.yolo import build_network, make_divisible
 from yolov6.utils.config import Config
@@ -350,7 +350,7 @@ class AMF_GD_YOLOv8(nn.Module):
 
         # Gather and Distribute structure
         if gd_config_file is None:
-            gd_config_file = f"../models/gd_configs/gold_yolo-{scale}.py"
+            gd_config_file = os.path.join(Folders.GD_CONFIGS.value, f"gold_yolo-{scale}.py")
         self.gd = GD(gd_config_file).to(device)
 
         # Detection structure
