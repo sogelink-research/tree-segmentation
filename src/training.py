@@ -970,7 +970,7 @@ def compute_metrics(
             gt_bboxes_per_image, gt_classes_per_image = extract_ground_truth_from_dataloader(data)
 
             # Compute the matching
-            threshold = 0.5
+            threshold = 1e-6
             matched_pairs_temp, unmatched_pred_temp, unmatched_gt_temp = hungarian_algorithm(
                 pred_bboxes,
                 pred_labels,
