@@ -959,34 +959,36 @@ def compute_metrics(
 
             if results.boxes is not None:
                 pred_bboxes = list(map(Box.from_list, results.boxes.xyxy.tolist()))
-                pred_labels = [results.names[cls.item()] for cls in results.boxes.cls]
+                pred_labels_ints = results.boxes.cls.tolist()
                 scores = results.boxes.conf.tolist()
             else:
                 pred_bboxes = []
-                pred_labels = []
+                pred_labels_ints = []
                 scores = []
 
             # Get ground truth
             gt_bboxes_per_image, gt_classes_per_image = extract_ground_truth_from_dataloader(data)
-
+            
             # Compute the matching
             threshold = 1e-6
             matched_pairs_temp, unmatched_pred_temp, unmatched_gt_temp = hungarian_algorithm(
                 pred_bboxes,
-                pred_labels,
+                pred_labels_ints,
                 gt_bboxes_per_image[0],
                 gt_classes_per_image[0],
                 threshold,
                 agnostic=False,
             )
+            print(f"{matched_pairs_temp = }")
             matched_pairs.extend(matched_pairs_temp)
             unmatched_pred.extend(unmatched_pred_temp)
             unmatched_gt.extend(unmatched_gt_temp)
 
     sorted_ious, aps, sorted_ap = compute_sorted_ap(matched_pairs, unmatched_pred, unmatched_gt)
+    print(f"{sorted_ious = }")
 
     if save_path is not None:
-        get_sorted_ap_plot(sorted_ious, aps, sorted_ap, show=True, save_path=save_path)
+        get_sorted_ap_plot(sorted_ious, aps, sorted_ap, show=False, save_path=save_path)
 
     return sorted_ap
 
