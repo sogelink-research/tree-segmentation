@@ -11,7 +11,6 @@ import shapely.geometry as shp_geom
 import tifffile
 from osgeo import gdal
 from PIL import Image
-from tqdm.notebook import tqdm
 
 from box_cls import (
     Box,
@@ -29,6 +28,7 @@ from utils import (
     get_coordinates_from_full_image_file_name,
     get_file_base_name,
     get_files_in_folders,
+    import_tqdm,
     open_json,
     remove_all_files_but,
     remove_folder,
@@ -36,6 +36,7 @@ from utils import (
 
 
 gdal.UseExceptions()
+tqdm = import_tqdm()
 
 
 def _old_get_image_path_from_full_annotation_path(annotations: Dict[Any, Any]) -> str:

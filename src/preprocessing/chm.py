@@ -10,7 +10,6 @@ import pdal
 import rasterio
 import tifffile
 from osgeo import gdal
-from tqdm.notebook import tqdm
 
 from utils import Folders, create_folder, measure_execution_time, remove_folder
 

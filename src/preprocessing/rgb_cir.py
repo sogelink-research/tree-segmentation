@@ -15,7 +15,6 @@ from osgeo import gdal, ogr, osr
 from PIL import Image
 from shapely.geometry import Polygon, box
 from shapely.wkt import dumps
-from tqdm.notebook import tqdm
 
 from box_cls import Box, BoxInt, box_pixels_to_coordinates
 from geojson_conversions import get_bbox_polygon
@@ -25,8 +24,13 @@ from utils import (
     download_file,
     get_coordinates_bbox_from_full_image_file_name,
     get_file_base_name,
+    import_tqdm,
     measure_execution_time,
 )
+
+
+gdal.UseExceptions()
+tqdm = import_tqdm()
 
 
 def _get_rgb_download_url(image_name_with_ext: str) -> str:
@@ -44,6 +48,20 @@ def _get_rgb_download_url(image_name_with_ext: str) -> str:
     return f"https://ns_hwh.fundaments.nl/hwh-ortho/2023/Ortho/{parcel_int}/{block}/beelden_tif_tegels/{image_name_with_ext}"
 
 
+def get_rgb_image_path_from_file_name(file_name: str) -> str:
+    """Return the path to the RGB image corresponding to the given image.
+
+    Args:
+        file_name (str): the name or path of the image to download.
+
+    Returns:
+        str: the path to the RGB image file.
+    """
+    image_name = f"{get_file_base_name(file_name)}.tif"
+    image_path = os.path.join(Folders.FULL_RGB_IMAGES.value, image_name)
+    return image_path
+
+
 def download_rgb_image_from_file_name(file_name: str, verbose: bool = True) -> str:
     """Downloads the RGB image corresponding to the given image.
 
@@ -56,7 +74,7 @@ def download_rgb_image_from_file_name(file_name: str, verbose: bool = True) -> s
     """
     image_name = f"{get_file_base_name(file_name)}.tif"
     image_url = _get_rgb_download_url(image_name)
-    image_path = os.path.join(Folders.FULL_RGB_IMAGES.value, image_name)
+    image_path = get_rgb_image_path_from_file_name(file_name)
     download_file(image_url, image_path, verbose)
     return image_path
 
@@ -165,30 +183,57 @@ def _get_rgb_name_from_box(box: Box) -> str:
     return f"2023_{round(box.x_min)}_{round(box.y_max)}_RGB_hrl.tif"
 
 
-def download_rgb_image_from_polygon(polygon: geojson.Polygon, verbose: bool = True) -> List[str]:
-    """Downloads the RGB image corresponding to the given GeoJSON Polygon.
+def get_rgb_images_fine_names_from_polygon(polygon: geojson.Polygon) -> List[str]:
+    """Returns the file names corresponding to the given GeoJSON Polygon.
 
     Args:
-        file_name (str): the name or path of the image to download.
-        verbose (bool, optional): whether to print messages about the behavior of the function.. Defaults to True.
+        polygon (geojson.Polygon): the polygon defining the bounding box of the area of interest.
 
     Returns:
-        List[str]: the paths to the images.
+        List[str]: the names of the images.
     """
     bbox = get_bbox_polygon(polygon)
     step = 1000
-    images_paths: List[str] = []
+    images_file_names: List[str] = []
     for x in np.arange(bbox.x_min - bbox.x_min % step, bbox.x_max - bbox.x_max % step, step):
         for y in np.arange(bbox.y_min, bbox.y_max, step):
             file_name = _get_rgb_name_from_box(
                 Box(round(x), round(y), round(x) + step, round(y) + step)
             )
-            images_paths.append(download_rgb_image_from_file_name(file_name, verbose))
+            images_file_names.append(file_name)
 
+    return images_file_names
+
+
+def get_rgb_images_paths_from_polygon(polygon: geojson.Polygon) -> List[str]:
+    """Returns the file paths corresponding to the given GeoJSON Polygon.
+
+    Args:
+        polygon (geojson.Polygon): the polygon defining the bounding box of the area of interest.
+
+    Returns:
+        List[str]: the paths to the images.
+    """
+    images_file_names = get_rgb_images_fine_names_from_polygon(polygon)
+    images_paths: List[str] = list(map(get_rgb_image_path_from_file_name, images_file_names))
     return images_paths
 
 
-gdal.UseExceptions()
+def download_rgb_image_from_polygon(polygon: geojson.Polygon, verbose: bool = True) -> List[str]:
+    """Downloads the RGB image corresponding to the given GeoJSON Polygon.
+
+    Args:
+        polygon (geojson.Polygon): the polygon defining the bounding box of the area of interest.
+        verbose (bool, optional): whether to print messages about the behavior of the function.. Defaults to True.
+
+    Returns:
+        List[str]: the paths to the images.
+    """
+    images_file_names = get_rgb_images_fine_names_from_polygon(polygon)
+    images_paths: List[str] = []
+    for file_name in images_file_names:
+        images_paths.append(download_rgb_image_from_file_name(file_name, verbose))
+    return images_paths
 
 
 @measure_execution_time

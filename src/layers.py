@@ -285,8 +285,8 @@ class AMFNet(nn.Module):
 
     def forward(self, x_left: torch.Tensor, x_right: torch.Tensor) -> List[torch.Tensor]:
         layers = [2, 3, 4, 5]
-        left_outputs: Tuple[torch.Tensor] = self.yolo_backbone_left(x_left, layers)
-        right_outputs: Tuple[torch.Tensor] = self.yolo_backbone_right(x_right, layers)
+        left_outputs: Tuple[torch.Tensor, ...] = self.yolo_backbone_left(x_left, layers)
+        right_outputs: Tuple[torch.Tensor, ...] = self.yolo_backbone_right(x_right, layers)
         return list(
             map(
                 lambda i: self.amfs[i - 2](left_outputs[i - 2], right_outputs[i - 2]),
@@ -487,6 +487,34 @@ class AMF_GD_YOLOv8(nn.Module):
         batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
         return self.criterion(preds, batch)
 
+    @staticmethod
+    def _get_name_and_path(index: int, epochs: int, postfix: str) -> Tuple[str, str]:
+        model_name = f"trained_model_{postfix}_{epochs}ep_{index}"
+        model_path = os.path.join(Folders.MODELS_AMF_GD_YOLOV8.value, f"{model_name}.pt")
+        return model_name, model_path
+
+    @staticmethod
+    def get_last_model_name_and_path(epochs: int, postfix: str) -> Tuple[str, str]:
+        index = 0
+        _, model_path = AMF_GD_YOLOv8._get_name_and_path(index, epochs, postfix)
+        if not os.path.exists(model_path):
+            raise Exception("No such model exists.")
+        while os.path.exists(model_path):
+            index += 1
+            _, model_path = AMF_GD_YOLOv8._get_name_and_path(index, epochs, postfix)
+
+        return AMF_GD_YOLOv8._get_name_and_path(index - 1, epochs, postfix)
+
+    @staticmethod
+    def get_new_model_name_and_path(epochs: int, postfix: str) -> Tuple[str, str]:
+        index = 0
+        model_name, model_path = AMF_GD_YOLOv8._get_name_and_path(index, epochs, postfix)
+        while os.path.exists(model_path):
+            index += 1
+            model_name, model_path = AMF_GD_YOLOv8._get_name_and_path(index, epochs, postfix)
+
+        return model_name, model_path
+
 
 class TrainingLoss(v8DetectionLoss):
     """Loss used for the training of the model. Based on v8DetectionLoss from ultralytics,
@@ -561,11 +589,10 @@ def non_max_suppression(
         prediction = prediction[0]  # select only inference output
 
     bs = prediction.shape[0]  # batch size
-    nc = (prediction.shape[1] - 4)  # number of classes
+    nc = prediction.shape[1] - 4  # number of classes
     nm = prediction.shape[1] - nc - 4  # number of masks
     mi = 4 + nc  # mask start index
     xc = prediction[:, 4:mi].amax(1) > conf_thres  # candidates
-
 
     prediction = prediction.transpose(-1, -2)  # shape(1,84,6300) to shape(1,6300,84)
     if in_place:

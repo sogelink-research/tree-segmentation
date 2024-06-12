@@ -9,7 +9,8 @@
     },
     "black-formatter.args": [
         "--line-length",
-        "100"
+        "100",
+        "--preview"
     ],
     "isort.args": [
         "--profile",

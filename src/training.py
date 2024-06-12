@@ -1,9 +1,11 @@
 import json
 import os
 import random
+import sys
 from collections import defaultdict
 from typing import Callable, Dict, Iterable, List, Sequence, Tuple
 
+import albumentations as A
 import geojson
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,10 +14,10 @@ import torch.nn as nn
 from albumentations import pytorch as Atorch
 from IPython import display
 from ipywidgets import Output
+from matplotlib.figure import Figure
 from PIL import Image
 from tifffile import tifffile
 from torch.utils.data import DataLoader, Dataset, Sampler
-from tqdm.notebook import tqdm
 
 from box_cls import Box
 from geojson_conversions import merge_geojson_feature_collections, save_geojson
@@ -30,7 +32,10 @@ from metrics import (
 )
 from plot import create_geojson_output, get_bounding_boxes
 from preprocessing.data import ImageData, get_coordinates_from_full_image_file_name
-from utils import Folders, get_file_base_name
+from utils import Folders, get_file_base_name, import_tqdm
+
+
+tqdm = import_tqdm()
 
 
 class InvalidPathException(Exception):
@@ -209,8 +214,8 @@ def normalize(
             )
         return tensor.view(-1, 1, 1)
 
-    mean = reshape(mean, "mean")
-    std = reshape(std, "std")
+    mean = reshape(mean, "mean").to(image.dtype)
+    std = reshape(std, "std").to(image.dtype)
 
     return (image - mean) / std
 
@@ -226,7 +231,6 @@ class TreeDataset(Dataset):
         self,
         files_paths_list: List[Dict[str, str]],
         labels_to_index: Dict[str, int],
-        labels_to_color: Dict[str, Tuple[int, int, int]],
         mean_rgb: torch.Tensor,
         std_rgb: torch.Tensor,
         mean_chm: torch.Tensor,
@@ -239,6 +243,7 @@ class TreeDataset(Dataset):
         transform_spatial: Callable | None = None,
         transform_pixel_rgb: Callable | None = None,
         transform_pixel_chm: Callable | None = None,
+        no_data_new_value: float = -5.0,
     ) -> None:
         """A dataset holding the necessary data for training a model on bounding boxes with
         RGB and CHM data.
@@ -247,8 +252,6 @@ class TreeDataset(Dataset):
             files_paths_list (List[Dict[str, str]]): list of dictionaries containing the paths to
             RGB, CHM and annotations.
             labels_to_index (Dict[str, int]): dictionary associating a label name with an index.
-            labels_to_color (Dict[str, Tuple[int, int, int]]): dictionary associating a label name
-            with a color.
             mean_rgb (torch.Tensor): mean used to normalize RGB images.
             std_rgb (torch.Tensor): standard deviation used to normalize RGB images.
             mean_chm (torch.Tensor): mean used to normalize CHM images.
@@ -271,6 +274,7 @@ class TreeDataset(Dataset):
             Defaults to None.
             transform_pixel_chm (Callable | None, optional): pixel augmentations applied to CHM images.
             Defaults to None.
+            no_data_new_value (float): value replacing NO_DATA (-9999) before normalizing images.
         """
 
         assert (
@@ -300,7 +304,6 @@ class TreeDataset(Dataset):
 
         self.labels_to_index = labels_to_index
         self.labels_to_str = {value: key for key, value in self.labels_to_index.items()}
-        self.labels_to_color = labels_to_color
 
         self.proba_drop_rgb = proba_drop_rgb
         self.labels_transformation_drop_rgb = labels_transformation_drop_rgb
@@ -315,6 +318,8 @@ class TreeDataset(Dataset):
         self.std_rgb = std_rgb
         self.mean_chm = mean_chm
         self.std_chm = std_chm
+
+        self.no_data_new_value = no_data_new_value
 
         self._init_channels_count()
 
@@ -480,7 +485,7 @@ class TreeDataset(Dataset):
             self.mean_chm,
             self.std_chm,
             replace_no_data=True,
-            no_data_new_value=-5,
+            no_data_new_value=self.no_data_new_value,
         )
 
         return sample
@@ -597,7 +602,7 @@ def tree_dataset_collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, t
 
 
 def extract_ground_truth_from_dataloader(
-    data: Dict[str, torch.Tensor]
+    data: Dict[str, torch.Tensor],
 ) -> Tuple[List[List[Box]], List[List[int]]]:
     """Extracts the ground truth components given the output of a TreeDataLoader.
 
@@ -666,8 +671,9 @@ class TreeDataLoader(DataLoader):
 
 
 class TrainingMetrics:
-    def __init__(self, float_precision: int = 3) -> None:
+    def __init__(self, float_precision: int = 3, show: bool = True) -> None:
         self.float_precision = float_precision
+        self.show = show
         self.reset()
 
     def reset(self):
@@ -676,8 +682,9 @@ class TrainingMetrics:
             lambda: defaultdict(lambda: {"val": 0.0, "count": 0, "avg": 0.0})
         )
 
-        self.out = Output()
-        display.display(self.out)
+        if self.show:
+            self.out = Output()
+            display.display(self.out)
 
     def end_loop(self, epoch: int):
         for metric_name, metric_dict in self.metrics_loop.items():
@@ -701,51 +708,55 @@ class TrainingMetrics:
 
     def visualize(self, save_path: str | None = None):
         # Inspired from https://gitlab.com/robindar/dl-scaman_checker/-/blob/main/src/dl_scaman_checker/TP01.py
-        with self.out:
-            metrics_index: Dict[str, int] = {}
-            categories_index: Dict[str, int] = {}
-            for i, (metric_name, metric_dict) in enumerate(self.metrics.items()):
-                metrics_index[metric_name] = i
-                for category_name in metric_dict.keys():
-                    if category_name not in categories_index.keys():
-                        categories_index[category_name] = len(categories_index)
+        if self.show is False and save_path is None:
+            return
 
-            nrows = max(len(metrics_index), 1)
-            cmap = plt.get_cmap("tab10")
+        metrics_index: Dict[str, int] = {}
+        categories_index: Dict[str, int] = {}
+        for i, (metric_name, metric_dict) in enumerate(self.metrics.items()):
+            metrics_index[metric_name] = i
+            for category_name in metric_dict.keys():
+                if category_name not in categories_index.keys():
+                    categories_index[category_name] = len(categories_index)
 
-            categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
+        nrows = max(len(metrics_index), 1)
+        cmap = plt.get_cmap("tab10")
 
-            fig = plt.figure(1, figsize=(6, 5 * nrows))
+        categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
 
-            for metric_name, metric_dict in self.metrics.items():
-                ax = fig.add_subplot(nrows, 1, metrics_index[metric_name] + 1)
-                for category_name, category_dict in metric_dict.items():
-                    epochs = category_dict["epochs"]
-                    values = category_dict["avgs"]
-                    fmt = "-" if len(epochs) > 100 else "-o"
-                    ax.plot(
-                        epochs,
-                        values,
-                        fmt,
-                        color=categories_colors[category_name],
-                        label=category_name,
-                    )
-                    ax.grid(alpha=0.5)
-                    ax.set_xlabel("Epoch")
-                    ax.set_yscale("log")
-                    ax.set_ylabel(metric_name)
-                ax.set_title(f"{metric_name}")
-            plt.tight_layout()
+        fig = plt.figure(1, figsize=(6, 5 * nrows))
 
-            has_legend, _ = plt.gca().get_legend_handles_labels()
-            if any(label != "" for label in has_legend):
-                plt.legend()
+        for metric_name, metric_dict in self.metrics.items():
+            ax = fig.add_subplot(nrows, 1, metrics_index[metric_name] + 1)
+            for category_name, category_dict in metric_dict.items():
+                epochs = category_dict["epochs"]
+                values = category_dict["avgs"]
+                fmt = "-" if len(epochs) > 100 else "-o"
+                ax.plot(
+                    epochs,
+                    values,
+                    fmt,
+                    color=categories_colors[category_name],
+                    label=category_name,
+                )
+                ax.grid(alpha=0.5)
+                ax.set_xlabel("Epoch")
+                ax.set_yscale("log")
+                ax.set_ylabel(metric_name)
+            ax.set_title(f"{metric_name}")
+        plt.tight_layout()
 
-            if save_path is not None:
-                plt.savefig(save_path, dpi=200)
+        has_legend, _ = plt.gca().get_legend_handles_labels()
+        if any(label != "" for label in has_legend):
+            plt.legend()
 
-            plt.show()
-            display.clear_output(wait=True)
+        if save_path is not None:
+            plt.savefig(save_path, dpi=200)
+
+        if self.show:
+            with self.out:
+                plt.show()
+                display.clear_output(wait=True)
 
 
 def perfect_preds(
@@ -1112,6 +1123,7 @@ def train_and_validate(
     accumulate: int,
     device: torch.device,
     save_outputs: bool,
+    show_training_metrics: bool,
 ) -> nn.Module:
 
     train_loader, val_loader, test_loader = initialize_dataloaders(
@@ -1125,7 +1137,7 @@ def train_and_validate(
     accumulation_steps = max(round(accumulate / batch_size), 1)
     running_accumulation_step = 0
 
-    training_metrics = TrainingMetrics()
+    training_metrics = TrainingMetrics(show=show_training_metrics)
 
     best_model = model
     best_loss = np.inf
@@ -1274,19 +1286,19 @@ def create_and_save_splitted_datasets(
 def load_tree_datasets_from_split(
     data_split_file_path: str,
     labels_to_index: Dict[str, int],
-    labels_to_color: Dict[str, Tuple[int, int, int]],
     mean_rgb: torch.Tensor,
     std_rgb: torch.Tensor,
     mean_chm: torch.Tensor,
     std_chm: torch.Tensor,
+    transform_spatial_training: A.Compose | None,
+    transform_pixel_rgb_training: A.Compose | None,
+    transform_pixel_chm_training: A.Compose | None,
     dismissed_classes: List[str] = [],
-    transform_spatial_training: Callable | None = None,
-    transform_pixel_rgb_training: Callable | None = None,
-    transform_pixel_chm_training: Callable | None = None,
     proba_drop_rgb: float = 0.0,
     labels_transformation_drop_rgb: Dict[str, str | None] | None = None,
     proba_drop_chm: float = 0.0,
     labels_transformation_drop_chm: Dict[str, str | None] | None = None,
+    no_data_new_value: float = -5.0,
 ) -> Dict[str, TreeDataset]:
     with open(data_split_file_path, "r") as f:
         data_split = json.load(f)
@@ -1295,7 +1307,6 @@ def load_tree_datasets_from_split(
     tree_datasets["training"] = TreeDataset(
         data_split["training"],
         labels_to_index=labels_to_index,
-        labels_to_color=labels_to_color,
         mean_rgb=mean_rgb,
         std_rgb=std_rgb,
         mean_chm=mean_chm,
@@ -1308,12 +1319,12 @@ def load_tree_datasets_from_split(
         transform_spatial=transform_spatial_training,
         transform_pixel_rgb=transform_pixel_rgb_training,
         transform_pixel_chm=transform_pixel_chm_training,
+        no_data_new_value=no_data_new_value,
     )
 
     tree_datasets["validation"] = TreeDataset(
         data_split["validation"],
         labels_to_index=labels_to_index,
-        labels_to_color=labels_to_color,
         mean_rgb=mean_rgb,
         std_rgb=std_rgb,
         mean_chm=mean_chm,
@@ -1326,6 +1337,7 @@ def load_tree_datasets_from_split(
         transform_spatial=None,
         transform_pixel_rgb=None,
         transform_pixel_chm=None,
+        no_data_new_value=no_data_new_value,
     )
 
     if "test" in data_split:
@@ -1336,7 +1348,6 @@ def load_tree_datasets_from_split(
     tree_datasets["test"] = TreeDataset(
         test_data,
         labels_to_index=labels_to_index,
-        labels_to_color=labels_to_color,
         mean_rgb=mean_rgb,
         std_rgb=std_rgb,
         mean_chm=mean_chm,
@@ -1349,6 +1360,7 @@ def load_tree_datasets_from_split(
         transform_spatial=None,
         transform_pixel_rgb=None,
         transform_pixel_chm=None,
+        no_data_new_value=no_data_new_value,
     )
 
     return tree_datasets

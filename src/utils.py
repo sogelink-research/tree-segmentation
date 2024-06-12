@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import sys
 import time
 from enum import Enum
 from typing import Any, Dict, List, Tuple
@@ -226,3 +227,11 @@ class ImageData:
         self.pixel_box = Box(x_min=0, y_min=0, x_max=self.width_pixel, y_max=self.height_pixel)
 
         ds = None
+
+
+def import_tqdm():
+    if "ipykernel" in sys.modules:
+        from tqdm.notebook import tqdm
+    else:
+        from tqdm import tqdm
+    return tqdm
