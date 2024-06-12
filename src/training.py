@@ -15,12 +15,19 @@ from ipywidgets import Output
 from PIL import Image
 from tifffile import tifffile
 from torch.utils.data import DataLoader, Dataset, Sampler
-from tqdm.auto import tqdm
+from tqdm.notebook import tqdm
 
 from box_cls import Box
 from geojson_conversions import merge_geojson_feature_collections, save_geojson
 from layers import AMF_GD_YOLOv8
-from metrics import compute_sorted_ap, get_sorted_ap_plot, hungarian_algorithm
+from metrics import (
+    compute_sorted_ap,
+    compute_sorted_ap_confs,
+    hungarian_algorithm,
+    hungarian_algorithm_confs,
+    plot_sorted_ap,
+    plot_sorted_ap_confs,
+)
 from plot import create_geojson_output, get_bounding_boxes
 from preprocessing.data import ImageData, get_coordinates_from_full_image_file_name
 from utils import Folders, get_file_base_name
@@ -935,14 +942,23 @@ def compute_metrics(
     model: AMF_GD_YOLOv8,
     test_loader: TreeDataLoader,
     device: torch.device,
+    conf_thresholds: List[float],
     no_rgb: bool = False,
     no_chm: bool = False,
-    save_path: str | None = None,
-) -> float:
+    save_path_ap_iou: str | None = None,
+    save_path_sap_conf: str | None = None,
+) -> Tuple[
+    List[float], List[float], float, float, List[List[float]], List[List[float]], List[float]
+]:
     # TODO: Handle batch > 1
-    matched_pairs: List[Tuple[Tuple[int, int], float]] = []
-    unmatched_pred: List[int] = []
-    unmatched_gt: List[int] = []
+
+    # For sortedAP/conf threshold plotting
+    matched_pairs_conf: List[List[Tuple[Tuple[int, int], float]]] = [
+        [] for i in range(len(conf_thresholds))
+    ]
+    unmatched_pred_conf: List[List[int]] = [[] for i in range(len(conf_thresholds))]
+    unmatched_gt_conf: List[List[int]] = [[] for i in range(len(conf_thresholds))]
+
     model.eval()
     with torch.no_grad():
         for data in tqdm(test_loader, leave=False, desc="Computing metrics"):
@@ -955,42 +971,105 @@ def compute_metrics(
                 image_chm = torch.zeros_like(image_chm)
             image_rgb = image_rgb.to(device, non_blocking=True)
             image_chm = image_chm.to(device, non_blocking=True)
-            results = model.predict(image_rgb, image_chm)[2]
+            lowest_conf_threshold = min(conf_thresholds)
+            all_results = model.predict(image_rgb, image_chm, conf_threshold=lowest_conf_threshold)[
+                2
+            ]
 
-            if results.boxes is not None:
-                pred_bboxes = list(map(Box.from_list, results.boxes.xyxy.tolist()))
-                pred_labels_ints = results.boxes.cls.tolist()
-                scores = results.boxes.conf.tolist()
+            if all_results.boxes is not None:
+                pred_bboxes = list(map(Box.from_list, all_results.boxes.xyxy.tolist()))
+                pred_labels_ints = all_results.boxes.cls.tolist()
+                pred_scores = all_results.boxes.conf.tolist()
             else:
                 pred_bboxes = []
                 pred_labels_ints = []
-                scores = []
+                pred_scores = []
 
             # Get ground truth
             gt_bboxes_per_image, gt_classes_per_image = extract_ground_truth_from_dataloader(data)
-            
+
+            iou_threshold = 1e-6
+            # # Compute the matching
+            # matched_pairs_temp, unmatched_pred_temp, unmatched_gt_temp = hungarian_algorithm(
+            #     pred_bboxes=pred_bboxes,
+            #     pred_labels=pred_labels_ints,
+            #     gt_bboxes=gt_bboxes_per_image[0],
+            #     gt_labels=gt_classes_per_image[0],
+            #     iou_threshold=iou_threshold,
+            #     agnostic=False,
+            # )
+            # matched_pairs.extend(matched_pairs_temp)
+            # unmatched_pred.extend(unmatched_pred_temp)
+            # unmatched_gt.extend(unmatched_gt_temp)
+
             # Compute the matching
-            threshold = 1e-6
-            matched_pairs_temp, unmatched_pred_temp, unmatched_gt_temp = hungarian_algorithm(
-                pred_bboxes,
-                pred_labels_ints,
-                gt_bboxes_per_image[0],
-                gt_classes_per_image[0],
-                threshold,
-                agnostic=False,
+            matched_pairs_conf_temp, unmatched_pred_conf_temp, unmatched_gt_conf_temp = (
+                hungarian_algorithm_confs(
+                    pred_bboxes=pred_bboxes,
+                    pred_labels=pred_labels_ints,
+                    pred_scores=pred_scores,
+                    gt_bboxes=gt_bboxes_per_image[0],
+                    gt_labels=gt_classes_per_image[0],
+                    iou_threshold=iou_threshold,
+                    conf_thresholds=conf_thresholds,
+                    agnostic=False,
+                )
             )
-            print(f"{matched_pairs_temp = }")
-            matched_pairs.extend(matched_pairs_temp)
-            unmatched_pred.extend(unmatched_pred_temp)
-            unmatched_gt.extend(unmatched_gt_temp)
+            for i in range(len(conf_thresholds)):
+                matched_pairs_conf[i].extend(matched_pairs_conf_temp[i])
+                unmatched_pred_conf[i].extend(unmatched_pred_conf_temp[i])
+                unmatched_gt_conf[i].extend(unmatched_gt_conf_temp[i])
 
-    sorted_ious, aps, sorted_ap = compute_sorted_ap(matched_pairs, unmatched_pred, unmatched_gt)
-    print(f"{sorted_ious = }")
+    # sorted_ious, aps, sorted_ap = compute_sorted_ap(matched_pairs, unmatched_pred, unmatched_gt)
+    sorted_ious_list, aps_list, sorted_ap_list = compute_sorted_ap_confs(
+        matched_pairs_conf, unmatched_pred_conf, unmatched_gt_conf
+    )
 
-    if save_path is not None:
-        get_sorted_ap_plot(sorted_ious, aps, sorted_ap, show=False, save_path=save_path)
+    best_index = sorted_ap_list.index(max(sorted_ap_list))
+    best_sorted_ious = sorted_ious_list[best_index]
+    best_aps = aps_list[best_index]
+    best_sorted_ap = sorted_ap_list[best_index]
+    best_conf_threshold = conf_thresholds[best_index]
 
-    return sorted_ap
+    if no_rgb:
+        if no_chm:
+            legend = "No data"
+        else:
+            legend = "CHM"
+    else:
+        if no_chm:
+            legend = "RGB"
+        else:
+            legend = "RGB and CHM"
+
+    if save_path_ap_iou is not None:
+        plot_sorted_ap(
+            [best_sorted_ious],
+            [best_aps],
+            [best_sorted_ap],
+            legend_list=[legend],
+            conf_thresholds=[best_conf_threshold],
+            show=False,
+            save_path=save_path_ap_iou,
+        )
+    if save_path_sap_conf is not None:
+        plot_sorted_ap_confs(
+            sorted_ap_lists=[sorted_ap_list],
+            conf_thresholds_list=[conf_thresholds],
+            legend_list=[legend],
+            show=False,
+            save_path=save_path_sap_conf,
+        )
+
+    return (
+        best_sorted_ious,
+        best_aps,
+        best_sorted_ap,
+        best_conf_threshold,
+        sorted_ious_list,
+        aps_list,
+        sorted_ap_list,
+    )
 
 
 def initialize_dataloaders(

@@ -1,5 +1,5 @@
 import itertools
-from typing import List, Tuple, TypeVar
+from typing import List, Tuple, TypeVar, cast
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -18,7 +18,7 @@ def hungarian_algorithm(
     pred_labels: List_int_or_str,
     gt_bboxes: List[Box],
     gt_labels: List_int_or_str,
-    threshold: float,
+    iou_threshold: float,
     agnostic: bool,
 ) -> Tuple[List[Tuple[Tuple[int, int], float]], List[int], List[int]]:
     pred_len = len(pred_bboxes)
@@ -32,7 +32,7 @@ def hungarian_algorithm(
     for i, (pred_box, pred_class) in enumerate(zip(pred_bboxes, pred_labels)):
         for j, (gt_box, gt_class) in enumerate(zip(gt_bboxes, gt_labels)):
             iou = compute_iou(pred_box, gt_box)
-            if iou > threshold:
+            if iou > iou_threshold:
                 if agnostic or pred_class == gt_class:
                     cost_matrix[i, j] = 1 - iou
 
@@ -52,6 +52,34 @@ def hungarian_algorithm(
     unmatched_gt = list(set(range(gt_len)).difference(set(map(lambda t: t[0][1], matched_pairs))))
 
     return matched_pairs, unmatched_pred, unmatched_gt
+
+
+def hungarian_algorithm_confs(
+    pred_bboxes: List[Box],
+    pred_labels: List_int_or_str,
+    pred_scores: List[float],
+    gt_bboxes: List[Box],
+    gt_labels: List_int_or_str,
+    iou_threshold: float,
+    conf_thresholds: List[float],
+    agnostic: bool,
+) -> Tuple[List[List[Tuple[Tuple[int, int], float]]], List[List[int]], List[List[int]]]:
+    matched_pairs_list: List[List[Tuple[Tuple[int, int], float]]] = []
+    unmatched_pred_list: List[List[int]] = []
+    unmatched_gt_list: List[List[int]] = []
+
+    for conf_threshold in conf_thresholds:
+        mask = [i for i in range(len(pred_scores)) if pred_scores[i] > conf_threshold]
+        pred_bboxes_conf = [pred_bboxes[i] for i in mask]
+        pred_labels_conf = cast(List_int_or_str, [pred_labels[i] for i in mask])
+        matched_pairs, unmatched_pred, unmatched_gt = hungarian_algorithm(
+            pred_bboxes_conf, pred_labels_conf, gt_bboxes, gt_labels, iou_threshold, agnostic
+        )
+        matched_pairs_list.append(matched_pairs)
+        unmatched_pred_list.append(unmatched_pred)
+        unmatched_gt_list.append(unmatched_gt)
+
+    return matched_pairs_list, unmatched_pred_list, unmatched_gt_list
 
 
 def compute_sorted_ap(
@@ -76,28 +104,59 @@ def compute_sorted_ap(
     return sorted_ious, aps, sorted_ap
 
 
-def get_sorted_ap_plot(
-    sorted_ious: List[float],
-    aps: List[float],
-    sorted_ap: float,
+def compute_sorted_ap_confs(
+    matched_pairs_list: List[List[Tuple[Tuple[int, int], float]]],
+    unmatched_pred_list: List[List[int]],
+    unmatched_gt_list: List[List[int]],
+) -> Tuple[List[List[float]], List[List[float]], List[float]]:
+
+    sorted_ious_list: List[List[float]] = []
+    aps_list: List[List[float]] = []
+    sorted_ap_list: List[float] = []
+
+    for matched_pairs, unmatched_pred, unmatched_gt in zip(
+        matched_pairs_list, unmatched_pred_list, unmatched_gt_list
+    ):
+        sorted_ious, aps, sorted_ap = compute_sorted_ap(matched_pairs, unmatched_pred, unmatched_gt)
+        sorted_ious_list.append(sorted_ious)
+        aps_list.append(aps)
+        sorted_ap_list.append(sorted_ap)
+
+    return sorted_ious_list, aps_list, sorted_ap_list
+
+
+def plot_sorted_ap(
+    sorted_ious_list: List[List[float]],
+    aps_list: List[List[float]],
+    sorted_ap_list: List[float],
+    legend_list: List[str],
+    conf_thresholds: List[float],
     show: bool = False,
     save_path: str | None = None,
 ):
-    fig = plt.figure(1, figsize=(10, 6))
+    plt.figure(1, figsize=(10, 6))
     plt.clf()  # Clear the current figure
 
-    x = [0.0]
-    y = [aps[0] if len(aps) > 0 else 0.0]
-    x.extend(sorted_ious)
-    y.extend(aps)
-    x.append(1.0)
-    y.append(0.0)
+    for sorted_ious, aps, sorted_ap, legend, conf_threshold in zip(
+        sorted_ious_list, aps_list, sorted_ap_list, legend_list, conf_thresholds
+    ):
+        x = [0.0]
+        y = [aps[0] if len(aps) > 0 else 0.0]
+        x.extend(sorted_ious)
+        y.extend(aps)
+        x.append(1.0)
+        y.append(0.0)
 
-    plt.plot(x, y)
-    plt.grid(alpha=0.5)
-    plt.xlabel("IoU")
-    plt.ylabel("AP")
-    plt.title(f"Sorted AP = {round(sorted_ap, 4)}")
+        plt.plot(
+            x,
+            y,
+            label=f"{legend}\n- conf_threshold = {round(conf_threshold, 5)}\n- sortedAP = {round(sorted_ap, 4)}",
+        )
+        plt.grid(alpha=0.5)
+        plt.xlabel("IoU")
+        plt.ylabel("AP")
+
+    plt.title("Sorted AP")
     plt.tight_layout()
 
     has_legend, _ = plt.gca().get_legend_handles_labels()
@@ -113,37 +172,38 @@ def get_sorted_ap_plot(
     plt.close()
 
 
-def main():
-    # Example usage
-    pred_bboxes = [Box(50, 50, 100, 100), Box(30, 30, 50, 50)]
-    pred_labels = ["1", "2"]
-    gt_bboxes = [Box(48, 48, 105, 105), Box(35, 35, 60, 60)]
-    gt_labels = ["1", "2"]
-    threshold = 1e-6
+def plot_sorted_ap_confs(
+    sorted_ap_lists: List[List[float]],
+    conf_thresholds_list: List[List[float]],
+    legend_list: List[str],
+    show: bool = False,
+    save_path: str | None = None,
+):
+    plt.figure(1, figsize=(10, 6))
+    plt.clf()  # Clear the current figure
 
-    matched_pairs, unmatched_pred, unmatched_gt = hungarian_algorithm(
-        pred_bboxes, pred_labels, gt_bboxes, gt_labels, threshold, agnostic=False
-    )
-    print("Matched pairs:\n", matched_pairs)
-    print("Unmatched predictions:\n", unmatched_pred)
-    print("Unmatched ground truth:\n", unmatched_gt)
+    for sorted_ap, conf_threshold, legend in zip(
+        sorted_ap_lists, conf_thresholds_list, legend_list
+    ):
+        x = conf_threshold
+        y = sorted_ap
 
-    sorted_ious, aps, sorted_ap = compute_sorted_ap(matched_pairs, unmatched_pred, unmatched_gt)
+        plt.plot(x, y, label=f"{legend}")
+        plt.grid(alpha=0.5)
+        plt.xlabel("Confidence threshold")
+        plt.ylabel("Sorted AP")
 
-    get_sorted_ap_plot(sorted_ious, aps, sorted_ap, save_path="Test.png")
+    plt.title("Sorted AP w.r.t the confidence threshold")
+    plt.tight_layout()
 
-    # image = np.zeros((200, 200, 3), dtype=np.uint8)
-    # bboxes = [bbox.as_list() for bbox in list(itertools.chain(*[pred_bboxes, gt_bboxes]))]
-    # labels = [label for label in list(itertools.chain(*[pred_labels, gt_labels]))]
-    # colors_dict = {"1": (255, 0, 0), "2": (0, 255, 0)}
-    # scores = None
-    # new_image = create_bboxes_image(
-    #     image, bboxes=bboxes, labels=labels, colors_dict=colors_dict, scores=scores
-    # )
-    # output_path = "Test.png"
-    # if output_path is not None:
-    #     io.imsave(output_path, new_image)
+    has_legend, _ = plt.gca().get_legend_handles_labels()
+    if any(label != "" for label in has_legend):
+        plt.legend()
 
+    if save_path is not None:
+        plt.savefig(save_path, dpi=200)
 
-if __name__ == "__main__":
-    main()
+    if show:
+        plt.show()
+
+    plt.close()
