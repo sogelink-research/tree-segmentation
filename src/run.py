@@ -10,11 +10,15 @@ import torch
 from dataset_constants import DatasetConst
 from geojson_conversions import open_geojson_feature_collection
 from layers import AMF_GD_YOLOv8
+from metrics import plot_sorted_ap, plot_sorted_ap_confs
 from preprocessing.rgb_cir import get_rgb_images_paths_from_polygon
 from training import (
     compute_mean_and_std,
+    compute_metrics,
     create_and_save_splitted_datasets,
+    initialize_dataloaders,
     load_tree_datasets_from_split,
+    test_save_output_image,
     train_and_validate,
 )
 from utils import Folders, ImageData, import_tqdm
@@ -233,21 +237,21 @@ class TrainingSession:
             "garbage_collection_threshold:0.6,max_split_size_mb:512"
         )
 
-        model_name, model_path = AMF_GD_YOLOv8.get_new_model_name_and_path(
+        self.model_name, self.model_path = AMF_GD_YOLOv8.get_new_model_name_and_path(
             self.training_data.training_params.epochs, self.postfix
         )
 
-        model = AMF_GD_YOLOv8(
+        self.model = AMF_GD_YOLOv8(
             self.training_data.datasets["training"].rgb_channels,
             self.training_data.datasets["training"].chm_channels,
             device=self.device,
             scale="n",
             class_names=self.training_data.dataset_params.class_names,
-            name=model_name,
+            name=self.model_name,
         )
 
         final_model = train_and_validate(
-            model=model,
+            model=self.model,
             datasets=self.training_data.datasets,
             lr=self.training_data.training_params.lr,
             epochs=self.training_data.training_params.epochs,
@@ -260,7 +264,110 @@ class TrainingSession:
         )
 
         state_dict = final_model.state_dict()
-        torch.save(state_dict, model_path)
+        torch.save(state_dict, self.model_path)
+
+        self._compute_metrics()
+
+    def _compute_metrics(self):
+        _, _, test_loader = initialize_dataloaders(
+            datasets=self.training_data.datasets,
+            batch_size=self.training_data.training_params.batch_size,
+            num_workers=self.training_data.training_params.num_workers,
+        )
+
+        best_sorted_ious_list = []
+        best_aps_list = []
+        best_sorted_ap_list = []
+        best_conf_threshold__list = []
+
+        sorted_ap_lists = []
+        conf_thresholds_list = []
+
+        legend_list = []
+
+        thresholds_low = np.power(10, np.linspace(-4, -1, 10))
+        thresholds_high = np.linspace(0.1, 1.0, 19)
+        conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
+
+        no_rgbs = [False, False, True, True]
+        no_chms = [False, True, False, True]
+        test_names = ["all", "no_chm", "no_rgb", "no_chm_no_rgb"]
+
+        pbar = tqdm(zip(no_rgbs, no_chms, test_names), total=len(no_rgbs))
+        for no_rgb, no_chm, test_name in pbar:
+            if no_rgb:
+                if no_chm:
+                    legend = "No data"
+                else:
+                    legend = "CHM"
+            else:
+                if no_chm:
+                    legend = "RGB"
+                else:
+                    legend = "RGB and CHM"
+            pbar.set_description(legend)
+            pbar.refresh()
+            test_save_output_image(
+                self.model,
+                test_loader,
+                -1,
+                self.device,
+                no_rgb=no_rgb,
+                no_chm=no_chm,
+                save_path=os.path.join(
+                    Folders.OUTPUT_DIR.value, f"{self.model_name}_{test_name}.geojson"
+                ),
+            )
+            (
+                best_sorted_ious,
+                best_aps,
+                best_sorted_ap,
+                best_conf_threshold,
+                sorted_ious_list,
+                aps_list,
+                sorted_ap_list_2,
+            ) = compute_metrics(
+                self.model,
+                test_loader,
+                self.device,
+                conf_thresholds=conf_thresholds,
+                no_rgb=no_rgb,
+                no_chm=no_chm,
+                save_path_ap_iou=os.path.join(
+                    Folders.OUTPUT_DIR.value, f"{self.model_name}_ap_iou_{test_name}.png"
+                ),
+                save_path_sap_conf=os.path.join(
+                    Folders.OUTPUT_DIR.value, f"{self.model_name}_sap_conf_{test_name}.png"
+                ),
+            )
+
+            best_sorted_ious_list.append(best_sorted_ious)
+            best_aps_list.append(best_aps)
+            best_sorted_ap_list.append(best_sorted_ap)
+            best_conf_threshold__list.append(best_conf_threshold)
+
+            sorted_ap_lists.append(sorted_ap_list_2)
+            conf_thresholds_list.append(conf_thresholds)
+
+            legend_list.append(legend)
+
+        plot_sorted_ap(
+            best_sorted_ious_list,
+            best_aps_list,
+            best_sorted_ap_list,
+            conf_thresholds=best_conf_threshold__list,
+            legend_list=legend_list,
+            show=True,
+            save_path=os.path.join(Folders.OUTPUT_DIR.value, f"{self.model_name}_ap_iou.png"),
+        )
+
+        plot_sorted_ap_confs(
+            sorted_ap_lists=sorted_ap_lists,
+            conf_thresholds_list=conf_thresholds_list,
+            legend_list=legend_list,
+            show=True,
+            save_path=os.path.join(Folders.OUTPUT_DIR.value, f"{self.model_name}_sap_conf.png"),
+        )
 
 
 def main():
@@ -318,7 +425,7 @@ def main():
     )
 
     lr = 1e-2
-    epochs = 5
+    epochs = 2000
     batch_size = 1
     num_workers = mp.cpu_count() // 2
     accumulate = 12
@@ -344,7 +451,7 @@ def main():
 
     # Training session
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    postfix = "rgb_cir_chm"
+    postfix = "rgb_cir_multi_chm"
     training_session = TrainingSession(training_data=training_data, device=device, postfix=postfix)
 
     training_session.run()
