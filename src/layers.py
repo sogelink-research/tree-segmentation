@@ -15,7 +15,7 @@ from ultralytics.nn.modules.block import Bottleneck, C2f
 from ultralytics.nn.modules.conv import Conv
 from ultralytics.nn.modules.head import Detect
 from ultralytics.utils.loss import v8DetectionLoss
-from ultralytics.utils.ops import scale_boxes
+from ultralytics.utils.ops import scale_boxes, xywh2xyxy
 
 from cbam import CBAM
 from utils import Folders, download_file
@@ -449,33 +449,33 @@ class AMF_GD_YOLOv8(nn.Module):
 
         return (y[0], y[1], result)
 
-    def compute_loss_old(
-        self,
-        preds: torch.Tensor,
-        gt_bboxes: torch.Tensor,
-        gt_classes: torch.Tensor,
-        gt_indices: torch.Tensor,  # This parameter has changed!
-        bboxes_format: str,
-    ):
-        number_classes = len(self.class_names)
-        loss_func = DETRLoss(nc=number_classes)
+    # def compute_loss_old(
+    #     self,
+    #     preds: torch.Tensor,
+    #     gt_bboxes: torch.Tensor,
+    #     gt_classes: torch.Tensor,
+    #     gt_indices: torch.Tensor,  # This parameter has changed!
+    #     bboxes_format: str,
+    # ):
+    #     number_classes = len(self.class_names)
+    #     loss_func = DETRLoss(nc=number_classes)
 
-        if len(preds.shape) == 3:
-            preds = preds.unsqueeze(0)
+    #     if len(preds.shape) == 3:
+    #         preds = preds.unsqueeze(0)
 
-        pred_bboxes = preds.permute((0, 1, 3, 2))[:, :, :, :4].contiguous()
-        pred_scores = preds.permute((0, 1, 3, 2))[:, :, :, 4:].contiguous()
-        if bboxes_format == "xywh":
-            gt_bboxes = xywh2xyxy(gt_bboxes)
-        elif bboxes_format != "xyxy":
-            raise ValueError("bboxes_format must be 'xywh' or 'xyxy'.")
-        batch = {
-            "cls": gt_classes.to(dtype=torch.int64),
-            "bboxes": gt_bboxes,
-            "gt_groups": [idx[1] - idx[0] for idx in gt_indices],
-        }
+    #     pred_bboxes = preds.permute((0, 1, 3, 2))[:, :, :, :4].contiguous()
+    #     pred_scores = preds.permute((0, 1, 3, 2))[:, :, :, 4:].contiguous()
+    #     if bboxes_format == "xywh":
+    #         gt_bboxes = xywh2xyxy(gt_bboxes)
+    #     elif bboxes_format != "xyxy":
+    #         raise ValueError("bboxes_format must be 'xywh' or 'xyxy'.")
+    #     batch = {
+    #         "cls": gt_classes.to(dtype=torch.int64),
+    #         "bboxes": gt_bboxes,
+    #         "gt_groups": [idx[1] - idx[0] for idx in gt_indices],
+    #     }
 
-        return loss_func.forward(pred_bboxes, pred_scores, batch)
+    #     return loss_func.forward(pred_bboxes, pred_scores, batch)
 
     def compute_loss(
         self,
@@ -683,27 +683,27 @@ def swap_image_b_r(image: Image.Image) -> Image.Image:
     return Image.merge("RGB", (r, g, b))
 
 
-def xywh2xyxy(x):
-    """
-    Convert bounding box coordinates from (x, y, width, height) format to (x1, y1, x2, y2) format where (x1, y1) is the
-    top-left corner and (x2, y2) is the bottom-right corner.
+# def xywh2xyxy(x):
+#     """
+#     Convert bounding box coordinates from (x, y, width, height) format to (x1, y1, x2, y2) format where (x1, y1) is the
+#     top-left corner and (x2, y2) is the bottom-right corner.
 
-    Small modification from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/ops.py
+#     Small modification from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/ops.py
 
-    Args:
-        x (np.ndarray | torch.Tensor): The input bounding box coordinates in (x, y, width, height) format.
+#     Args:
+#         x (np.ndarray | torch.Tensor): The input bounding box coordinates in (x, y, width, height) format.
 
-    Returns:
-        y (np.ndarray | torch.Tensor): The bounding box coordinates in (x1, y1, x2, y2) format.
-    """
-    assert x.shape[-1] == 4, f"input shape last dimension expected 4 but input shape is {x.shape}"
-    y = (
-        torch.empty_like(x) if isinstance(x, torch.Tensor) else np.empty_like(x)
-    )  # faster than clone/copy
-    w = x[..., 2]  # half-width
-    h = x[..., 3]  # half-height
-    y[..., 0] = x[..., 0]  # top left x
-    y[..., 1] = x[..., 1]  # top left y
-    y[..., 2] = x[..., 0] + w  # bottom right x
-    y[..., 3] = x[..., 1] + h  # bottom right y
-    return y
+#     Returns:
+#         y (np.ndarray | torch.Tensor): The bounding box coordinates in (x1, y1, x2, y2) format.
+#     """
+#     assert x.shape[-1] == 4, f"input shape last dimension expected 4 but input shape is {x.shape}"
+#     y = (
+#         torch.empty_like(x) if isinstance(x, torch.Tensor) else np.empty_like(x)
+#     )  # faster than clone/copy
+#     w = x[..., 2]  # half-width
+#     h = x[..., 3]  # half-height
+#     y[..., 0] = x[..., 0]  # top left x
+#     y[..., 1] = x[..., 1]  # top left y
+#     y[..., 2] = x[..., 0] + w  # bottom right x
+#     y[..., 3] = x[..., 1] + h  # bottom right y
+#     return y
