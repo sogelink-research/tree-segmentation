@@ -488,17 +488,20 @@ class AMF_GD_YOLOv8(nn.Module):
         return self.criterion(preds, batch)
 
     @staticmethod
-    def _get_model_name(index: int, epochs: int, postfix: str) -> str:
-        model_name = f"trained_model_{postfix}_{epochs}ep_{index}"
+    def _get_model_name(index: int, epochs: int, postfix: str | None = None) -> str:
+        if postfix is None:
+            model_name = f"trained_model_{epochs}ep_{index}"
+        else:
+            model_name = f"trained_model_{postfix}_{epochs}ep_{index}"
         return model_name
 
     @staticmethod
-    def get_model_path_from_name(model_name: str) -> str:
+    def get_model_path_from_name(model_name: str | None = None) -> str:
         model_path = os.path.join(Folders.MODELS_AMF_GD_YOLOV8.value, f"{model_name}.pt")
         return model_path
 
     @staticmethod
-    def get_last_model_name_and_path(epochs: int, postfix: str) -> Tuple[str, str]:
+    def get_last_model_name_and_path(epochs: int, postfix: str | None = None) -> Tuple[str, str]:
         index = 0
         model_name = AMF_GD_YOLOv8._get_model_name(index, epochs, postfix)
         model_path = AMF_GD_YOLOv8.get_model_path_from_name(model_name)
@@ -514,7 +517,7 @@ class AMF_GD_YOLOv8(nn.Module):
         return model_name, model_path
 
     @staticmethod
-    def get_new_model_name_and_path(epochs: int, postfix: str) -> Tuple[str, str]:
+    def get_new_model_name_and_path(epochs: int, postfix: str | None = None) -> Tuple[str, str]:
         index = 0
         model_name = AMF_GD_YOLOv8._get_model_name(index, epochs, postfix)
         model_path = AMF_GD_YOLOv8.get_model_path_from_name(model_name)
