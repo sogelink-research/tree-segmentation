@@ -16,7 +16,7 @@ from IPython import display
 from ipywidgets import Output
 from matplotlib.figure import Figure
 from PIL import Image
-from tifffile import tifffile
+import tifffile
 from torch.utils.data import DataLoader, Dataset, Sampler
 
 from box_cls import Box
@@ -916,6 +916,7 @@ def test_save_output_image(
                 bboxes = []
                 labels = []
                 scores = []
+                
 
             # Save the image if there is at least one bounding box
             # bboxes_image = create_bboxes_image(
@@ -935,8 +936,9 @@ def test_save_output_image(
             full_image_name = test_loader.dataset.get_full_image_name(idx)
             cropped_coords_name = test_loader.dataset.get_cropped_coords_name(idx)
             bboxes_as_box = [Box.from_list(bbox) for bbox in bboxes]
+            save_path = "Test.geojson" if idx == 0 else None
             geojson_features = create_geojson_output(
-                full_image_name, cropped_coords_name, bboxes_as_box, labels, scores
+                full_image_name, cropped_coords_name, bboxes_as_box, labels, scores, save_path=save_path
             )
             geojson_outputs.append(geojson_features)
 
@@ -1124,7 +1126,7 @@ def train_and_validate(
     device: torch.device,
     save_outputs: bool,
     show_training_metrics: bool,
-) -> nn.Module:
+) -> AMF_GD_YOLOv8:
 
     train_loader, val_loader, test_loader = initialize_dataloaders(
         datasets, batch_size, num_workers

@@ -605,3 +605,13 @@ def merge_tif(cropped_images_folders_paths: List[str]):
         ) as dst:
             for i in range(multi_channel_image.shape[2]):
                 dst.write(multi_channel_image[:, :, i], i + 1)
+
+def get_channels_count(chm_folder_path: str) -> int:
+    for file in os.listdir(chm_folder_path):
+        image_path = os.path.join(chm_folder_path, file)
+        image = tifffile.imread(image_path)
+        if len(image.shape) == 2:
+            return 1
+        else:
+            return image.shape[2]
+    raise ValueError(f"There is no file in {chm_folder_path}.")

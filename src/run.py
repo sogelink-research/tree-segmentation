@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import multiprocessing as mp
 import os
+import pickle
 import time
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -11,8 +14,10 @@ from dataset_constants import DatasetConst
 from geojson_conversions import open_geojson_feature_collection
 from layers import AMF_GD_YOLOv8
 from metrics import plot_sorted_ap, plot_sorted_ap_confs
+from preprocessing.data import get_channels_count
 from preprocessing.rgb_cir import get_rgb_images_paths_from_polygon
 from training import (
+    TreeDataset,
     compute_mean_and_std,
     compute_metrics,
     create_and_save_splitted_datasets,
@@ -116,7 +121,7 @@ class TrainingParams:
 
 
 class TrainingData:
-    @running_message(start_message="Loading the dataset...")
+    @running_message(start_message="Initializing the training parameters...")
     def __init__(self, dataset_params: DatasetParams, training_params: TrainingParams) -> None:
         self.dataset_params = dataset_params
         self.training_params = training_params
@@ -136,7 +141,6 @@ class TrainingData:
             training_params.mean_chm,
             training_params.std_chm,
         )
-        self._init_datasets(training_params.proba_drop_rgb, training_params.proba_drop_chm)
 
     def _init_folders_paths(self):
         self.annotations_folder_path = os.path.join(
@@ -153,11 +157,15 @@ class TrainingData:
             "cropped",
             self.image_data.coord_name,
         )
+        self.channels_rgb = get_channels_count(self.rgb_cir_folder_path)
+        self.channels_chm = get_channels_count(self.chm_folder_path)
 
     def _split_data(self, split_random_seed: int):
         SETS_RATIOS = [3, 1, 1]
         SETS_NAMES = ["training", "validation", "test"]
-        self.data_split_file_path = os.path.join(Folders.OTHERS_DIR.value, "data_split.json")
+        self.data_split_file_path = os.path.join(
+            Folders.OTHERS_DIR.value, f"data_split_{split_random_seed}.json"
+        )
         create_and_save_splitted_datasets(
             self.rgb_cir_folder_path,
             self.chm_folder_path,
@@ -204,55 +212,86 @@ class TrainingData:
             self.mean_chm = mean_chm
             self.std_chm = std_chm
 
-    def _init_datasets(self, proba_drop_rgb: float, proba_drop_chm: float):
-        self.datasets = load_tree_datasets_from_split(
-            self.data_split_file_path,
-            labels_to_index=self.dataset_params.class_indices,
-            mean_rgb=self.mean_rgb,
-            std_rgb=self.std_rgb,
-            mean_chm=self.mean_chm,
-            std_chm=self.std_chm,
-            proba_drop_rgb=proba_drop_rgb,
-            labels_transformation_drop_rgb=DatasetConst.LABELS_TRANSFORMATION_DROP_RGB.value,
-            proba_drop_chm=proba_drop_chm,
-            labels_transformation_drop_chm=DatasetConst.LABELS_TRANSFORMATION_DROP_CHM.value,
-            dismissed_classes=[],
-            transform_spatial_training=self.training_params.transform_spatial_training,
-            transform_pixel_rgb_training=self.training_params.transform_pixel_rgb_training,
-            transform_pixel_chm_training=self.training_params.transform_pixel_chm_training,
-            no_data_new_value=DatasetConst.NO_DATA_NEW_VALUE.value,
-        )
 
-
-class TrainingSession:
-    def __init__(self, training_data: TrainingData, device: torch.device, postfix: str) -> None:
+class ModelSession:
+    def __init__(
+        self,
+        training_data: TrainingData,
+        device: torch.device,
+        postfix: str | None = None,
+        model_name: str | None = None,
+    ) -> None:
         self.training_data = training_data
         self.device = device
         self.postfix = postfix
 
-    @running_message("Running a training session...")
-    def run(self):
-        # This line helps to avoid too much unused space on GPU
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = (
-            "garbage_collection_threshold:0.6,max_split_size_mb:512"
-        )
+        if model_name is not None:
+            self.model_name = model_name
+            self.model_path = AMF_GD_YOLOv8.get_model_path_from_name(self.model_name)
+        else:
+            self.model_name, self.model_path = AMF_GD_YOLOv8.get_new_model_name_and_path(
+                self.training_data.training_params.epochs, self.postfix
+            )
 
-        self.model_name, self.model_path = AMF_GD_YOLOv8.get_new_model_name_and_path(
-            self.training_data.training_params.epochs, self.postfix
-        )
-
-        self.model = AMF_GD_YOLOv8(
-            self.training_data.datasets["training"].rgb_channels,
-            self.training_data.datasets["training"].chm_channels,
+    @running_message("Loading the model...")
+    def _load_model(self) -> AMF_GD_YOLOv8:
+        model = AMF_GD_YOLOv8(
+            self.training_data.channels_rgb,
+            self.training_data.channels_chm,
             device=self.device,
             scale="n",
             class_names=self.training_data.dataset_params.class_names,
             name=self.model_name,
         )
+        if os.path.isfile(self.model_path):
+            print("Loading the weights...")
+            state_dict = torch.load(self.model_path, map_location=self.device)
+            model.load_state_dict(state_dict)
+            print("Done")
 
-        final_model = train_and_validate(
-            model=self.model,
-            datasets=self.training_data.datasets,
+        return model
+
+    @running_message("Loading the datasets...")
+    def _load_datasets(self) -> Dict[str, TreeDataset]:
+        datasets = load_tree_datasets_from_split(
+            self.training_data.data_split_file_path,
+            labels_to_index=self.training_data.dataset_params.class_indices,
+            mean_rgb=self.training_data.mean_rgb,
+            std_rgb=self.training_data.std_rgb,
+            mean_chm=self.training_data.mean_chm,
+            std_chm=self.training_data.std_chm,
+            proba_drop_rgb=self.training_data.training_params.proba_drop_rgb,
+            labels_transformation_drop_rgb=DatasetConst.LABELS_TRANSFORMATION_DROP_RGB.value,
+            proba_drop_chm=self.training_data.training_params.proba_drop_chm,
+            labels_transformation_drop_chm=DatasetConst.LABELS_TRANSFORMATION_DROP_CHM.value,
+            dismissed_classes=[],
+            transform_spatial_training=self.training_data.training_params.transform_spatial_training,
+            transform_pixel_rgb_training=self.training_data.training_params.transform_pixel_rgb_training,
+            transform_pixel_chm_training=self.training_data.training_params.transform_pixel_chm_training,
+            no_data_new_value=DatasetConst.NO_DATA_NEW_VALUE.value,
+        )
+        return datasets
+
+    @running_message("Running a training session...")
+    def train(self, overwrite: bool = False):
+        # Check if a model with this name already exists
+        if os.path.isfile(self.model_path):
+            if not overwrite:
+                raise ValueError(
+                    f"There is already a model at {self.model_path}. Specify overwrite=True in the train function to overwrite it."
+                )
+
+        # This line helps to avoid too much unused space on GPU
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = (
+            "garbage_collection_threshold:0.6,max_split_size_mb:512"
+        )
+
+        model = self._load_model()
+        datasets = self._load_datasets()
+
+        model = train_and_validate(
+            model=model,
+            datasets=datasets,
             lr=self.training_data.training_params.lr,
             epochs=self.training_data.training_params.epochs,
             batch_size=self.training_data.training_params.batch_size,
@@ -263,14 +302,18 @@ class TrainingSession:
             show_training_metrics=False,
         )
 
-        state_dict = final_model.state_dict()
-        torch.save(state_dict, self.model_path)
+        self._save_model(model)
 
-        self._compute_metrics()
+        self.compute_metrics()
 
-    def _compute_metrics(self):
+    @running_message("Computing metrics...")
+    def compute_metrics(self):
+
+        model = self._load_model()
+        datasets = self._load_datasets()
+
         _, _, test_loader = initialize_dataloaders(
-            datasets=self.training_data.datasets,
+            datasets=datasets,
             batch_size=self.training_data.training_params.batch_size,
             num_workers=self.training_data.training_params.num_workers,
         )
@@ -308,7 +351,7 @@ class TrainingSession:
             pbar.set_description(legend)
             pbar.refresh()
             test_save_output_image(
-                self.model,
+                model,
                 test_loader,
                 -1,
                 self.device,
@@ -327,7 +370,7 @@ class TrainingSession:
                 aps_list,
                 sorted_ap_list_2,
             ) = compute_metrics(
-                self.model,
+                model,
                 test_loader,
                 self.device,
                 conf_thresholds=conf_thresholds,
@@ -368,6 +411,33 @@ class TrainingSession:
             show=True,
             save_path=os.path.join(Folders.OUTPUT_DIR.value, f"{self.model_name}_sap_conf.png"),
         )
+
+    @staticmethod
+    def _pickle_path(model_name: str) -> str:
+        return os.path.join(Folders.OUTPUT_DIR.value, f"{model_name}.pkl")
+
+    def _save_model(self, model: AMF_GD_YOLOv8):
+        # Save the weights
+        state_dict = model.state_dict()
+        torch.save(state_dict, self.model_path)
+
+        # Save the class instance
+        pickle_path = ModelSession._pickle_path(self.model_name)
+        with open(pickle_path, "wb") as f:
+            pickle.dump(self, f)
+
+    @staticmethod
+    def from_pickle(file_path: str) -> ModelSession:
+        with open(file_path, "rb") as f:
+            model_session = pickle.load(f)
+        return model_session
+
+    @staticmethod
+    def from_name(model_name: str) -> ModelSession:
+        file_path = ModelSession._pickle_path(model_name)
+        with open(file_path, "rb") as f:
+            model_session = pickle.load(f)
+        return model_session
 
 
 def main():
@@ -425,7 +495,7 @@ def main():
     )
 
     lr = 1e-2
-    epochs = 2000
+    epochs = 1000
     batch_size = 1
     num_workers = mp.cpu_count() // 2
     accumulate = 12
@@ -452,19 +522,18 @@ def main():
     # Training session
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     postfix = "rgb_cir_multi_chm"
-    training_session = TrainingSession(training_data=training_data, device=device, postfix=postfix)
+    # model_session = ModelSession(training_data=training_data, device=device, postfix=postfix)
 
-    training_session.run()
+    # model_session.train()
+
+    model_session = ModelSession(
+        training_data=training_data,
+        device=device,
+        model_name="trained_model_rgb_cir_multi_chm_1000ep_0",
+    )
+    model = model_session._load_model()
+    model_session._save_model(model)
 
 
 if __name__ == "__main__":
-
-    # @running_message("Starting example_function", "Finished example_function")
-    # def example_function():
-    #     time.sleep(2)
-    #     for _ in tqdm(range(3000), desc="Main loop"):
-    #         for _ in tqdm(range(3000), leave=False):
-    #             pass
-
-    # example_function()
     main()
