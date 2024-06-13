@@ -3,13 +3,17 @@ from __future__ import annotations
 import multiprocessing as mp
 import os
 import pickle
-import time
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Optional, Sequence, Tuple
 
 import albumentations as A
 import numpy as np
 import torch
 
+from augmentations import (
+    get_transform_pixel_chm,
+    get_transform_pixel_rgb,
+    get_transform_spatial,
+)
 from dataset_constants import DatasetConst
 from geojson_conversions import open_geojson_feature_collection
 from layers import AMF_GD_YOLOv8
@@ -85,6 +89,30 @@ class DatasetParams:
 
         self.class_indices = {value: key for key, value in self.class_names.items()}
 
+        self._init_data_paths()
+
+    def _init_data_paths(self):
+        annotations_path = os.path.join(Folders.FULL_ANNOTS.value, self.annotations_file_name)
+        annotations = open_geojson_feature_collection(annotations_path)
+        full_image_path_tif = get_rgb_images_paths_from_polygon(annotations["bbox"])[0]
+        self.image_data = ImageData(full_image_path_tif)
+        self.annotations_folder_path = os.path.join(
+            Folders.CROPPED_ANNOTS.value, self.image_data.base_name
+        )
+        self.rgb_cir_folder_path = os.path.join(
+            Folders.IMAGES.value, "merged", "cropped", self.image_data.base_name
+        )
+        self.chm_folder_path = os.path.join(
+            Folders.CHM.value,
+            f"{round(RESOLUTION*100)}cm",
+            "filtered",
+            "merged",
+            "cropped",
+            self.image_data.coord_name,
+        )
+        self.channels_rgb = get_channels_count(self.rgb_cir_folder_path)
+        self.channels_chm = get_channels_count(self.chm_folder_path)
+
 
 class TrainingParams:
     def __init__(
@@ -96,9 +124,9 @@ class TrainingParams:
         accumulate: int,
         proba_drop_rgb: float,
         proba_drop_chm: float,
-        transform_spatial_training: A.Compose | None,
-        transform_pixel_rgb_training: A.Compose | None,
-        transform_pixel_chm_training: A.Compose | None,
+        transform_spatial_training: A.Compose | None = None,
+        transform_pixel_rgb_training: A.Compose | None = None,
+        transform_pixel_chm_training: A.Compose | None = None,
         mean_rgb: torch.Tensor | None = None,
         std_rgb: torch.Tensor | None = None,
         mean_chm: torch.Tensor | None = None,
@@ -126,14 +154,6 @@ class TrainingData:
         self.dataset_params = dataset_params
         self.training_params = training_params
 
-        annotations_path = os.path.join(
-            Folders.FULL_ANNOTS.value, dataset_params.annotations_file_name
-        )
-        annotations = open_geojson_feature_collection(annotations_path)
-        full_image_path_tif = get_rgb_images_paths_from_polygon(annotations["bbox"])[0]
-        self.image_data = ImageData(full_image_path_tif)
-
-        self._init_folders_paths()
         self._split_data(dataset_params.split_random_seed)
         self._init_mean_std(
             training_params.mean_rgb,
@@ -141,24 +161,7 @@ class TrainingData:
             training_params.mean_chm,
             training_params.std_chm,
         )
-
-    def _init_folders_paths(self):
-        self.annotations_folder_path = os.path.join(
-            Folders.CROPPED_ANNOTS.value, self.image_data.base_name
-        )
-        self.rgb_cir_folder_path = os.path.join(
-            Folders.IMAGES.value, "merged", "cropped", self.image_data.base_name
-        )
-        self.chm_folder_path = os.path.join(
-            Folders.CHM.value,
-            f"{round(RESOLUTION*100)}cm",
-            "filtered",
-            "merged",
-            "cropped",
-            self.image_data.coord_name,
-        )
-        self.channels_rgb = get_channels_count(self.rgb_cir_folder_path)
-        self.channels_chm = get_channels_count(self.chm_folder_path)
+        self._init_transforms()
 
     def _split_data(self, split_random_seed: int):
         SETS_RATIOS = [3, 1, 1]
@@ -167,9 +170,9 @@ class TrainingData:
             Folders.OTHERS_DIR.value, f"data_split_{split_random_seed}.json"
         )
         create_and_save_splitted_datasets(
-            self.rgb_cir_folder_path,
-            self.chm_folder_path,
-            self.annotations_folder_path,
+            self.dataset_params.rgb_cir_folder_path,
+            self.dataset_params.chm_folder_path,
+            self.dataset_params.annotations_folder_path,
             SETS_RATIOS,
             SETS_NAMES,
             self.data_split_file_path,
@@ -195,7 +198,7 @@ class TrainingData:
         # Compute RGB mean and std if an of them is missing
         if mean_rgb is None or std_rgb is None:
             self.mean_rgb, self.std_rgb = compute_mean_and_std(
-                self.rgb_cir_folder_path, per_channel=True, replace_no_data=False
+                self.dataset_params.rgb_cir_folder_path, per_channel=True, replace_no_data=False
             )
         else:
             self.mean_rgb, self.std_rgb = mean_rgb, std_rgb
@@ -203,7 +206,7 @@ class TrainingData:
         # Compute CHM mean and std if an of them is missing
         if mean_chm is None or std_chm is None:
             self.mean_chm, self.std_chm = compute_mean_and_std(
-                self.chm_folder_path,
+                self.dataset_params.chm_folder_path,
                 per_channel=True,
                 replace_no_data=True,
                 no_data_new_value=self.dataset_params.no_data_new_value,
@@ -211,6 +214,21 @@ class TrainingData:
         else:
             self.mean_chm = mean_chm
             self.std_chm = std_chm
+
+    def _init_transforms(self):
+        self.transform_spatial_training = (
+            self.training_params.transform_spatial_training or get_transform_spatial()
+        )
+
+        self.transform_pixel_rgb_training = (
+            self.training_params.transform_pixel_rgb_training
+            or get_transform_pixel_rgb(self.dataset_params.channels_rgb)
+        )
+
+        self.transform_pixel_chm_training = (
+            self.training_params.transform_pixel_chm_training
+            or get_transform_pixel_chm(self.dataset_params.channels_chm)
+        )
 
 
 class ModelSession:
@@ -236,8 +254,8 @@ class ModelSession:
     @running_message("Loading the model...")
     def _load_model(self) -> AMF_GD_YOLOv8:
         model = AMF_GD_YOLOv8(
-            self.training_data.channels_rgb,
-            self.training_data.channels_chm,
+            self.training_data.dataset_params.channels_rgb,
+            self.training_data.dataset_params.channels_chm,
             device=self.device,
             scale="n",
             class_names=self.training_data.dataset_params.class_names,
@@ -455,44 +473,6 @@ def main():
     )
 
     # Training parameters
-    transform_spatial = A.Compose(
-        [
-            A.RandomCrop(width=CROP_SIZE, height=CROP_SIZE, p=1.0),
-            # A.GridDistortion(
-            #     num_steps=distort_steps,
-            #     distort_limit=(-distort_limit, distort_limit),
-            #     border_mode=cv2.BORDER_CONSTANT,
-            #     normalized=True,
-            #     p=0.5,
-            # ),
-            A.HorizontalFlip(p=0.5),
-            A.RandomRotate90(p=1.0),
-            # A.Perspective(interpolation=cv2.INTER_LINEAR, p=0.25),
-        ],
-        bbox_params=A.BboxParams(
-            format="pascal_voc", min_area=0, min_visibility=0.2, label_fields=["class_labels"]
-        ),
-    )
-    transform_pixel_rgb = A.Compose(
-        [
-            # A.Sharpen(p=0.25),
-            # A.RingingOvershoot(p=0.5),
-            # A.RandomGamma(p=1.0),
-            # A.GaussianBlur(p=0.5),
-            A.GaussNoise(p=0.5),
-            # A.FancyPCA(alpha=1.0, p=0.5),
-            # A.Emboss(p=0.5),
-            # A.RandomBrightnessContrast(p=1.0),
-            # A.CLAHE(clip_limit=2.0, p=0.25),
-            A.ChannelDropout(channel_drop_range=(1, 3), p=0.25),
-        ],
-    )
-    transform_pixel_chm = A.Compose(
-        [
-            A.GaussNoise(var_limit=(0, 1.0), mean=0, p=0.5),
-            A.ChannelDropout(channel_drop_range=(1, 6), p=0.5),
-        ],
-    )
 
     lr = 1e-2
     epochs = 1000
@@ -511,9 +491,6 @@ def main():
         accumulate=accumulate,
         proba_drop_rgb=proba_drop_rgb,
         proba_drop_chm=proba_drop_chm,
-        transform_spatial_training=transform_spatial,
-        transform_pixel_rgb_training=transform_pixel_rgb,
-        transform_pixel_chm_training=transform_pixel_chm,
     )
 
     # Training data
@@ -522,17 +499,9 @@ def main():
     # Training session
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     postfix = "rgb_cir_multi_chm"
-    # model_session = ModelSession(training_data=training_data, device=device, postfix=postfix)
+    model_session = ModelSession(training_data=training_data, device=device, postfix=postfix)
 
-    # model_session.train()
-
-    model_session = ModelSession(
-        training_data=training_data,
-        device=device,
-        model_name="trained_model_rgb_cir_multi_chm_1000ep_0",
-    )
-    model = model_session._load_model()
-    model_session._save_model(model)
+    model_session.train()
 
 
 if __name__ == "__main__":
