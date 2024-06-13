@@ -488,30 +488,40 @@ class AMF_GD_YOLOv8(nn.Module):
         return self.criterion(preds, batch)
 
     @staticmethod
-    def _get_name_and_path(index: int, epochs: int, postfix: str) -> Tuple[str, str]:
+    def _get_model_name(index: int, epochs: int, postfix: str) -> str:
         model_name = f"trained_model_{postfix}_{epochs}ep_{index}"
+        return model_name
+
+    @staticmethod
+    def get_model_path_from_name(model_name: str) -> str:
         model_path = os.path.join(Folders.MODELS_AMF_GD_YOLOV8.value, f"{model_name}.pt")
-        return model_name, model_path
+        return model_path
 
     @staticmethod
     def get_last_model_name_and_path(epochs: int, postfix: str) -> Tuple[str, str]:
         index = 0
-        _, model_path = AMF_GD_YOLOv8._get_name_and_path(index, epochs, postfix)
+        model_name = AMF_GD_YOLOv8._get_model_name(index, epochs, postfix)
+        model_path = AMF_GD_YOLOv8.get_model_path_from_name(model_name)
         if not os.path.exists(model_path):
             raise Exception("No such model exists.")
         while os.path.exists(model_path):
             index += 1
-            _, model_path = AMF_GD_YOLOv8._get_name_and_path(index, epochs, postfix)
+            model_name = AMF_GD_YOLOv8._get_model_name(index, epochs, postfix)
+            model_path = AMF_GD_YOLOv8.get_model_path_from_name(model_name)
 
-        return AMF_GD_YOLOv8._get_name_and_path(index - 1, epochs, postfix)
+        model_name = AMF_GD_YOLOv8._get_model_name(index - 1, epochs, postfix)
+        model_path = AMF_GD_YOLOv8.get_model_path_from_name(model_name)
+        return model_name, model_path
 
     @staticmethod
     def get_new_model_name_and_path(epochs: int, postfix: str) -> Tuple[str, str]:
         index = 0
-        model_name, model_path = AMF_GD_YOLOv8._get_name_and_path(index, epochs, postfix)
+        model_name = AMF_GD_YOLOv8._get_model_name(index, epochs, postfix)
+        model_path = AMF_GD_YOLOv8.get_model_path_from_name(model_name)
         while os.path.exists(model_path):
             index += 1
-            model_name, model_path = AMF_GD_YOLOv8._get_name_and_path(index, epochs, postfix)
+            model_name = AMF_GD_YOLOv8._get_model_name(index, epochs, postfix)
+            model_path = AMF_GD_YOLOv8.get_model_path_from_name(model_name)
 
         return model_name, model_path
 
