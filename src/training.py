@@ -722,13 +722,13 @@ class TrainingMetrics:
 
         scale = max(ceil((len(metrics_index)) ** 0.5), 1)
         nrows = scale
-        ncols = 2 * scale
+        ncols = scale
         cmap = plt.get_cmap("tab10")
 
         categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
 
         plt.clf()
-        fig = plt.figure(1, figsize=(6 * ncols, 6 * nrows))
+        fig = plt.figure(1, figsize=(6 * ncols, 4 * nrows))
 
         for metric_name, metric_dict in self.metrics.items():
             ax = fig.add_subplot(nrows, ncols, metrics_index[metric_name] + 1)
@@ -748,7 +748,7 @@ class TrainingMetrics:
             ax.set_yscale("log")
             ax.set_ylabel(metric_name)
             ax.set_title(f"{metric_name}")
-        plt.tight_layout()
+        # plt.tight_layout()
 
         has_legend, _ = plt.gca().get_legend_handles_labels()
         if any(label != "" for label in has_legend):
