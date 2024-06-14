@@ -555,17 +555,12 @@ class TrainingLoss(v8DetectionLoss):
         self, preds: List[torch.Tensor], batch: Dict[str, torch.Tensor]
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         total_loss, loss_items = super().__call__(preds, batch)
-        batch_size = batch["cls"].shape[0]
+        batch_size = preds[0].shape[0]
         loss_dict = {
             "Box Loss": batch_size * loss_items[0],
             "Class Loss": batch_size * loss_items[1],
             "Dual Focal Loss": batch_size * loss_items[2],
         }
-        print()
-        print(f"{preds[0].shape = }")
-        print(f"{batch_size = }")
-        print(f"{total_loss.item() = }")
-        print(f"{loss_dict = }")
         return total_loss, loss_dict
 
 
