@@ -108,7 +108,7 @@ class TrainingMetrics:
 
         scale = max(ceil((len(metrics_index)) ** 0.5), 1)
         nrows = scale
-        ncols = len(metrics_index) // scale
+        ncols = (len(metrics_index) + scale - 1) // scale
         cmap = plt.get_cmap("tab10")
 
         categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
