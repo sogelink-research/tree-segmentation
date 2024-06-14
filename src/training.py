@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import albumentations as A
 import geojson
+import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -113,10 +114,13 @@ class TrainingMetrics:
         cmap = plt.get_cmap("tab10")
 
         categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
+        legend_space = 1.2
+        figsize = (6 * ncols + legend_space, 5 * nrows)
+        legend_y_position = legend_space / figsize[0]
 
         for interval, save_path in zip(intervals, save_paths):
             plt.clf()
-            fig = plt.figure(1, figsize=(6 * ncols, 4 * nrows))
+            fig = plt.figure(1, figsize=figsize)
 
             for metric_name, metric_dict in self.metrics.items():
                 index = metrics_index[metric_name]
@@ -126,32 +130,52 @@ class TrainingMetrics:
                     values = category_dict["avgs"]
 
                     # Remove the epochs before from_epoch
-                    start = interval[0] if interval[0] >= 0 else self.last_epoch + interval[0]
-                    end = self.last_epoch + interval[1] if interval[1] <= 0 else interval[1]
+                    start = (
+                        interval[0] if interval[0] >= 0 else max(0, self.last_epoch + interval[0])
+                    )
+                    end = (
+                        self.last_epoch + interval[1]
+                        if interval[1] <= 0
+                        else min(interval[1], self.last_epoch)
+                    )
                     kept_indices = [i for i in range(len(epochs)) if start <= epochs[i] <= end]
                     epochs = [epochs[i] for i in kept_indices]
                     values = [values[i] for i in kept_indices]
 
-                    fmt = "-" if end - start > 25 else "-o"
+                    epochs_length = max(epochs) - min(epochs) if len(epochs) > 0 else 0
+
+                    fmt = "-" if epochs_length > 25 else "-o"
                     ax.plot(
                         epochs,
                         values,
                         fmt,
                         color=categories_colors[category_name],
-                        label=category_name,
+                        # label=category_name,
                     )
                 ax.grid(alpha=0.5)
                 if index >= n_metrics - ncols:
                     ax.set_xlabel("Epoch")
                 else:
-                    ax.xaxis.set_visible(False)
+                    ax.tick_params(
+                        axis="x", which="both", bottom=False, top=False, labelbottom=False
+                    )
                 ax.set_ylabel(self.y_axes[metric_name])
                 ax.set_title(f"{metric_name}")
-            plt.tight_layout()
 
-            has_legend, _ = plt.gca().get_legend_handles_labels()
-            if any(label != "" for label in has_legend):
-                plt.legend()
+            lines = [
+                mlines.Line2D([], [], color=color, linestyle="-", label=label)
+                for label, color in categories_colors.items()
+            ]
+
+            if len(lines) > 0:
+                fig.legend(
+                    handles=lines,
+                    loc="upper center",
+                    bbox_to_anchor=(0.5, legend_y_position),
+                    ncol=len(lines),
+                )
+
+            fig.tight_layout(rect=(0.0, legend_y_position, 1.0, 1.0))
 
             if save_path is not None:
                 plt.savefig(save_path, dpi=200)
@@ -251,7 +275,6 @@ def train(
             optimizer.zero_grad()
 
         running_accumulation_step += 1
-        break
 
     return running_accumulation_step
 
