@@ -727,7 +727,8 @@ class TrainingMetrics:
 
         categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
 
-        fig = plt.figure(1, figsize=(4 * ncols, 4 * nrows))
+        plt.clf()
+        fig = plt.figure(1, figsize=(6 * ncols, 6 * nrows))
 
         for metric_name, metric_dict in self.metrics.items():
             ax = fig.add_subplot(nrows, ncols, metrics_index[metric_name] + 1)
@@ -742,10 +743,10 @@ class TrainingMetrics:
                     color=categories_colors[category_name],
                     label=category_name,
                 )
-                ax.grid(alpha=0.5)
-                ax.set_xlabel("Epoch")
-                ax.set_yscale("log")
-                ax.set_ylabel(metric_name)
+            ax.grid(alpha=0.5)
+            ax.set_xlabel("Epoch")
+            ax.set_yscale("log")
+            ax.set_ylabel(metric_name)
             ax.set_title(f"{metric_name}")
         plt.tight_layout()
 
