@@ -232,9 +232,11 @@ def train(
         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
 
         batch_size = image_rgb.shape[0]
-        training_metrics.update("Training", "Loss", total_loss.item(), batch_size)
+        training_metrics.update(
+            "Training", "Total Loss", total_loss.item(), count=batch_size, y_axis="Loss"
+        )
         for key, value in loss_dict.items():
-            training_metrics.update("Training", key, value.item(), batch_size)
+            training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
 
         total_loss.backward()
 
@@ -312,7 +314,7 @@ def validate(
         "Validation", "Conf thres of sortedAP", conf_threshold, y_axis="Conf threshold"
     )
 
-    return training_metrics.get_last("Validation", "Loss")
+    return training_metrics.get_last("Validation", "Total Loss")
 
 
 def rgb_chm_usage_postfix(use_rgb: bool, use_chm: bool):
