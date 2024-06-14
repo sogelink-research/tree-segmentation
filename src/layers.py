@@ -17,6 +17,7 @@ from ultralytics.nn.modules.head import Detect
 from ultralytics.utils.loss import v8DetectionLoss
 from ultralytics.utils.ops import scale_boxes, xywh2xyxy
 
+from box_cls import Box
 from cbam import CBAM
 from utils import Folders, download_file
 
@@ -370,32 +371,74 @@ class AMF_GD_YOLOv8(nn.Module):
         self.model = nn.ModuleList([self.amfnet, self.gd, self.detect])
         self.criterion = TrainingLoss(self)
 
-    def open_image(self, image_path: str) -> torch.Tensor:
+    def _open_image(self, image_path: str) -> torch.Tensor:
         to_tensor_transform = transforms.ToTensor()
 
         image = Image.open(image_path)
         image_tensor = to_tensor_transform(image)
         return image_tensor.unsqueeze(0)
 
+    def _pre_process(
+        self,
+        x_left: torch.Tensor | str,
+        x_right: torch.Tensor | str,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if isinstance(x_left, str):
+            x_left = self._open_image(x_left)
+        if isinstance(x_right, str):
+            x_right = self._open_image(x_right)
+        return x_left, x_right
+
     def forward(
         self,
         x_left: torch.Tensor | str,
         x_right: torch.Tensor | str,
-    ) -> torch.Tensor:
-        # Open x_left if it is a path
-        if isinstance(x_left, str):
-            x_left = self.open_image(x_left)
-
-        # Open x_right if it is a path
-        if isinstance(x_right, str):
-            x_right = self.open_image(x_right)
-
-        # Compute the output
+    ) -> List[torch.Tensor] | Tuple[torch.Tensor, List[torch.Tensor]]:
+        x_left, x_right = self._pre_process(x_left=x_left, x_right=x_right)
         xs = self.amfnet(x_left, x_right)
         xs = self.gd(xs)
-        self.detect.training = True
         y = self.detect(xs)
         return y
+
+    def forward_train(
+        self,
+        x_left: torch.Tensor | str,
+        x_right: torch.Tensor | str,
+    ) -> List[torch.Tensor]:
+        if not self.training:
+            raise Exception("The model should be in training mode when calling `forward_train`")
+        x_left, x_right = self._pre_process(x_left=x_left, x_right=x_right)
+        xs = self.amfnet(x_left, x_right)
+        xs = self.gd(xs)
+        output = self.detect(xs)
+        return output
+
+    def forward_eval(
+        self,
+        x_left: torch.Tensor | str,
+        x_right: torch.Tensor | str,
+    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        if self.training:
+            raise Exception("The model should be in evaluation mode when calling `forward_eval`")
+        x_left, x_right = self._pre_process(x_left=x_left, x_right=x_right)
+        xs = self.amfnet(x_left, x_right)
+        xs = self.gd(xs)
+        preds, output = self.detect(xs)
+        return preds, output
+
+    def predict_from_preds(
+        self,
+        preds: torch.Tensor,
+        iou_threshold: float = 0.5,
+        conf_threshold: float = 0.5,
+    ) -> Tuple[List[List[Box]], List[List[float]], List[List[int]]]:
+        # Extract the results
+        boxes_list, scores_list, classes_list = extract_bboxes(
+            preds,
+            iou_thres=iou_threshold,
+            conf_thres=conf_threshold,
+        )
+        return boxes_list, scores_list, classes_list
 
     def predict(
         self,
@@ -403,79 +446,11 @@ class AMF_GD_YOLOv8(nn.Module):
         x_right: torch.Tensor | str,
         iou_threshold: float = 0.5,
         conf_threshold: float = 0.5,
-        image_save_path: str | None = None,
-    ) -> Tuple[torch.Tensor, List[torch.Tensor], Results]:
-        # Open x_left if it is a path
-        if isinstance(x_left, str):
-            origin_image_path = x_left
-            x_left = self.open_image(x_left)
-        else:
-            origin_image_path = None
-        input_img_shape = x_left.shape[2:]
-        origin_image = np.ascontiguousarray(
-            np.array(
-                torch.round(255 * x_left[0].permute(1, 2, 0)).detach().cpu(),
-                dtype=np.uint8,
-            )
+    ) -> Tuple[List[List[Box]], List[List[float]], List[List[int]]]:
+        preds, output = self.forward_eval(x_left, x_right)
+        return self.predict_from_preds(
+            preds, iou_threshold=iou_threshold, conf_threshold=conf_threshold
         )
-
-        # Open x_right if it is a path
-        if isinstance(x_right, str):
-            x_right = self.open_image(x_right)
-
-        # Compute the output
-        xs = self.amfnet(x_left, x_right)
-        xs = self.gd(xs)
-        self.detect.training = False
-        y = self.detect(xs)
-
-        # Create the results
-        result = extract_bboxes(
-            y[0],
-            input_img_shape=input_img_shape,
-            origin_image=origin_image,
-            origin_image_path=origin_image_path,
-            class_names=self.class_names,
-            iou_thres=iou_threshold,
-            conf_thres=conf_threshold,
-        )
-
-        if image_save_path is not None:
-            img = result.plot()
-
-            # Convert BGR to RGB (OpenCV uses BGR by default)
-            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            cv2.imwrite(image_save_path, img_rgb)
-
-        return (y[0], y[1], result)
-
-    # def compute_loss_old(
-    #     self,
-    #     preds: torch.Tensor,
-    #     gt_bboxes: torch.Tensor,
-    #     gt_classes: torch.Tensor,
-    #     gt_indices: torch.Tensor,  # This parameter has changed!
-    #     bboxes_format: str,
-    # ):
-    #     number_classes = len(self.class_names)
-    #     loss_func = DETRLoss(nc=number_classes)
-
-    #     if len(preds.shape) == 3:
-    #         preds = preds.unsqueeze(0)
-
-    #     pred_bboxes = preds.permute((0, 1, 3, 2))[:, :, :, :4].contiguous()
-    #     pred_scores = preds.permute((0, 1, 3, 2))[:, :, :, 4:].contiguous()
-    #     if bboxes_format == "xywh":
-    #         gt_bboxes = xywh2xyxy(gt_bboxes)
-    #     elif bboxes_format != "xyxy":
-    #         raise ValueError("bboxes_format must be 'xywh' or 'xyxy'.")
-    #     batch = {
-    #         "cls": gt_classes.to(dtype=torch.int64),
-    #         "bboxes": gt_bboxes,
-    #         "gt_groups": [idx[1] - idx[0] for idx in gt_indices],
-    #     }
-
-    #     return loss_func.forward(pred_bboxes, pred_scores, batch)
 
     def compute_loss(
         self,
@@ -674,30 +649,16 @@ def non_max_suppression(
 
 def extract_bboxes(
     preds: torch.Tensor,
-    input_img_shape: Tuple[int] | torch.Size,
-    origin_image: npt.NDArray[np.uint8],
-    origin_image_path: str | None,
-    class_names: Dict[int, str],
     iou_thres: float,
-    conf_thres: float | None = None,
-    number_best: int | None = None,
-) -> Results:
-    if number_best is not None:
-        nc = preds.shape[1] - 4
-        max_scores = preds[:, 4 : 4 + nc].amax(1)
-        new_conf_thres = -torch.kthvalue(-max_scores[0], k=number_best)[0].item()
+    conf_thres: float,
+) -> Tuple[List[List[Box]], List[List[float]], List[List[int]]]:
+    batch_size = preds.shape[0]
+    preds_nms = non_max_suppression(preds, conf_thres, iou_thres)
 
-    if conf_thres is None:
-        assert number_best is not None, "number_best should not be None if conf_thres is None."
-        preds_nms = non_max_suppression(preds, new_conf_thres, iou_thres)[0]
-
-    else:
-        preds_nms = non_max_suppression(preds, conf_thres, iou_thres)[0]
-        if number_best is not None and preds_nms.shape[0] == 0:
-            preds_nms = non_max_suppression(preds, new_conf_thres, iou_thres)[0]
-
-    preds_nms[:, :4] = scale_boxes(input_img_shape, preds_nms[:, :4], origin_image.shape)
-    return Results(origin_image, path=origin_image_path, names=class_names, boxes=preds_nms)
+    boxes_list = [list(map(Box.from_list, preds_nms[i][:, :4])) for i in range(batch_size)]
+    scores_list = [list(map(float, preds_nms[i][:, 4])) for i in range(batch_size)]
+    classes_list = [list(map(int, preds_nms[i][:, 5])) for i in range(batch_size)]
+    return boxes_list, scores_list, classes_list
 
 
 def swap_image_b_r(image: Image.Image) -> Image.Image:
@@ -706,29 +667,3 @@ def swap_image_b_r(image: Image.Image) -> Image.Image:
     r = b
     b = temp
     return Image.merge("RGB", (r, g, b))
-
-
-# def xywh2xyxy(x):
-#     """
-#     Convert bounding box coordinates from (x, y, width, height) format to (x1, y1, x2, y2) format where (x1, y1) is the
-#     top-left corner and (x2, y2) is the bottom-right corner.
-
-#     Small modification from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/ops.py
-
-#     Args:
-#         x (np.ndarray | torch.Tensor): The input bounding box coordinates in (x, y, width, height) format.
-
-#     Returns:
-#         y (np.ndarray | torch.Tensor): The bounding box coordinates in (x1, y1, x2, y2) format.
-#     """
-#     assert x.shape[-1] == 4, f"input shape last dimension expected 4 but input shape is {x.shape}"
-#     y = (
-#         torch.empty_like(x) if isinstance(x, torch.Tensor) else np.empty_like(x)
-#     )  # faster than clone/copy
-#     w = x[..., 2]  # half-width
-#     h = x[..., 3]  # half-height
-#     y[..., 0] = x[..., 0]  # top left x
-#     y[..., 1] = x[..., 1]  # top left y
-#     y[..., 2] = x[..., 0] + w  # bottom right x
-#     y[..., 3] = x[..., 1] + h  # bottom right y
-#     return y

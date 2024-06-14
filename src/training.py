@@ -1,29 +1,26 @@
 import json
 import os
 import random
-import sys
 from collections import defaultdict
 from math import ceil
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import albumentations as A
 import geojson
 import matplotlib.pyplot as plt
 import numpy as np
-import tifffile
 import torch
 import torch.nn as nn
-from albumentations import pytorch as Atorch
 from IPython import display
 from ipywidgets import Output
-from matplotlib.figure import Figure
 from PIL import Image
-from torch.utils.data import DataLoader, Dataset, Sampler
 
-from box_cls import Box
+from dataloaders import TreeDataLoader, extract_ground_truth_from_dataloader
+from datasets import TreeDataset
 from geojson_conversions import merge_geojson_feature_collections, save_geojson
 from layers import AMF_GD_YOLOv8
 from metrics import (
+    APMetrics,
     compute_sorted_ap,
     compute_sorted_ap_confs,
     hungarian_algorithm,
@@ -31,644 +28,12 @@ from metrics import (
     plot_sorted_ap,
     plot_sorted_ap_confs,
 )
-from plot import create_geojson_output, get_bounding_boxes
-from preprocessing.data import ImageData, get_coordinates_from_full_image_file_name
-from utils import Folders, get_file_base_name, import_tqdm
+from plot import create_geojson_output
+from preprocessing.data import ImageData
+from utils import Folders, import_tqdm
 
 
 tqdm = import_tqdm()
-
-
-class InvalidPathException(Exception):
-    """Custom exception raised when an invalid path is encountered."""
-
-    def __init__(self, path: str, type: str = "any"):
-        """Raise an exception for an invalid path.
-
-        Args:
-            path (str): The invalid path.
-            type (str): The type of invalidity, among ["any", "file", "folder"].
-        """
-        if type == "any":
-            message = f"The path {path} (absolute path is {os.path.abspath(path)}) is invalid."
-        elif type == "file":
-            message = (
-                f"The path {path} (absolute path is {os.path.abspath(path)}) is not a valid file."
-            )
-        elif type == "folder":
-            message = (
-                f"The path {path} (absolute path is {os.path.abspath(path)}) is not a valid folder."
-            )
-        else:
-            raise ValueError(f'No InvalidPathException for type "{type}" is implemented.')
-        super().__init__(message)
-
-
-def _compute_channels_mean_std_tensor(
-    image: torch.Tensor,
-    per_channel: bool,
-    replace_no_data: bool,
-    no_data_new_value: float = 0,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Computes the mean and the standard deviation along every channel of the image given as input.
-
-    Args:
-        image (torch.Tensor): image tensor of shape [w, h] or [c, w, h].
-        per_channel (bool): whether to compute one value for each channel or one for the whole images.
-        replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
-        before computations.
-        no_data_new_value (float): the value replacing NO_DATA (-9999) before computations.
-
-    Returns:
-        Tuple[torch.Tensor, torch.Tensor]: (mean, std), two tensors of shape (c,) if per_channel is
-        True and (1,) otherwise. They contain respectively the mean value and the standard deviation.
-    """
-    if replace_no_data:
-        NO_DATA = -9999
-        image[image == NO_DATA] = no_data_new_value
-    if len(image.shape) == 2:
-        image = image.unsqueeze(0)
-    dims = (0, 1) if per_channel else (0, 1, 2)
-    dtype = image.dtype if torch.is_floating_point(image) else torch.float32
-    mean = torch.mean(image.to(dtype), dim=dims).reshape(-1)
-    std = torch.std(image.to(dtype), dim=dims).reshape(-1)
-    return mean, std
-
-
-def _compute_channels_mean_and_std_file(
-    file_path: str,
-    per_channel: bool,
-    replace_no_data: bool,
-    no_data_new_value: float = 0,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Computes the mean and the standard deviation along every channel of the image given as input.
-
-    Args:
-        file_path (str): path to the image.
-        per_channel (bool): whether to compute one value for each channel or one for the whole images.
-        replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
-        before computations.
-        no_data_new_value (float): the value replacing NO_DATA (-9999) before computations.
-
-    Raises:
-        InvalidPathException: if the input path is not a file.
-
-    Returns:
-        Tuple[torch.Tensor, torch.Tensor]: (mean, std), two tensors of shape (c,) if per_channel is
-        True and (1,) otherwise. They contain respectively the mean value and the standard deviation.
-    """
-    if not os.path.isfile(file_path):
-        raise InvalidPathException(file_path, "file")
-    if is_tif_file(file_path):
-        image = torch.from_numpy(tifffile.imread(file_path))
-    else:
-        image = torch.from_numpy(np.array(Image.open(file_path)))
-    return _compute_channels_mean_std_tensor(image, per_channel, replace_no_data, no_data_new_value)
-
-
-def compute_mean_and_std(
-    file_or_folder_path: str,
-    per_channel: bool,
-    replace_no_data: bool,
-    no_data_new_value: float = 0,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Computes the mean and the standard deviation along every channel of the image(s) given as input
-    (either as one file or a directory containing multiple files).
-
-    Args:
-        file_or_folder_path (str): path to the image or the folder of images.
-        per_channel (bool): whether to compute one value for each channel or one for the whole images.
-        replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
-        before computations.
-        no_data_new_value (float): the value replacing NO_DATA (-9999) before computations.
-
-    Raises:
-        InvalidPathException: if the input path is neither a file, nor a directory.
-
-    Returns:
-        Tuple[torch.Tensor, torch.Tensor]: (mean, std), two tensors of shape (c,) if per_channel is
-        True and (1,) otherwise. They contain respectively the mean value and the standard deviation.
-    """
-    if os.path.isfile(file_or_folder_path):
-        file_path = file_or_folder_path
-        return _compute_channels_mean_and_std_file(
-            file_path, per_channel, replace_no_data, no_data_new_value
-        )
-
-    elif os.path.isdir(file_or_folder_path):
-        means = []
-        stds = []
-        folder_path = file_or_folder_path
-        for file_name in os.listdir(folder_path):
-            file_path = os.path.join(folder_path, file_name)
-            mean, std = _compute_channels_mean_and_std_file(
-                file_path, per_channel, replace_no_data, no_data_new_value
-            )
-            means.append(mean)
-            stds.append(std)
-        mean_mean = np.mean(means, axis=0)
-        mean_std = np.mean(stds, axis=0)
-        return torch.from_numpy(mean_mean), torch.from_numpy(mean_std)
-
-    else:
-        raise InvalidPathException(file_or_folder_path)
-
-
-def normalize(
-    image: torch.Tensor,
-    mean: torch.Tensor,
-    std: torch.Tensor,
-    replace_no_data: bool,
-    no_data_new_value: float = 0,
-) -> torch.Tensor:
-    """Normalizes the CHM image given as input.
-
-    Args:
-        image (torch.Tensor): the image to normalize with c channels. Must be of shape [w, h] or [c, w, h].
-        mean (torch.Tensor): the mean to normalize with. Must be of shape [], [1] or [c].
-        std (torch.Tensor): the standard deviation to normalize with. Must be of shape [], [1] or [c].
-        replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
-        before normalization.
-        no_data_new_value (float): the value replacing NO_DATA (-9999) before normalization.
-
-    Returns:
-        torch.Tensor: the normalized image.
-    """
-    if replace_no_data:
-        image = torch.where(image == -9999, no_data_new_value, image)
-
-    if len(image.shape) == 2:
-        image = image.unsqueeze(0)
-
-    channels = image.shape[0]
-
-    def reshape(tensor: torch.Tensor, name: str) -> torch.Tensor:
-        if len(tensor.shape) == 0:
-            tensor = torch.full((channels,), tensor.item())
-        elif len(tensor.shape) == 1 and tensor.shape[0] == 1:
-            tensor = torch.full((channels,), tensor[0].item())
-        elif len(tensor.shape) == 1 and tensor.shape[0] == channels:
-            pass
-        else:
-            raise ValueError(
-                f"Unsupported shape for `{name}`. It should be a tensor or shape [], [1] or [{channels}]"
-            )
-        return tensor.view(-1, 1, 1)
-
-    mean = reshape(mean, "mean").to(image.dtype)
-    std = reshape(std, "std").to(image.dtype)
-
-    return (image - mean) / std
-
-
-def is_tif_file(file_path: str) -> bool:
-    return file_path.lower().endswith((".tif", ".tiff"))
-
-
-class TreeDataset(Dataset):
-    """Tree dataset."""
-
-    def __init__(
-        self,
-        files_paths_list: List[Dict[str, str]],
-        labels_to_index: Dict[str, int],
-        mean_rgb: torch.Tensor,
-        std_rgb: torch.Tensor,
-        mean_chm: torch.Tensor,
-        std_chm: torch.Tensor,
-        proba_drop_rgb: float = 0.0,
-        labels_transformation_drop_rgb: Dict[str, str | None] | None = None,
-        proba_drop_chm: float = 0.0,
-        labels_transformation_drop_chm: Dict[str, str | None] | None = None,
-        dismissed_classes: List[str] = [],
-        transform_spatial: Callable | None = None,
-        transform_pixel_rgb: Callable | None = None,
-        transform_pixel_chm: Callable | None = None,
-        no_data_new_value: float = -5.0,
-    ) -> None:
-        """A dataset holding the necessary data for training a model on bounding boxes with
-        RGB and CHM data.
-
-        Args:
-            files_paths_list (List[Dict[str, str]]): list of dictionaries containing the paths to
-            RGB, CHM and annotations.
-            labels_to_index (Dict[str, int]): dictionary associating a label name with an index.
-            mean_rgb (torch.Tensor): mean used to normalize RGB images.
-            std_rgb (torch.Tensor): standard deviation used to normalize RGB images.
-            mean_chm (torch.Tensor): mean used to normalize CHM images.
-            std_chm (torch.Tensor): standard deviation used to normalize CHM images.
-            proba_drop_rgb (float, optional): probability to drop the RGB image and replace it by a
-            tensor of zeros. Default to 0.0.
-            labels_transformation_drop_rgb (Dict[str, str] | None): indicates the labels that
-            change to another label if the RGB image is dropped. Is mandatory if proba_drop_rgb > 0.
-            Defaults to None.
-            proba_drop_chm (float, optional): probability to drop the CHM image and replace it by a
-            tensor of zeros. Default to 0.0.
-            labels_transformation_drop_chm (Dict[str, str] | None): indicates the labels that
-            change to another label if the CHM image is dropped. Is mandatory if proba_drop_chm > 0.
-            Defaults to None.
-            dismissed_classes (List[str], optional): list of classes for which the bounding boxes
-            are ignored. Defaults to [].
-            transform_spatial (Callable | None, optional): spatial augmentations applied to CHM and
-            RGB images. Defaults to None.
-            transform_pixel_rgb (Callable | None, optional): pixel augmentations applied to RGB images.
-            Defaults to None.
-            transform_pixel_chm (Callable | None, optional): pixel augmentations applied to CHM images.
-            Defaults to None.
-            no_data_new_value (float): value replacing NO_DATA (-9999) before normalizing images.
-        """
-
-        assert (
-            0.0 <= proba_drop_rgb <= 1.0
-        ), f"proba_drop_rgb must be between 0 and 1: {proba_drop_rgb} is wrong."
-        assert (
-            0.0 <= proba_drop_chm <= 1.0
-        ), f"proba_drop_rgb must be between 0 and 1: {proba_drop_chm} is wrong."
-        assert (
-            0.0 <= proba_drop_rgb + proba_drop_chm <= 1.0
-        ), f"(proba_drop_rgb + proba_drop_chm) must be between 0 and 1: {proba_drop_rgb + proba_drop_chm} is wrong."
-        assert (
-            proba_drop_rgb == 0.0 or labels_transformation_drop_rgb is not None
-        ), "If (proba_drop_rgb > 0.0), then labels_transformation_drop_rgb must be a dictionary."
-        assert (
-            proba_drop_chm == 0.0 or labels_transformation_drop_chm is not None
-        ), "If (proba_drop_chm > 0.0), then labels_transformation_drop_chm must be a dictionary."
-
-        self.files_paths_list = files_paths_list
-        self.bboxes: List[List[List[float]]] = []
-        self.labels: List[List[int]] = []
-        for i, files_dict in enumerate(files_paths_list):
-            annotations_file_path = files_dict["annotations"]
-            bboxes, labels = get_bounding_boxes(annotations_file_path, dismissed_classes)
-            self.bboxes.append([bbox.as_list() for bbox in bboxes])
-            self.labels.append([labels_to_index[label] for label in labels])
-
-        self.labels_to_index = labels_to_index
-        self.labels_to_str = {value: key for key, value in self.labels_to_index.items()}
-
-        self.proba_drop_rgb = proba_drop_rgb
-        self.labels_transformation_drop_rgb = labels_transformation_drop_rgb
-        self.proba_drop_chm = proba_drop_chm
-        self.labels_transformation_drop_chm = labels_transformation_drop_chm
-
-        self.transform_spatial = transform_spatial
-        self.transform_pixel_rgb = transform_pixel_rgb
-        self.transform_pixel_chm = transform_pixel_chm
-
-        self.mean_rgb = mean_rgb
-        self.std_rgb = std_rgb
-        self.mean_chm = mean_chm
-        self.std_chm = std_chm
-
-        self.no_data_new_value = no_data_new_value
-
-        self._init_channels_count()
-
-    def _init_channels_count(self):
-        if len(self) == 0:
-            self.rgb_channels = 0
-            self.chm_channels = 0
-        else:
-            files_paths = self.files_paths_list[0]
-            rgb_path = files_paths["rgb"]
-            image_rgb = self._read_rgb_image(rgb_path)
-            chm_path = files_paths["chm"]
-            image_chm = self._read_chm_image(chm_path)
-            self.rgb_channels = image_rgb.shape[2]
-            self.chm_channels = image_chm.shape[2]
-
-    def __len__(self) -> int:
-        return len(self.files_paths_list)
-
-    def _read_rgb_image(self, image_path: str) -> np.ndarray:
-        if is_tif_file(image_path):
-            image = tifffile.imread(image_path)
-        else:
-            image = np.array(Image.open(image_path))
-        if len(image.shape) == 2:
-            image = image[..., np.newaxis]
-        return image.astype(np.int8)
-
-    def _read_chm_image(self, image_path: str) -> np.ndarray:
-        if is_tif_file(image_path):
-            image = tifffile.imread(image_path)
-        else:
-            image = np.array(Image.open(image_path))
-        if len(image.shape) == 2:
-            image = image[..., np.newaxis]
-        return image.astype(np.float32)
-
-    def random_chm_rgb_drop(
-        self,
-        image_rgb: np.ndarray,
-        image_chm: np.ndarray,
-        bboxes: List[List[float]],
-        labels: List[int],
-    ) -> Tuple[np.ndarray, np.ndarray, List[List[float]], List[int]]:
-        """Randomly drops the RGB or the CHM image with probabilities specified during
-        initialization. The bounding boxes labels are modified accordingly.
-
-        Args:
-            image_rgb (np.ndarray): RGB image.
-            image_chm (np.ndarray): CHM image
-            bboxes (List[List[float]]): bounding boxes.
-            labels (List[int]): class labels.
-
-        Raises:
-            TypeError: if self.labels_transformation_drop_rgb is None but the methods wants to drop
-            RGB.
-            TypeError: if self.labels_transformation_drop_chm is None but the methods wants to drop
-            CHM.
-
-        Returns:
-            Tuple[np.ndarray, np.ndarray, List[List[float]], List[int]]: (RGB image, CHM image,
-            bounding boxes, class labels) after modification.
-        """
-        random_val = random.random()
-        if random_val < self.proba_drop_rgb:
-            # Drop RGB
-            if self.labels_transformation_drop_rgb is None:
-                raise TypeError("self.labels_transformation_drop_rgb shouldn't be None here.")
-            image_rgb = np.zeros_like(image_rgb)
-            # Replace the labels
-            drop: List[int] = []
-            for i, label in enumerate(labels):
-                label_str = self.labels_to_str[label]
-                new_label_str = self.labels_transformation_drop_rgb[label_str]
-                if new_label_str is None:
-                    drop.append(i)
-                else:
-                    new_label = self.labels_to_index[new_label_str]
-                    labels[i] = new_label
-            # Remove the bounding boxes to drop
-            for idx in reversed(drop):
-                bboxes.pop(idx)
-                labels.pop(idx)
-
-        elif random_val < self.proba_drop_rgb + self.proba_drop_chm:
-            # Drop CHM
-            if self.labels_transformation_drop_chm is None:
-                raise TypeError("self.labels_transformation_drop_chm shouldn't be None here.")
-            image_chm = np.zeros_like(image_chm)
-            # Replace the labels
-            drop: List[int] = []
-            for i, label in enumerate(labels):
-                label_str = self.labels_to_str[label]
-                new_label_str = self.labels_transformation_drop_chm[label_str]
-                if new_label_str is None:
-                    drop.append(i)
-                else:
-                    new_label = self.labels_to_index[new_label_str]
-                    labels[i] = new_label
-            # Remove the bounding boxes to drop
-            for idx in reversed(drop):
-                bboxes.pop(idx)
-                labels.pop(idx)
-        return image_rgb, image_chm, bboxes, labels
-
-    def get_not_normalized(self, idx: int) -> Dict[str, torch.Tensor]:
-        # Read the images
-        files_paths = self.files_paths_list[idx]
-        rgb_path = files_paths["rgb"]
-        image_rgb = self._read_rgb_image(rgb_path)
-        chm_path = files_paths["chm"]
-        image_chm = self._read_chm_image(chm_path)
-
-        # Get bboxes and labels
-        bboxes = self.bboxes[idx]
-        labels = self.labels[idx]
-
-        # Apply the spatial transform to the two images, bboxes and labels
-        if self.transform_spatial is not None:
-            transformed_spatial = self.transform_spatial(
-                image=image_rgb,
-                image_chm=image_chm,
-                bboxes=bboxes,
-                class_labels=labels,
-            )
-            image_rgb = transformed_spatial["image"]
-            image_chm = transformed_spatial["image_chm"]
-            bboxes = transformed_spatial["bboxes"]
-            labels = transformed_spatial["class_labels"]
-
-        # Apply the pixel transform the to RGB image
-        if self.transform_pixel_rgb is not None:
-            transformed = self.transform_pixel_rgb(image=image_rgb)
-            image_rgb = transformed["image"]
-
-        # Apply the pixel transform the to CHM image
-        if self.transform_pixel_chm is not None:
-            transformed = self.transform_pixel_chm(image=image_chm)
-            image_chm = transformed["image"]
-
-        image_rgb, image_chm, bboxes, labels = self.random_chm_rgb_drop(
-            image_rgb, image_chm, bboxes, labels
-        )
-
-        to_tensor = Atorch.ToTensorV2()
-
-        sample = {
-            "image_rgb": to_tensor(image=image_rgb)["image"].to(torch.float32),
-            "image_chm": to_tensor(image=image_chm)["image"].to(torch.float32),
-            "bboxes": torch.tensor(bboxes),
-            "labels": torch.tensor(labels),
-            "image_index": idx,
-        }
-        return sample
-
-    def __getitem__(self, idx: int):
-        sample = self.get_not_normalized(idx)
-        sample["image_rgb"] = normalize(
-            sample["image_rgb"], self.mean_rgb, self.std_rgb, replace_no_data=False
-        )
-        sample["image_chm"] = normalize(
-            sample["image_chm"],
-            self.mean_chm,
-            self.std_chm,
-            replace_no_data=True,
-            no_data_new_value=self.no_data_new_value,
-        )
-
-        return sample
-
-    def get_rgb_image(self, idx: int) -> np.ndarray:
-        """Returns the RGB image corresponding to the index.
-
-        Args:
-            idx (int): index of the data.
-
-        Returns:
-            np.ndarray: RGB image.
-        """
-        files_paths = self.files_paths_list[idx]
-        rgb_path = files_paths["rgb"]
-        image_rgb = self._read_rgb_image(rgb_path)
-        return image_rgb
-
-    def get_full_coords_name(self, idx: int) -> str:
-        """Returns the full coordinates name of the data corresponding to the image.
-
-        Args:
-            idx (int): index of the data.
-
-        Returns:
-            str: full coordinates name (with full image coordinates and cropped pixels).
-        """
-        full_image_name = self.get_full_image_name(idx)
-        full_image_coords = get_coordinates_from_full_image_file_name(full_image_name)
-        coord_name = self.get_cropped_coords_name(idx)
-        return "_".join([str(full_image_coords[0]), str(full_image_coords[1]), coord_name])
-
-    def get_cropped_coords_name(self, idx: int) -> str:
-        """Return the pixel coordinates name of the data.
-
-        Args:
-            idx (int): index of the data.
-
-        Returns:
-            str: pixel coordinates name of the data.
-        """
-        files_paths = self.files_paths_list[idx]
-        rgb_path = files_paths["rgb"]
-        coord_name = get_file_base_name(rgb_path)
-        return coord_name
-
-    def get_full_image_name(self, idx: int) -> str:
-        """Returns the name of the full image from which the data comes.
-
-        Args:
-            idx (int): index of the data.
-
-        Returns:
-            str: name of the full image (without any extension).
-        """
-        files_paths = self.files_paths_list[idx]
-        rgb_path = files_paths["rgb"]
-        full_image_name = os.path.basename(os.path.dirname(rgb_path))
-        return full_image_name
-
-
-def tree_dataset_collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
-    """Custom collate function for a Dataloader taking a TreeDataset.
-
-    Args:
-        batch (List[Dict[str, torch.Tensor]]): A batch as a list of TreeDataset outputs.
-
-    Returns:
-        Dict[str, torch.Tensor]: The final batch returned by the DataLoader.
-    """
-    # Initialize lists to hold the extracted components
-    rgb_images = []
-    chm_images = []
-    bboxes = []
-    labels = []
-    indices = []
-    image_indices = []
-
-    # Iterate through the batch
-    for i, item in enumerate(batch):
-        # Extract the components from the dictionary
-        rgb_image = item["image_rgb"]
-        chm_image = item["image_chm"]
-        bbox = item["bboxes"]
-        label = item["labels"]
-        image_index = item["image_index"]
-
-        # Append the extracted components to the lists
-        rgb_images.append(rgb_image)
-        chm_images.append(chm_image)
-        bboxes.append(bbox)
-        labels.append(label)
-        indices.extend([i] * bbox.shape[0])
-        image_indices.append(image_index)
-
-    # Convert the lists to tensors and stack them
-    rgb_images = torch.stack(rgb_images, dim=0)
-    chm_images = torch.stack(chm_images, dim=0)
-    bboxes = torch.cat(bboxes).to(torch.float32)
-    labels = torch.cat(labels)
-    indices = torch.tensor(indices)
-    image_indices = torch.tensor(image_indices)
-
-    output_batch = {
-        "image_rgb": rgb_images,
-        "image_chm": chm_images,
-        "bboxes": bboxes,
-        "labels": labels,
-        "indices": indices,
-        "image_indices": image_indices,
-    }
-
-    return output_batch
-
-
-def extract_ground_truth_from_dataloader(
-    data: Dict[str, torch.Tensor],
-) -> Tuple[List[List[Box]], List[List[int]]]:
-    """Extracts the ground truth components given the output of a TreeDataLoader.
-
-    Args:
-        data (Dict[str, torch.Tensor]): batch output of a TreeDataLoader.
-
-    Returns:
-        Tuple[List[List[Box]], List[List[int]]]: (gt_bboxes, gt_classes) where each list
-        inside the main list corresponds to one image.
-    """
-    gt_bboxes: torch.Tensor = data["bboxes"]
-    gt_classes: torch.Tensor = data["labels"]
-    gt_indices: torch.Tensor = data["indices"]
-    number_images = data["image_indices"].shape[0]
-
-    bboxes: List[List[Box]] = [[] for _ in range(number_images)]
-    classes: List[List[int]] = [[] for _ in range(number_images)]
-
-    for i in range(number_images):
-        mask = gt_indices == i
-        bboxes[i] = list(map(Box.from_list, gt_bboxes[mask].tolist()))
-        classes[i] = gt_classes[mask].tolist()
-
-    return bboxes, classes
-
-
-class TreeDataLoader(DataLoader):
-    def __init__(
-        self,
-        dataset: TreeDataset,
-        batch_size: int | None = 1,
-        shuffle: bool | None = None,
-        sampler: Sampler | Iterable | None = None,
-        batch_sampler: Sampler[List] | Iterable[List] | None = None,
-        num_workers: int = 0,
-        pin_memory: bool = False,
-        drop_last: bool = False,
-        timeout: float = 0,
-        worker_init_fn: Callable[[int], None] | None = None,
-        multiprocessing_context=None,
-        generator=None,
-        *,
-        prefetch_factor: int | None = None,
-        persistent_workers: bool = False,
-        pin_memory_device: str = "",
-    ):
-        self.dataset: TreeDataset = dataset
-        super().__init__(
-            dataset,
-            batch_size,
-            shuffle,
-            sampler,
-            batch_sampler,
-            num_workers,
-            tree_dataset_collate_fn,
-            pin_memory,
-            drop_last,
-            timeout,
-            worker_init_fn,
-            multiprocessing_context,
-            generator,
-            prefetch_factor=prefetch_factor,
-            persistent_workers=persistent_workers,
-            pin_memory_device=pin_memory_device,
-        )
 
 
 class TrainingMetrics:
@@ -753,7 +118,7 @@ class TrainingMetrics:
                     epochs = [epochs[i] for i in kept_indices]
                     values = [values[i] for i in kept_indices]
 
-                    fmt = "-" if len(epochs) > 25 else "-o"
+                    fmt = "-" if end - start > 25 else "-o"
                     ax.plot(
                         epochs,
                         values,
@@ -868,6 +233,7 @@ def train(
             optimizer.zero_grad()
 
         running_accumulation_step += 1
+        break
 
     return running_accumulation_step
 
@@ -878,192 +244,202 @@ def validate(
     device: torch.device,
     training_metrics: TrainingMetrics,
 ) -> float:
+    # AP metrics
+    thresholds_low = np.power(10, np.linspace(-4, -1, 10))
+    thresholds_high = np.linspace(0.1, 1.0, 19)
+    conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
+    ap_metrics = APMetrics(conf_thresholds=conf_thresholds)
+
     model.eval()
     stream = tqdm(val_loader, leave=False, desc="Validation")
     with torch.no_grad():
         for data in stream:
+            # Get the data
             image_rgb: torch.Tensor = data["image_rgb"]
             image_chm: torch.Tensor = data["image_chm"]
             gt_bboxes: torch.Tensor = data["bboxes"]
             gt_classes: torch.Tensor = data["labels"]
             gt_indices: torch.Tensor = data["indices"]
+            image_indices: torch.Tensor = data["indices"]
 
             image_rgb = image_rgb.to(device, non_blocking=True)
             image_chm = image_chm.to(device, non_blocking=True)
             gt_bboxes = gt_bboxes.to(device, non_blocking=True)
             gt_classes = gt_classes.to(device, non_blocking=True)
             gt_indices = gt_indices.to(device, non_blocking=True)
+            image_indices = image_indices.to(device, non_blocking=True)
 
-            output = model(image_rgb, image_chm)
+            # Compute the model output
+            preds, output = model.forward_eval(image_rgb, image_chm)
+
+            # Compute the loss
             total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
 
+            # Store the loss
             batch_size = image_rgb.shape[0]
             training_metrics.update("Validation", "Loss", total_loss.item(), batch_size)
             for key, value in loss_dict.items():
                 training_metrics.update("Validation", key, value.item(), batch_size)
 
+            # Compute the AP metrics
+            ap_metrics.add_preds(
+                model=model,
+                preds=preds,
+                gt_bboxes=gt_bboxes,
+                gt_classes=gt_classes,
+                gt_indices=gt_indices,
+                image_indices=image_indices,
+            )
+
+    _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
+    training_metrics.update("Validation", "Best sortedAP", sorted_ap, 1)
+    training_metrics.update(
+        "Validation", "Confidence threshold of the best sortedAP", conf_threshold, 1
+    )
+
     return training_metrics.get_last("Validation", "Loss")
 
 
-def test_save_output_image(
+def rgb_chm_usage_postfix(use_rgb: bool, use_chm: bool):
+    if use_rgb:
+        if use_chm:
+            return "RGB_CHM"
+        else:
+            return "RGB"
+    else:
+        if use_chm:
+            return "CHM"
+        else:
+            return "no_data"
+
+
+def rgb_chm_usage_legend(use_rgb: bool, use_chm: bool):
+    if use_rgb:
+        if use_chm:
+            return "RGB and CHM"
+        else:
+            return "RGB"
+    else:
+        if use_chm:
+            return "CHM"
+        else:
+            return "No data"
+
+
+def predict_to_geojson(
     model: AMF_GD_YOLOv8,
     test_loader: TreeDataLoader,
-    epoch: int,
     device: torch.device,
-    no_rgb: bool = False,
-    no_chm: bool = False,
-    save_path: str | None = None,
+    save_path: str,
+    use_rgb: bool = False,
+    use_chm: bool = False,
 ):
     model.eval()
     geojson_outputs: List[geojson.FeatureCollection] = []
     with torch.no_grad():
         for data in tqdm(test_loader, leave=False, desc="Exporting output"):
+            # Get data
             image_rgb: torch.Tensor = data["image_rgb"]
-            if no_rgb:
+            if not use_rgb:
                 image_rgb = torch.zeros_like(image_rgb)
             image_chm: torch.Tensor = data["image_chm"]
-            if no_chm:
+            if not use_chm:
                 image_chm = torch.zeros_like(image_chm)
             image_rgb = image_rgb.to(device, non_blocking=True)
             image_chm = image_chm.to(device, non_blocking=True)
-            results = model.predict(image_rgb, image_chm)[2]
 
-            idx = data["image_indices"]
+            # Compute model output
+            bboxes_list, scores_list, classes_as_ints_list = model.predict(image_rgb, image_chm)
+            classes_as_strs_list = [
+                [model.class_names[i] for i in classes_as_ints]
+                for classes_as_ints in classes_as_ints_list
+            ]
 
-            # initial_rgb = test_loader.dataset.get_rgb_image(idx)
-            # full_coords_name = test_loader.dataset.get_full_coords_name(idx)
-            # colors_dict = test_loader.dataset.labels_to_color
-
-            if results.boxes is not None:
-                bboxes = results.boxes.xyxy.tolist()
-                labels = [results.names[cls.item()] for cls in results.boxes.cls]
-                scores = results.boxes.conf.tolist()
-            else:
-                bboxes = []
-                labels = []
-                scores = []
-
-            # Save the image if there is at least one bounding box
-            # bboxes_image = create_bboxes_image(
-            #     image=initial_rgb,
-            #     bboxes=bboxes,
-            #     labels=labels,
-            #     colors_dict=colors_dict,
-            #     scores=scores,
-            #     color_mode="bgr",
-            # )
-
-            # output_name = f"Output_{epoch}ep_{full_coords_name}.png"
-            # output_path = os.path.join(Folders.OUTPUT_DIR.value, output_name)
-            # cv2.imwrite(output_path, bboxes_image)
+            idx_all = data["image_indices"]
 
             # Store the bounding boxes in a GeoJSON file
-            full_image_name = test_loader.dataset.get_full_image_name(idx)
-            cropped_coords_name = test_loader.dataset.get_cropped_coords_name(idx)
-            bboxes_as_box = [Box.from_list(bbox) for bbox in bboxes]
-            save_path = "Test.geojson" if idx == 0 else None
-            geojson_features = create_geojson_output(
-                full_image_name,
-                cropped_coords_name,
-                bboxes_as_box,
-                labels,
-                scores,
-                save_path=save_path,
-            )
-            geojson_outputs.append(geojson_features)
+            for idx, bboxes, scores, classes_as_strs in zip(
+                idx_all, bboxes_list, scores_list, classes_as_strs_list
+            ):
+                full_image_name = test_loader.dataset.get_full_image_name(idx)
+                cropped_coords_name = test_loader.dataset.get_cropped_coords_name(idx)
+                geojson_features = create_geojson_output(
+                    full_image_name=full_image_name,
+                    cropped_coords_name=cropped_coords_name,
+                    bboxes=bboxes,
+                    labels=classes_as_strs,
+                    scores=scores,
+                    save_path=save_path,
+                )
+                geojson_outputs.append(geojson_features)
 
     geojson_outputs_merged = merge_geojson_feature_collections(geojson_outputs)
-    if save_path is None:
-        geojson_save_name = f"{model.name}_output_{epoch}ep.geojson"
-        geojson_save_path = os.path.join(Folders.OUTPUT_DIR.value, geojson_save_name)
-    else:
-        geojson_save_path = save_path
-    save_geojson(geojson_outputs_merged, geojson_save_path)
+    save_geojson(geojson_outputs_merged, save_path)
 
 
-def compute_metrics(
+def compute_all_ap_metrics(
     model: AMF_GD_YOLOv8,
     test_loader: TreeDataLoader,
     device: torch.device,
     conf_thresholds: List[float],
-    no_rgb: bool = False,
-    no_chm: bool = False,
-    save_path_ap_iou: str | None = None,
-    save_path_sap_conf: str | None = None,
-) -> Tuple[
-    List[float], List[float], float, float, List[List[float]], List[List[float]], List[float]
-]:
-    # TODO: Handle batch > 1
-
+    use_rgb: bool = False,
+    use_chm: bool = False,
+) -> Tuple[List[List[float]], List[List[float]], List[float]]:
     # For sortedAP/conf threshold plotting
     matched_pairs_conf: List[List[Tuple[Tuple[int, int], float]]] = [
-        [] for i in range(len(conf_thresholds))
+        [] for _ in range(len(conf_thresholds))
     ]
-    unmatched_pred_conf: List[List[int]] = [[] for i in range(len(conf_thresholds))]
-    unmatched_gt_conf: List[List[int]] = [[] for i in range(len(conf_thresholds))]
+    unmatched_pred_conf: List[List[int]] = [[] for _ in range(len(conf_thresholds))]
+    unmatched_gt_conf: List[List[int]] = [[] for _ in range(len(conf_thresholds))]
 
     model.eval()
     with torch.no_grad():
         for data in tqdm(test_loader, leave=False, desc="Computing metrics"):
-            # Compute predictions
+            # Get data
             image_rgb: torch.Tensor = data["image_rgb"]
-            if no_rgb:
+            if not use_rgb:
                 image_rgb = torch.zeros_like(image_rgb)
             image_chm: torch.Tensor = data["image_chm"]
-            if no_chm:
+            if not use_chm:
                 image_chm = torch.zeros_like(image_chm)
             image_rgb = image_rgb.to(device, non_blocking=True)
             image_chm = image_chm.to(device, non_blocking=True)
-            lowest_conf_threshold = min(conf_thresholds)
-            all_results = model.predict(image_rgb, image_chm, conf_threshold=lowest_conf_threshold)[
-                2
-            ]
 
-            if all_results.boxes is not None:
-                pred_bboxes = list(map(Box.from_list, all_results.boxes.xyxy.tolist()))
-                pred_labels_ints = all_results.boxes.cls.tolist()
-                pred_scores = all_results.boxes.conf.tolist()
-            else:
-                pred_bboxes = []
-                pred_labels_ints = []
-                pred_scores = []
+            # Compute model output
+            lowest_conf_threshold = min(conf_thresholds)
+            bboxes_list, scores_list, classes_as_ints_list = model.predict(
+                image_rgb, image_chm, conf_threshold=lowest_conf_threshold
+            )
 
             # Get ground truth
             gt_bboxes_per_image, gt_classes_per_image = extract_ground_truth_from_dataloader(data)
 
-            iou_threshold = 1e-6
-            # # Compute the matching
-            # matched_pairs_temp, unmatched_pred_temp, unmatched_gt_temp = hungarian_algorithm(
-            #     pred_bboxes=pred_bboxes,
-            #     pred_labels=pred_labels_ints,
-            #     gt_bboxes=gt_bboxes_per_image[0],
-            #     gt_labels=gt_classes_per_image[0],
-            #     iou_threshold=iou_threshold,
-            #     agnostic=False,
-            # )
-            # matched_pairs.extend(matched_pairs_temp)
-            # unmatched_pred.extend(unmatched_pred_temp)
-            # unmatched_gt.extend(unmatched_gt_temp)
-
             # Compute the matching
-            matched_pairs_conf_temp, unmatched_pred_conf_temp, unmatched_gt_conf_temp = (
-                hungarian_algorithm_confs(
-                    pred_bboxes=pred_bboxes,
-                    pred_labels=pred_labels_ints,
-                    pred_scores=pred_scores,
-                    gt_bboxes=gt_bboxes_per_image[0],
-                    gt_labels=gt_classes_per_image[0],
-                    iou_threshold=iou_threshold,
-                    conf_thresholds=conf_thresholds,
-                    agnostic=False,
+            iou_threshold = 1e-6
+            for bboxes, scores, classes_as_ints, gt_bboxes, gt_classes in zip(
+                bboxes_list,
+                scores_list,
+                classes_as_ints_list,
+                gt_bboxes_per_image,
+                gt_classes_per_image,
+            ):
+                matched_pairs_conf_temp, unmatched_pred_conf_temp, unmatched_gt_conf_temp = (
+                    hungarian_algorithm_confs(
+                        pred_bboxes=bboxes,
+                        pred_labels=classes_as_ints,
+                        pred_scores=scores,
+                        gt_bboxes=gt_bboxes,
+                        gt_labels=gt_classes,
+                        iou_threshold=iou_threshold,
+                        conf_thresholds=conf_thresholds,
+                        agnostic=False,
+                    )
                 )
-            )
-            for i in range(len(conf_thresholds)):
-                matched_pairs_conf[i].extend(matched_pairs_conf_temp[i])
-                unmatched_pred_conf[i].extend(unmatched_pred_conf_temp[i])
-                unmatched_gt_conf[i].extend(unmatched_gt_conf_temp[i])
+                for i in range(len(conf_thresholds)):
+                    matched_pairs_conf[i].extend(matched_pairs_conf_temp[i])
+                    unmatched_pred_conf[i].extend(unmatched_pred_conf_temp[i])
+                    unmatched_gt_conf[i].extend(unmatched_gt_conf_temp[i])
 
-    # sorted_ious, aps, sorted_ap = compute_sorted_ap(matched_pairs, unmatched_pred, unmatched_gt)
     sorted_ious_list, aps_list, sorted_ap_list = compute_sorted_ap_confs(
         matched_pairs_conf, unmatched_pred_conf, unmatched_gt_conf
     )
@@ -1074,41 +450,7 @@ def compute_metrics(
     best_sorted_ap = sorted_ap_list[best_index]
     best_conf_threshold = conf_thresholds[best_index]
 
-    if no_rgb:
-        if no_chm:
-            legend = "No data"
-        else:
-            legend = "CHM"
-    else:
-        if no_chm:
-            legend = "RGB"
-        else:
-            legend = "RGB and CHM"
-
-    if save_path_ap_iou is not None:
-        plot_sorted_ap(
-            [best_sorted_ious],
-            [best_aps],
-            [best_sorted_ap],
-            legend_list=[legend],
-            conf_thresholds=[best_conf_threshold],
-            show=False,
-            save_path=save_path_ap_iou,
-        )
-    if save_path_sap_conf is not None:
-        plot_sorted_ap_confs(
-            sorted_ap_lists=[sorted_ap_list],
-            conf_thresholds_list=[conf_thresholds],
-            legend_list=[legend],
-            show=False,
-            save_path=save_path_sap_conf,
-        )
-
     return (
-        best_sorted_ious,
-        best_aps,
-        best_sorted_ap,
-        best_conf_threshold,
         sorted_ious_list,
         aps_list,
         sorted_ap_list,
@@ -1137,9 +479,9 @@ def initialize_dataloaders(
     )
     test_loader = TreeDataLoader(
         datasets["test"],
-        batch_size=1,
+        batch_size=batch_size,
         shuffle=False,
-        num_workers=1,
+        num_workers=num_workers,
         pin_memory=True,
     )
     return train_loader, val_loader, test_loader
@@ -1182,13 +524,6 @@ def train_and_validate(
     best_model = model
     best_loss = np.inf
 
-    if save_outputs:
-        test_save_output_image(
-            model=model,
-            test_loader=test_loader,
-            epoch=0,
-            device=device,
-        )
     for epoch in tqdm(range(1, epochs + 1), desc="Epoch"):
         training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
         running_accumulation_step = train(
@@ -1201,13 +536,6 @@ def train_and_validate(
             training_metrics,
         )
         current_loss = validate(val_loader, model, device, training_metrics)
-        if save_outputs and epoch % 1 == 0:
-            test_save_output_image(
-                model=model,
-                test_loader=test_loader,
-                epoch=epoch,
-                device=device,
-            )
         scheduler.step()
 
         # Store the best model

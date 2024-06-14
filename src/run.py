@@ -17,19 +17,22 @@ from augmentations import (
     get_transform_spatial,
 )
 from dataset_constants import DatasetConst
+from datasets import compute_mean_and_std
 from geojson_conversions import open_geojson_feature_collection
 from layers import AMF_GD_YOLOv8
 from metrics import plot_sorted_ap, plot_sorted_ap_confs
 from preprocessing.data import get_channels_count
 from preprocessing.rgb_cir import get_rgb_images_paths_from_polygon
 from training import (
+    TreeDataLoader,
     TreeDataset,
-    compute_mean_and_std,
-    compute_metrics,
+    compute_all_ap_metrics,
     create_and_save_splitted_datasets,
     initialize_dataloaders,
     load_tree_datasets_from_split,
-    test_save_output_image,
+    predict_to_geojson,
+    rgb_chm_usage_legend,
+    rgb_chm_usage_postfix,
     train_and_validate,
 )
 from utils import Folders, ImageData, import_tqdm
@@ -337,7 +340,7 @@ class ModelSession:
 
         self._save_model(model)
 
-        self.compute_metrics()
+        # self.compute_metrics()
 
     @running_message("Computing metrics...")
     def compute_metrics(self):
@@ -365,64 +368,59 @@ class ModelSession:
         thresholds_high = np.linspace(0.1, 1.0, 19)
         conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
 
-        no_rgbs = [False, False, True, True]
-        no_chms = [False, True, False, True]
-        test_names = ["all", "no_chm", "no_rgb", "no_chm_no_rgb"]
+        use_rgbs = [False, False, True, True]
+        use_chms = [False, True, False, True]
+        test_names = ["all", "use_chm", "use_rgb", "use_chm_use_rgb"]
 
-        pbar = tqdm(zip(no_rgbs, no_chms, test_names), total=len(no_rgbs))
-        for no_rgb, no_chm, test_name in pbar:
-            if no_rgb:
-                if no_chm:
+        pbar = tqdm(zip(use_rgbs, use_chms, test_names), total=len(use_rgbs))
+        for use_rgb, use_chm, test_name in pbar:
+            if use_rgb:
+                if use_chm:
                     legend = "No data"
                 else:
                     legend = "CHM"
             else:
-                if no_chm:
+                if use_chm:
                     legend = "RGB"
                 else:
                     legend = "RGB and CHM"
             pbar.set_description(legend)
             pbar.refresh()
-            test_save_output_image(
+            predict_to_geojson(
                 model,
                 test_loader,
-                -1,
                 self.device,
-                no_rgb=no_rgb,
-                no_chm=no_chm,
+                use_rgb=use_rgb,
+                use_chm=use_chm,
                 save_path=os.path.join(
                     Folders.OUTPUT_DIR.value, f"{self.model_name}_{test_name}.geojson"
                 ),
             )
             (
-                best_sorted_ious,
-                best_aps,
-                best_sorted_ap,
-                best_conf_threshold,
                 sorted_ious_list,
                 aps_list,
-                sorted_ap_list_2,
-            ) = compute_metrics(
+                sorted_ap_list,
+            ) = compute_all_ap_metrics(
                 model,
                 test_loader,
                 self.device,
                 conf_thresholds=conf_thresholds,
-                no_rgb=no_rgb,
-                no_chm=no_chm,
-                save_path_ap_iou=os.path.join(
-                    Folders.OUTPUT_DIR.value, f"{self.model_name}_ap_iou_{test_name}.png"
-                ),
-                save_path_sap_conf=os.path.join(
-                    Folders.OUTPUT_DIR.value, f"{self.model_name}_sap_conf_{test_name}.png"
-                ),
+                use_rgb=use_rgb,
+                use_chm=use_chm,
             )
+
+            best_index = sorted_ap_list.index(max(sorted_ap_list))
+            best_sorted_ious = sorted_ious_list[best_index]
+            best_aps = aps_list[best_index]
+            best_sorted_ap = sorted_ap_list[best_index]
+            best_conf_threshold = conf_thresholds[best_index]
 
             best_sorted_ious_list.append(best_sorted_ious)
             best_aps_list.append(best_aps)
             best_sorted_ap_list.append(best_sorted_ap)
             best_conf_threshold__list.append(best_conf_threshold)
 
-            sorted_ap_lists.append(sorted_ap_list_2)
+            sorted_ap_lists.append(sorted_ap_list)
             conf_thresholds_list.append(conf_thresholds)
 
             legend_list.append(legend)
@@ -437,13 +435,13 @@ class ModelSession:
             save_path=os.path.join(Folders.OUTPUT_DIR.value, f"{self.model_name}_ap_iou.png"),
         )
 
-        plot_sorted_ap_confs(
-            sorted_ap_lists=sorted_ap_lists,
-            conf_thresholds_list=conf_thresholds_list,
-            legend_list=legend_list,
-            show=True,
-            save_path=os.path.join(Folders.OUTPUT_DIR.value, f"{self.model_name}_sap_conf.png"),
-        )
+        # plot_sorted_ap_confs(
+        #     sorted_ap_lists=sorted_ap_lists,
+        #     conf_thresholds_list=conf_thresholds_list,
+        #     legend_list=legend_list,
+        #     show=True,
+        #     save_path=os.path.join(Folders.OUTPUT_DIR.value, f"{self.model_name}_sap_conf.png"),
+        # )
 
     @staticmethod
     def _pickle_path(model_name: str) -> str:
@@ -472,6 +470,64 @@ class ModelSession:
         return ModelSession.from_pickle(file_path, device)
 
 
+# def compute_ap_metrics(
+#     model: AMF_GD_YOLOv8,
+#     data_loader: TreeDataLoader,
+#     device: torch.device,
+#     use_rgb: bool,
+#     use_chm: bool,
+# ):
+#     best_sorted_ious_list = []
+#     best_aps_list = []
+#     best_sorted_ap_list = []
+#     best_conf_threshold__list = []
+
+#     sorted_ap_lists = []
+#     conf_thresholds_list = []
+
+#     legend_list = []
+
+#     thresholds_low = np.power(10, np.linspace(-4, -1, 10))
+#     thresholds_high = np.linspace(0.1, 1.0, 19)
+#     conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
+
+#     postfix = rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)
+#     legend = rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)
+
+#     (
+#         best_sorted_ious,
+#         best_aps,
+#         best_sorted_ap,
+#         best_conf_threshold,
+#         sorted_ious_list,
+#         aps_list,
+#         sorted_ap_list_2,
+#     ) = compute_metrics(
+#         model,
+#         data_loader,
+#         device,
+#         conf_thresholds=conf_thresholds,
+#         use_rgb=use_rgb,
+#         use_chm=use_chm,
+#         save_path_ap_iou=os.path.join(
+#             Folders.OUTPUT_DIR.value, f"{model.name}_ap_iou_{test_name}.png"
+#         ),
+#         save_path_sap_conf=os.path.join(
+#             Folders.OUTPUT_DIR.value, f"{model.name}_sap_conf_{test_name}.png"
+#         ),
+#     )
+
+#     best_sorted_ious_list.append(best_sorted_ious)
+#     best_aps_list.append(best_aps)
+#     best_sorted_ap_list.append(best_sorted_ap)
+#     best_conf_threshold__list.append(best_conf_threshold)
+
+#     sorted_ap_lists.append(sorted_ap_list_2)
+#     conf_thresholds_list.append(conf_thresholds)
+
+#     legend_list.append(legend)
+
+
 def main():
     # Data parameters
     annotations_file_name = "122000_484000.geojson"
@@ -489,9 +545,9 @@ def main():
     # Training parameters
 
     lr = 1e-2
-    epochs = 500
+    epochs = 1
     batch_size = 10
-    num_workers = mp.cpu_count()
+    num_workers = 0
     accumulate = 10
 
     proba_drop_rgb = 1 / 3

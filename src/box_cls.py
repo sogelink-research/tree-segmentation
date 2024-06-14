@@ -67,6 +67,8 @@ class Box:
 
     @staticmethod
     def from_list(coords_list: Sequence[float | int]) -> Box:
+        if len(coords_list) != 4:
+            raise ValueError("Expects a list with 4 numbers.")
         return Box(*coords_list)
 
 
