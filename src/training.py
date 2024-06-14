@@ -753,7 +753,7 @@ class TrainingMetrics:
                     epochs = [epochs[i] for i in kept_indices]
                     values = [values[i] for i in kept_indices]
 
-                    fmt = "-" if len(epochs) > 100 else "-o"
+                    fmt = "-" if len(epochs) > 25 else "-o"
                     ax.plot(
                         epochs,
                         values,
@@ -1170,7 +1170,7 @@ def train_and_validate(
     running_accumulation_step = 0
 
     training_metrics = TrainingMetrics(show=show_training_metrics)
-    intervals = [(0, 0), (5, 0), (-100, 0)]
+    intervals = [(0, 0), (5, 0), (-100, 0), (-25, 0)]
     training_metrics_path = [
         os.path.join(
             Folders.OUTPUT_DIR.value,
