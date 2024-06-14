@@ -47,6 +47,7 @@ class TrainingMetrics:
         self.metrics_loop = defaultdict(
             lambda: defaultdict(lambda: {"val": 0.0, "count": 0, "avg": 0.0})
         )
+        self.y_axes = {}
         self.last_epoch = -1
 
         if self.show:
@@ -64,7 +65,18 @@ class TrainingMetrics:
             lambda: defaultdict(lambda: {"val": 0.0, "count": 0, "avg": 0.0})
         )
 
-    def update(self, category_name: str, metric_name: str, val: float, count: int = 1):
+    def update(
+        self,
+        category_name: str,
+        metric_name: str,
+        val: float,
+        count: int = 1,
+        y_axis: str | None = None,
+    ):
+        if y_axis is None:
+            y_axis = metric_name
+        self.y_axes[metric_name] = y_axis
+
         metric = self.metrics_loop[metric_name][category_name]
 
         metric["val"] += val
@@ -96,7 +108,7 @@ class TrainingMetrics:
 
         scale = max(ceil((len(metrics_index)) ** 0.5), 1)
         nrows = scale
-        ncols = scale
+        ncols = len(metrics_index) // scale
         cmap = plt.get_cmap("tab10")
 
         categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
@@ -128,8 +140,7 @@ class TrainingMetrics:
                     )
                 ax.grid(alpha=0.5)
                 ax.set_xlabel("Epoch")
-                # ax.set_yscale("log")
-                ax.set_ylabel(metric_name)
+                ax.set_ylabel(self.y_axes[metric_name])
                 ax.set_title(f"{metric_name}")
             plt.tight_layout()
 
@@ -277,9 +288,13 @@ def validate(
 
             # Store the loss
             batch_size = image_rgb.shape[0]
-            training_metrics.update("Validation", "Loss", total_loss.item(), batch_size)
+            training_metrics.update(
+                "Validation", "Total Loss", total_loss.item(), count=batch_size, y_axis="Loss"
+            )
             for key, value in loss_dict.items():
-                training_metrics.update("Validation", key, value.item(), batch_size)
+                training_metrics.update(
+                    "Validation", key, value.item(), count=batch_size, y_axis="Loss"
+                )
 
             # Compute the AP metrics
             ap_metrics.add_preds(
@@ -292,9 +307,9 @@ def validate(
             )
 
     _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
-    training_metrics.update("Validation", "Best sortedAP", sorted_ap, 1)
+    training_metrics.update("Validation", "Best sortedAP", sorted_ap, y_axis="sortedAP")
     training_metrics.update(
-        "Validation", "Confidence threshold of the best sortedAP", conf_threshold, 1
+        "Validation", "Conf thres of sortedAP", conf_threshold, y_axis="Conf threshold"
     )
 
     return training_metrics.get_last("Validation", "Loss")
