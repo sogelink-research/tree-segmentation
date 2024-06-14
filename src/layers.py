@@ -561,6 +561,8 @@ class TrainingLoss(v8DetectionLoss):
             "Class Loss": batch_size * loss_items[1],
             "Dual Focal Loss": batch_size * loss_items[2],
         }
+        print()
+        print(f"{preds[0].shape = }")
         print(f"{batch_size = }")
         print(f"{total_loss.item() = }")
         print(f"{loss_dict = }")
