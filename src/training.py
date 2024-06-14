@@ -4,7 +4,7 @@ import random
 import sys
 from collections import defaultdict
 from math import ceil
-from typing import Callable, Dict, Iterable, List, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import albumentations as A
 import geojson
@@ -682,12 +682,14 @@ class TrainingMetrics:
         self.metrics_loop = defaultdict(
             lambda: defaultdict(lambda: {"val": 0.0, "count": 0, "avg": 0.0})
         )
+        self.last_epoch = -1
 
         if self.show:
             self.out = Output()
             display.display(self.out)
 
     def end_loop(self, epoch: int):
+        self.last_epoch = epoch
         for metric_name, metric_dict in self.metrics_loop.items():
             for category_name, category_dict in metric_dict.items():
                 metric = self.metrics[metric_name][category_name]
@@ -707,10 +709,17 @@ class TrainingMetrics:
     def get_last(self, category_name: str, metric_name: str):
         return self.metrics_loop[metric_name][category_name]["avg"]
 
-    def visualize(self, from_epoch: int = 0, save_path: str | None = None):
+    def visualize(
+        self,
+        intervals: List[Tuple[int, int]] = [(0, 0)],
+        save_paths: Optional[Sequence[str | None]] = None,
+    ):
         # Inspired from https://gitlab.com/robindar/dl-scaman_checker/-/blob/main/src/dl_scaman_checker/TP01.py
-        if self.show is False and save_path is None:
+        if self.show is False and (save_paths is None or all(path is None for path in save_paths)):
             return
+
+        if save_paths is None:
+            save_paths = [None] * len(intervals)
 
         metrics_index: Dict[str, int] = {}
         categories_index: Dict[str, int] = {}
@@ -727,41 +736,44 @@ class TrainingMetrics:
 
         categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
 
-        plt.clf()
-        fig = plt.figure(1, figsize=(6 * ncols, 4 * nrows))
+        for interval, save_path in zip(intervals, save_paths):
+            plt.clf()
+            fig = plt.figure(1, figsize=(6 * ncols, 4 * nrows))
 
-        for metric_name, metric_dict in self.metrics.items():
-            ax = fig.add_subplot(nrows, ncols, metrics_index[metric_name] + 1)
-            for category_name, category_dict in metric_dict.items():
-                epochs = category_dict["epochs"]
-                values = category_dict["avgs"]
+            for metric_name, metric_dict in self.metrics.items():
+                ax = fig.add_subplot(nrows, ncols, metrics_index[metric_name] + 1)
+                for category_name, category_dict in metric_dict.items():
+                    epochs = category_dict["epochs"]
+                    values = category_dict["avgs"]
 
-                # Remove the epochs before from_epoch
-                kept_indices = [i for i in range(len(epochs)) if epochs[i] > from_epoch]
-                epochs = [epochs[i] for i in kept_indices]
-                values = [values[i] for i in kept_indices]
+                    # Remove the epochs before from_epoch
+                    start = interval[0] if interval[0] >= 0 else self.last_epoch + interval[0]
+                    end = self.last_epoch + interval[1] if interval[1] <= 0 else interval[1]
+                    kept_indices = [i for i in range(len(epochs)) if start <= epochs[i] <= end]
+                    epochs = [epochs[i] for i in kept_indices]
+                    values = [values[i] for i in kept_indices]
 
-                fmt = "-" if len(epochs) > 100 else "-o"
-                ax.plot(
-                    epochs,
-                    values,
-                    fmt,
-                    color=categories_colors[category_name],
-                    label=category_name,
-                )
-            ax.grid(alpha=0.5)
-            ax.set_xlabel("Epoch")
-            # ax.set_yscale("log")
-            ax.set_ylabel(metric_name)
-            ax.set_title(f"{metric_name}")
-        plt.tight_layout()
+                    fmt = "-" if len(epochs) > 100 else "-o"
+                    ax.plot(
+                        epochs,
+                        values,
+                        fmt,
+                        color=categories_colors[category_name],
+                        label=category_name,
+                    )
+                ax.grid(alpha=0.5)
+                ax.set_xlabel("Epoch")
+                # ax.set_yscale("log")
+                ax.set_ylabel(metric_name)
+                ax.set_title(f"{metric_name}")
+            plt.tight_layout()
 
-        has_legend, _ = plt.gca().get_legend_handles_labels()
-        if any(label != "" for label in has_legend):
-            plt.legend()
+            has_legend, _ = plt.gca().get_legend_handles_labels()
+            if any(label != "" for label in has_legend):
+                plt.legend()
 
-        if save_path is not None:
-            plt.savefig(save_path, dpi=200)
+            if save_path is not None:
+                plt.savefig(save_path, dpi=200)
 
         if self.show:
             with self.out:
@@ -1158,8 +1170,14 @@ def train_and_validate(
     running_accumulation_step = 0
 
     training_metrics = TrainingMetrics(show=show_training_metrics)
-    training_metrics_name = f"{model.name}_training_metrics_plot.png"
-    training_metrics_path = os.path.join(Folders.OUTPUT_DIR.value, training_metrics_name)
+    intervals = [(0, 0), (5, 0), (-100, 0)]
+    training_metrics_path = [
+        os.path.join(
+            Folders.OUTPUT_DIR.value,
+            f"{model.name}_training_metrics_plot_from_{interval[0]}_{interval[1]}.png",
+        )
+        for interval in intervals
+    ]
 
     best_model = model
     best_loss = np.inf
@@ -1172,7 +1190,7 @@ def train_and_validate(
             device=device,
         )
     for epoch in tqdm(range(1, epochs + 1), desc="Epoch"):
-        training_metrics.visualize(save_path=training_metrics_path)
+        training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
         running_accumulation_step = train(
             train_loader,
             model,
@@ -1200,7 +1218,7 @@ def train_and_validate(
         training_metrics.end_loop(epoch)
 
     # Save the plot showing the evolution of the metrics
-    training_metrics.visualize(save_path=training_metrics_path)
+    training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
     return best_model
 
 

@@ -4,6 +4,7 @@ import argparse
 import multiprocessing as mp
 import os
 import pickle
+import warnings
 from typing import Callable, Dict, Optional, Sequence, Tuple
 
 import albumentations as A
@@ -314,6 +315,9 @@ class ModelSession:
         os.environ["PYTORCH_CUDA_ALLOC_CONF"] = (
             "garbage_collection_threshold:0.6,max_split_size_mb:512"
         )
+
+        # Removes a warning
+        warnings.filterwarnings("ignore", category=UserWarning, module="torch.autograd.graph")
 
         model = self._load_model()
         datasets = self._load_datasets()
