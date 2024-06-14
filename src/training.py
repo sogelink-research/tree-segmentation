@@ -707,7 +707,7 @@ class TrainingMetrics:
     def get_last(self, category_name: str, metric_name: str):
         return self.metrics_loop[metric_name][category_name]["avg"]
 
-    def visualize(self, save_path: str | None = None):
+    def visualize(self, from_epoch: int = 0, save_path: str | None = None):
         # Inspired from https://gitlab.com/robindar/dl-scaman_checker/-/blob/main/src/dl_scaman_checker/TP01.py
         if self.show is False and save_path is None:
             return
@@ -735,6 +735,12 @@ class TrainingMetrics:
             for category_name, category_dict in metric_dict.items():
                 epochs = category_dict["epochs"]
                 values = category_dict["avgs"]
+
+                # Remove the epochs before from_epoch
+                kept_indices = [i for i in range(len(epochs)) if epochs[i] > from_epoch]
+                epochs = [epochs[i] for i in kept_indices]
+                values = [values[i] for i in kept_indices]
+
                 fmt = "-" if len(epochs) > 100 else "-o"
                 ax.plot(
                     epochs,
@@ -745,10 +751,10 @@ class TrainingMetrics:
                 )
             ax.grid(alpha=0.5)
             ax.set_xlabel("Epoch")
-            ax.set_yscale("log")
+            # ax.set_yscale("log")
             ax.set_ylabel(metric_name)
             ax.set_title(f"{metric_name}")
-        # plt.tight_layout()
+        plt.tight_layout()
 
         has_legend, _ = plt.gca().get_legend_handles_labels()
         if any(label != "" for label in has_legend):

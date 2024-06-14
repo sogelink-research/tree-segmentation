@@ -337,9 +337,9 @@ class AMF_GD_YOLOv8(nn.Module):
 
         class Args:
             def __init__(self) -> None:
-                self.box = 100.0
+                self.box = 1.0
                 self.cls = 1.0
-                self.dfl = 10.0
+                self.dfl = 1.0
 
         self.class_names = class_names
         self.class_indices = {value: key for key, value in class_names.items()}
@@ -553,10 +553,11 @@ class TrainingLoss(v8DetectionLoss):
 
     def __call__(self, preds, batch) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         total_loss, loss_items = super().__call__(preds, batch)
+        batch_size = preds.shape[0]
         loss_dict = {
-            "Box Loss": loss_items[0],
-            "Class Loss": loss_items[1],
-            "Dual Focal Loss": loss_items[2],
+            "Box Loss": batch_size * loss_items[0],
+            "Class Loss": batch_size * loss_items[1],
+            "Dual Focal Loss": batch_size * loss_items[2],
         }
         return total_loss, loss_dict
 
