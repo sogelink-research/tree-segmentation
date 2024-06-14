@@ -479,7 +479,7 @@ class AMF_GD_YOLOv8(nn.Module):
 
     def compute_loss(
         self,
-        preds: torch.Tensor,
+        preds: List[torch.Tensor],
         gt_bboxes: torch.Tensor,
         gt_classes: torch.Tensor,
         gt_indices: torch.Tensor,
@@ -551,10 +551,11 @@ class TrainingLoss(v8DetectionLoss):
             # out[..., 1:5] = xywh2xyxy(out[..., 1:5].mul_(scale_tensor)) # Original line
         return out
 
-    def __call__(self, preds, batch) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    def __call__(
+        self, preds: List[torch.Tensor], batch: Dict[str, torch.Tensor]
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         total_loss, loss_items = super().__call__(preds, batch)
-        feats = preds[1] if isinstance(preds, tuple) else preds
-        batch_size = feats.shape[0]
+        batch_size = batch["cls"].shape[0]
         loss_dict = {
             "Box Loss": batch_size * loss_items[0],
             "Class Loss": batch_size * loss_items[1],
