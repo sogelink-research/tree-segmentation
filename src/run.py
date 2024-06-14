@@ -435,13 +435,13 @@ class ModelSession:
             save_path=os.path.join(Folders.OUTPUT_DIR.value, f"{self.model_name}_ap_iou.png"),
         )
 
-        # plot_sorted_ap_confs(
-        #     sorted_ap_lists=sorted_ap_lists,
-        #     conf_thresholds_list=conf_thresholds_list,
-        #     legend_list=legend_list,
-        #     show=True,
-        #     save_path=os.path.join(Folders.OUTPUT_DIR.value, f"{self.model_name}_sap_conf.png"),
-        # )
+        plot_sorted_ap_confs(
+            sorted_ap_lists=sorted_ap_lists,
+            conf_thresholds_list=conf_thresholds_list,
+            legend_list=legend_list,
+            show=True,
+            save_path=os.path.join(Folders.OUTPUT_DIR.value, f"{self.model_name}_sap_conf.png"),
+        )
 
     @staticmethod
     def _pickle_path(model_name: str) -> str:
@@ -470,64 +470,6 @@ class ModelSession:
         return ModelSession.from_pickle(file_path, device)
 
 
-# def compute_ap_metrics(
-#     model: AMF_GD_YOLOv8,
-#     data_loader: TreeDataLoader,
-#     device: torch.device,
-#     use_rgb: bool,
-#     use_chm: bool,
-# ):
-#     best_sorted_ious_list = []
-#     best_aps_list = []
-#     best_sorted_ap_list = []
-#     best_conf_threshold__list = []
-
-#     sorted_ap_lists = []
-#     conf_thresholds_list = []
-
-#     legend_list = []
-
-#     thresholds_low = np.power(10, np.linspace(-4, -1, 10))
-#     thresholds_high = np.linspace(0.1, 1.0, 19)
-#     conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
-
-#     postfix = rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)
-#     legend = rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)
-
-#     (
-#         best_sorted_ious,
-#         best_aps,
-#         best_sorted_ap,
-#         best_conf_threshold,
-#         sorted_ious_list,
-#         aps_list,
-#         sorted_ap_list_2,
-#     ) = compute_metrics(
-#         model,
-#         data_loader,
-#         device,
-#         conf_thresholds=conf_thresholds,
-#         use_rgb=use_rgb,
-#         use_chm=use_chm,
-#         save_path_ap_iou=os.path.join(
-#             Folders.OUTPUT_DIR.value, f"{model.name}_ap_iou_{test_name}.png"
-#         ),
-#         save_path_sap_conf=os.path.join(
-#             Folders.OUTPUT_DIR.value, f"{model.name}_sap_conf_{test_name}.png"
-#         ),
-#     )
-
-#     best_sorted_ious_list.append(best_sorted_ious)
-#     best_aps_list.append(best_aps)
-#     best_sorted_ap_list.append(best_sorted_ap)
-#     best_conf_threshold__list.append(best_conf_threshold)
-
-#     sorted_ap_lists.append(sorted_ap_list_2)
-#     conf_thresholds_list.append(conf_thresholds)
-
-#     legend_list.append(legend)
-
-
 def main():
     # Data parameters
     annotations_file_name = "122000_484000.geojson"
@@ -545,7 +487,7 @@ def main():
     # Training parameters
 
     lr = 1e-2
-    epochs = 1
+    epochs = 1000
     batch_size = 10
     num_workers = 0
     accumulate = 10
