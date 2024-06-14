@@ -730,7 +730,7 @@ class TrainingMetrics:
         fig = plt.figure(1, figsize=(4 * ncols, 4 * nrows))
 
         for metric_name, metric_dict in self.metrics.items():
-            ax = fig.add_subplot(nrows, 1, metrics_index[metric_name] + 1)
+            ax = fig.add_subplot(nrows, ncols, metrics_index[metric_name] + 1)
             for category_name, category_dict in metric_dict.items():
                 epochs = category_dict["epochs"]
                 values = category_dict["avgs"]
