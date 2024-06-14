@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import multiprocessing as mp
 import os
 import pickle
@@ -37,7 +38,17 @@ tqdm = import_tqdm()
 
 
 RESOLUTION = 0.08
-CROP_SIZE = 640
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("action", help="Action to perform. Must be one of [train, eval]", type=str)
+    parser.add_argument(
+        "params_path", help="Path to the file containing the training parameters", type=str
+    )
+
+    return parser
 
 
 def running_message(start_message: Optional[str] = None, end_message: Optional[str] = None):
@@ -154,7 +165,7 @@ class TrainingData:
         self.dataset_params = dataset_params
         self.training_params = training_params
 
-        self._split_data(dataset_params.split_random_seed)
+        self._split_data(self.dataset_params.split_random_seed)
         self._init_mean_std(
             training_params.mean_rgb,
             training_params.std_rgb,
@@ -256,10 +267,10 @@ class ModelSession:
         model = AMF_GD_YOLOv8(
             self.training_data.dataset_params.channels_rgb,
             self.training_data.dataset_params.channels_chm,
-            device=self.device,
-            scale="n",
             class_names=self.training_data.dataset_params.class_names,
+            device=self.device,
             name=self.model_name,
+            scale="n",
         )
         if os.path.isfile(self.model_path):
             print("Loading the weights...")
@@ -445,17 +456,16 @@ class ModelSession:
             pickle.dump(self, f)
 
     @staticmethod
-    def from_pickle(file_path: str) -> ModelSession:
+    def from_pickle(file_path: str, device: torch.device) -> ModelSession:
         with open(file_path, "rb") as f:
             model_session = pickle.load(f)
+            model_session.device = device
         return model_session
 
     @staticmethod
-    def from_name(model_name: str) -> ModelSession:
+    def from_name(model_name: str, device: torch.device) -> ModelSession:
         file_path = ModelSession._pickle_path(model_name)
-        with open(file_path, "rb") as f:
-            model_session = pickle.load(f)
-        return model_session
+        return ModelSession.from_pickle(file_path, device)
 
 
 def main():
@@ -475,10 +485,10 @@ def main():
     # Training parameters
 
     lr = 1e-2
-    epochs = 1000
-    batch_size = 1
-    num_workers = mp.cpu_count() // 2
-    accumulate = 12
+    epochs = 500
+    batch_size = 10
+    num_workers = mp.cpu_count()
+    accumulate = 10
 
     proba_drop_rgb = 1 / 3
     proba_drop_chm = 1 / 3

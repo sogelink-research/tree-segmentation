@@ -483,7 +483,7 @@ class AMF_GD_YOLOv8(nn.Module):
         gt_bboxes: torch.Tensor,
         gt_classes: torch.Tensor,
         gt_indices: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
         return self.criterion(preds, batch)
 
@@ -550,6 +550,15 @@ class TrainingLoss(v8DetectionLoss):
                     out[j, :n] = targets[matches, 1:]
             # out[..., 1:5] = xywh2xyxy(out[..., 1:5].mul_(scale_tensor)) # Original line
         return out
+
+    def __call__(self, preds, batch) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        total_loss, loss_items = super().__call__(preds, batch)
+        loss_dict = {
+            "Box Loss": loss_items[0],
+            "Class Loss": loss_items[1],
+            "Dual Focal Loss": loss_items[2],
+        }
+        return total_loss, loss_dict
 
 
 def non_max_suppression(

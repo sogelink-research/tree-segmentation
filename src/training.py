@@ -3,12 +3,14 @@ import os
 import random
 import sys
 from collections import defaultdict
+from math import ceil
 from typing import Callable, Dict, Iterable, List, Sequence, Tuple
 
 import albumentations as A
 import geojson
 import matplotlib.pyplot as plt
 import numpy as np
+import tifffile
 import torch
 import torch.nn as nn
 from albumentations import pytorch as Atorch
@@ -16,7 +18,6 @@ from IPython import display
 from ipywidgets import Output
 from matplotlib.figure import Figure
 from PIL import Image
-import tifffile
 from torch.utils.data import DataLoader, Dataset, Sampler
 
 from box_cls import Box
@@ -719,12 +720,14 @@ class TrainingMetrics:
                 if category_name not in categories_index.keys():
                     categories_index[category_name] = len(categories_index)
 
-        nrows = max(len(metrics_index), 1)
+        scale = ceil((len(metrics_index)) ** 0.5)
+        nrows = scale
+        ncols = 2 * scale
         cmap = plt.get_cmap("tab10")
 
         categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
 
-        fig = plt.figure(1, figsize=(6, 5 * nrows))
+        fig = plt.figure(1, figsize=(4 * ncols, 4 * nrows))
 
         for metric_name, metric_dict in self.metrics.items():
             ax = fig.add_subplot(nrows, 1, metrics_index[metric_name] + 1)
@@ -831,10 +834,12 @@ def train(
         gt_indices = gt_indices.to(device, non_blocking=True)
 
         output = model(image_rgb, image_chm)
-        total_loss = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)[0]
+        total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
 
         batch_size = image_rgb.shape[0]
         training_metrics.update("Training", "Loss", total_loss.item(), batch_size)
+        for key, value in loss_dict.items():
+            training_metrics.update("Training", key, value.item(), batch_size)
 
         total_loss.backward()
 
@@ -871,10 +876,12 @@ def validate(
             gt_indices = gt_indices.to(device, non_blocking=True)
 
             output = model(image_rgb, image_chm)
-            total_loss = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)[0]
+            total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
 
             batch_size = image_rgb.shape[0]
             training_metrics.update("Validation", "Loss", total_loss.item(), batch_size)
+            for key, value in loss_dict.items():
+                training_metrics.update("Validation", key, value.item(), batch_size)
 
     return training_metrics.get_last("Validation", "Loss")
 
@@ -916,7 +923,6 @@ def test_save_output_image(
                 bboxes = []
                 labels = []
                 scores = []
-                
 
             # Save the image if there is at least one bounding box
             # bboxes_image = create_bboxes_image(
@@ -938,7 +944,12 @@ def test_save_output_image(
             bboxes_as_box = [Box.from_list(bbox) for bbox in bboxes]
             save_path = "Test.geojson" if idx == 0 else None
             geojson_features = create_geojson_output(
-                full_image_name, cropped_coords_name, bboxes_as_box, labels, scores, save_path=save_path
+                full_image_name,
+                cropped_coords_name,
+                bboxes_as_box,
+                labels,
+                scores,
+                save_path=save_path,
             )
             geojson_outputs.append(geojson_features)
 
@@ -1140,6 +1151,8 @@ def train_and_validate(
     running_accumulation_step = 0
 
     training_metrics = TrainingMetrics(show=show_training_metrics)
+    training_metrics_name = f"{model.name}_training_metrics_plot.png"
+    training_metrics_path = os.path.join(Folders.OUTPUT_DIR.value, training_metrics_name)
 
     best_model = model
     best_loss = np.inf
@@ -1152,7 +1165,7 @@ def train_and_validate(
             device=device,
         )
     for epoch in tqdm(range(1, epochs + 1), desc="Epoch"):
-        training_metrics.visualize()
+        training_metrics.visualize(save_path=training_metrics_path)
         running_accumulation_step = train(
             train_loader,
             model,
@@ -1180,8 +1193,6 @@ def train_and_validate(
         training_metrics.end_loop(epoch)
 
     # Save the plot showing the evolution of the metrics
-    training_metrics_name = f"{model.name}_training_metrics_plot.png"
-    training_metrics_path = os.path.join(Folders.OUTPUT_DIR.value, training_metrics_name)
     training_metrics.visualize(save_path=training_metrics_path)
     return best_model
 
