@@ -720,7 +720,7 @@ class TrainingMetrics:
                 if category_name not in categories_index.keys():
                     categories_index[category_name] = len(categories_index)
 
-        scale = ceil((len(metrics_index)) ** 0.5)
+        scale = max(ceil((len(metrics_index)) ** 0.5), 1)
         nrows = scale
         ncols = 2 * scale
         cmap = plt.get_cmap("tab10")
