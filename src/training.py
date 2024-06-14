@@ -106,9 +106,10 @@ class TrainingMetrics:
                 if category_name not in categories_index.keys():
                     categories_index[category_name] = len(categories_index)
 
-        scale = max(ceil((len(metrics_index)) ** 0.5), 1)
+        n_metrics = len(metrics_index)
+        scale = max(ceil(n_metrics**0.5), 1)
         nrows = scale
-        ncols = (len(metrics_index) + scale - 1) // scale
+        ncols = (n_metrics + scale - 1) // scale
         cmap = plt.get_cmap("tab10")
 
         categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
@@ -118,7 +119,8 @@ class TrainingMetrics:
             fig = plt.figure(1, figsize=(6 * ncols, 4 * nrows))
 
             for metric_name, metric_dict in self.metrics.items():
-                ax = fig.add_subplot(nrows, ncols, metrics_index[metric_name] + 1)
+                index = metrics_index[metric_name]
+                ax = fig.add_subplot(nrows, ncols, index + 1)
                 for category_name, category_dict in metric_dict.items():
                     epochs = category_dict["epochs"]
                     values = category_dict["avgs"]
@@ -139,7 +141,10 @@ class TrainingMetrics:
                         label=category_name,
                     )
                 ax.grid(alpha=0.5)
-                ax.set_xlabel("Epoch")
+                if index >= n_metrics - ncols:
+                    ax.set_xlabel("Epoch")
+                else:
+                    ax.xaxis.set_visible(False)
                 ax.set_ylabel(self.y_axes[metric_name])
                 ax.set_title(f"{metric_name}")
             plt.tight_layout()
