@@ -159,6 +159,7 @@ class TrainingMetrics:
                     ax.tick_params(
                         axis="x", which="both", bottom=False, top=False, labelbottom=False
                     )
+                ax.set_yscale("log")
                 ax.set_ylabel(self.y_axes[metric_name])
                 ax.set_title(f"{metric_name}")
 
@@ -242,31 +243,36 @@ def train(
     running_accumulation_step: int,
     training_metrics: TrainingMetrics,
 ) -> int:
+    # AP metrics
+    thresholds_low = np.power(10, np.linspace(-4, -1, 10))
+    thresholds_high = np.linspace(0.1, 1.0, 19)
+    conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
+    ap_metrics = APMetrics(conf_thresholds=conf_thresholds)
+
     model.train()
     stream = tqdm(train_loader, leave=False, desc="Training")
     for data in stream:
+        # Get the data
         image_rgb: torch.Tensor = data["image_rgb"]
         image_chm: torch.Tensor = data["image_chm"]
         gt_bboxes: torch.Tensor = data["bboxes"]
         gt_classes: torch.Tensor = data["labels"]
         gt_indices: torch.Tensor = data["indices"]
+        image_indices: torch.Tensor = data["indices"]
 
         image_rgb = image_rgb.to(device, non_blocking=True)
         image_chm = image_chm.to(device, non_blocking=True)
         gt_bboxes = gt_bboxes.to(device, non_blocking=True)
         gt_classes = gt_classes.to(device, non_blocking=True)
         gt_indices = gt_indices.to(device, non_blocking=True)
+        image_indices = image_indices.to(device, non_blocking=True)
 
-        output = model(image_rgb, image_chm)
+        # Compute the model output
+        preds, output = model.forward_eval(image_rgb, image_chm)
+        # output = model(image_rgb, image_chm)
+
+        # Compute the loss
         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
-
-        batch_size = image_rgb.shape[0]
-        training_metrics.update(
-            "Training", "Total Loss", total_loss.item(), count=batch_size, y_axis="Loss"
-        )
-        for key, value in loss_dict.items():
-            training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
-
         total_loss.backward()
 
         # Gradient accumulation
@@ -275,6 +281,30 @@ def train(
             optimizer.zero_grad()
 
         running_accumulation_step += 1
+
+        # Store the loss
+        batch_size = image_rgb.shape[0]
+        training_metrics.update(
+            "Training", "Total Loss", total_loss.item(), count=batch_size, y_axis="Loss"
+        )
+        for key, value in loss_dict.items():
+            training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
+
+        # Compute the AP metrics
+        ap_metrics.add_preds(
+            model=model,
+            preds=preds,
+            gt_bboxes=gt_bboxes,
+            gt_classes=gt_classes,
+            gt_indices=gt_indices,
+            image_indices=image_indices,
+        )
+
+    _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
+    training_metrics.update("Training", "Best sortedAP", sorted_ap, y_axis="sortedAP")
+    training_metrics.update(
+        "Training", "Conf thres of sortedAP", conf_threshold, y_axis="Conf threshold"
+    )
 
     return running_accumulation_step
 
