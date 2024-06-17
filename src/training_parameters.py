@@ -8,18 +8,18 @@ distort_limit = 0.2
 
 class_names = {
     0: "Tree",
-    1: "Tree_unsure",
-    2: "Tree_disappeared",
+    1: "Tree_low_hard",
+    2: "Tree_LiDAR",
     3: "Tree_replaced",
-    4: "Tree_new",
+    4: "Tree_RGB",
 }
 
 class_colors = {
     "Tree": (104, 201, 45),
-    "Tree_unsure": (255, 215, 158),
-    "Tree_disappeared": (158, 174, 255),
+    "Tree_low_hard": (255, 215, 158),
+    "Tree_LiDAR": (158, 174, 255),
     "Tree_replaced": (255, 90, 82),
-    "Tree_new": (251, 106, 225),
+    "Tree_RGB": (251, 106, 225),
 }
 
 class_indices = {value: key for key, value in class_names.items()}
@@ -69,17 +69,17 @@ transform_pixel_chm = A.Compose(
 
 proba_drop_rgb = 0.333
 labels_transformation_drop_rgb = {
-    "Tree": "Tree_disappeared",
-    "Tree_unsure": "Tree_disappeared",
-    "Tree_disappeared": "Tree_disappeared",
-    "Tree_replaced": "Tree_disappeared",
-    "Tree_new": None,
+    "Tree": "Tree_LiDAR",
+    "Tree_low_hard": "Tree_LiDAR",
+    "Tree_LiDAR": "Tree_LiDAR",
+    "Tree_replaced": "Tree_LiDAR",
+    "Tree_RGB": None,
 }
 proba_drop_chm = 0.333
 labels_transformation_drop_chm = {
-    "Tree": "Tree_new",
-    "Tree_unsure": "Tree_new",
-    "Tree_disappeared": None,
-    "Tree_replaced": "Tree_new",
-    "Tree_new": "Tree_new",
+    "Tree": "Tree_RGB",
+    "Tree_low_hard": "Tree_RGB",
+    "Tree_LiDAR": None,
+    "Tree_replaced": "Tree_RGB",
+    "Tree_RGB": "Tree_RGB",
 }
