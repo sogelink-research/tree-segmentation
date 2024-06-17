@@ -451,7 +451,8 @@ class AMF_GD_YOLOv8(nn.Module):
         iou_threshold: float = 0.5,
         conf_threshold: float = 0.5,
     ) -> Tuple[List[List[Box]], List[List[float]], List[List[int]]]:
-        preds, output = self.forward_eval(x_left, x_right)
+        output = self.forward(x_left, x_right)
+        preds = self.preds_from_output(output)
         return self.predict_from_preds(
             preds, iou_threshold=iou_threshold, conf_threshold=conf_threshold
         )
