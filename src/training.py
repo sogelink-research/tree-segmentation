@@ -270,8 +270,12 @@ def train(
         output = model.forward(image_rgb, image_chm)
 
         # Compute the loss
+        print()
+        print(f"1: {gt_bboxes.shape = }")
         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
         total_loss.backward()
+        print()
+        print(f"2: {gt_bboxes.shape = }")
 
         # Gradient accumulation
         if (running_accumulation_step + 1) % accumulation_steps == 0:
@@ -299,6 +303,8 @@ def train(
                 gt_indices=gt_indices,
                 image_indices=image_indices,
             )
+            print()
+            print(f"3: {gt_bboxes.shape = }")
 
     _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
     training_metrics.update("Training", "Best sortedAP", sorted_ap, y_axis="sortedAP")

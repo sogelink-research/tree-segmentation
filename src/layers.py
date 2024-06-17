@@ -567,13 +567,6 @@ class TrainingLoss(v8DetectionLoss):
         # Pboxes
         pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
 
-        print(f"{pred_scores.detach().sigmoid().shape = }")
-        print(f"{(pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype).shape = }")
-        print(f"{(anchor_points * stride_tensor).shape = }")
-        print(f"{gt_labels.shape = }")
-        print(f"{gt_bboxes.shape = }")
-        print(f"{mask_gt.shape = }")
-
         _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
             pred_scores.detach().sigmoid(),
             (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
