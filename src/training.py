@@ -159,7 +159,6 @@ class TrainingMetrics:
                     ax.tick_params(
                         axis="x", which="both", bottom=False, top=False, labelbottom=False
                     )
-                ax.set_yscale("log")
                 ax.set_ylabel(self.y_axes[metric_name])
                 ax.set_title(f"{metric_name}")
 
