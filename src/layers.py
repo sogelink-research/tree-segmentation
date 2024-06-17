@@ -414,16 +414,20 @@ class AMF_GD_YOLOv8(nn.Module):
         return output
 
     def forward_eval(
-        self,
-        x_left: torch.Tensor | str,
-        x_right: torch.Tensor | str,
+        self, x_left: torch.Tensor | str, x_right: torch.Tensor | str, force_eval: bool = False
     ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        forced_eval = False
+        if self.training and force_eval:
+            forced_eval = True
+            self.eval()
         if self.training:
             raise Exception("The model should be in evaluation mode when calling `forward_eval`")
         x_left, x_right = self._pre_process(x_left=x_left, x_right=x_right)
         xs = self.amfnet(x_left, x_right)
         xs = self.gd(xs)
         preds, output = self.detect(xs)
+        if forced_eval:
+            self.train()
         return preds, output
 
     def predict_from_preds(
