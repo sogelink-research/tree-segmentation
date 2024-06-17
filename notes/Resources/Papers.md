@@ -8,6 +8,7 @@ In this note are listed the papers to cite.
 - [Gold-YOLO: Efficient Object Detector via Gather-and-Distribute Mechanism](https://arxiv.org/abs/2309.11331) for the Gather-and-Distribute Mechanism
 - [CBAM: Convolutional Block Attention Module](https://arxiv.org/abs/1807.06521) for the CBAM with a PyTorch implementation [here](https://github.com/Peachypie98/CBAM)
 - [ShuffleNet V2: Practical Guidelines for Efficient CNN Architecture Design](https://arxiv.org/abs/1807.11164) for the ShuffleNet layer
+- [TOOD: Task-aligned One-stage Object Detection](https://arxiv.org/abs/2108.07755) to understand the Detection layers
 
 ## Metrics
 

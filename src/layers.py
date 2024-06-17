@@ -359,16 +359,12 @@ class AMF_GD_YOLOv8(nn.Module):
         name: str,
         scale: str = "n",
         r: int = 16,
+        loss_weights: Dict[str, float] = {"box": 20, "cls": 1, "dfl": 10},
         gd_config_file: str | None = None,
     ) -> None:
         super().__init__()
 
-        class Args:
-            def __init__(self) -> None:
-                self.box = 1.0
-                self.cls = 1.0
-                self.dfl = 1.0
-
+        # Store
         self.class_names = class_names
         self.class_indices = {value: key for key, value in class_names.items()}
         self.name = name
@@ -394,8 +390,21 @@ class AMF_GD_YOLOv8(nn.Module):
         self.detect = DetectCustom(len(class_names), out_channels).to(device)
         self.detect.stride = torch.tensor([8, 16, 32])
 
-        self.args = Args()
+        # Whole model
         self.model = nn.ModuleList([self.amfnet, self.gd, self.detect])
+
+        # Loss function
+        required_loss_weights_keys = ["box", "cls", "dfl"]
+        if set(loss_weights.keys()) == set(required_loss_weights_keys):
+            raise ValueError(f"The keys of `loss_weights` should be {required_loss_weights_keys}.")
+
+        class Args:
+            def __init__(self) -> None:
+                self.box = loss_weights["box"]
+                self.cls = loss_weights["cls"]
+                self.dfl = loss_weights["dfl"]
+
+        self.args = Args()
         self.criterion = TrainingLoss(self)
 
     def _open_image(self, image_path: str) -> torch.Tensor:
