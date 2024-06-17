@@ -268,8 +268,8 @@ def train(
         image_indices = image_indices.to(device, non_blocking=True)
 
         # Compute the model output
-        preds, output = model.forward_eval(image_rgb, image_chm, force_eval=True)
-        # output = model(image_rgb, image_chm)
+        output = model.forward(image_rgb, image_chm)
+        preds = model.preds_from_output(output)
 
         # Compute the loss
         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
@@ -341,7 +341,8 @@ def validate(
             image_indices = image_indices.to(device, non_blocking=True)
 
             # Compute the model output
-            preds, output = model.forward_eval(image_rgb, image_chm)
+            output = model.forward(image_rgb, image_chm)
+            preds = model.preds_from_output(output)
 
             # Compute the loss
             total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)

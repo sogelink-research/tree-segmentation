@@ -16,6 +16,7 @@ from ultralytics.nn.modules.conv import Conv
 from ultralytics.nn.modules.head import Detect
 from ultralytics.utils.loss import v8DetectionLoss
 from ultralytics.utils.ops import scale_boxes, xywh2xyxy
+from ultralytics.utils.tal import make_anchors
 
 from box_cls import Box
 from cbam import CBAM
@@ -84,6 +85,32 @@ class C2f0(C2f):
         self.m = nn.ModuleList(
             Bottleneck0(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) for _ in range(n)
         )
+
+
+class DetectCustom(Detect):
+    def __init__(self, nc: int = 80, ch: Tuple[int, ...] = ()):
+        super().__init__(nc, ch)
+
+    def forward(self, x: List[torch.Tensor]) -> List[torch.Tensor]:
+        """Concatenates and returns predicted bounding boxes and class probabilities."""
+        for i in range(self.nl):
+            x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)
+        return x
+
+    def preds_from_output(self, x: List[torch.Tensor]) -> torch.Tensor:
+        # Inference path
+        shape = x[0].shape  # BCHW
+        x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
+        if self.dynamic or self.shape != shape:
+            self.anchors, self.strides = (
+                x.transpose(0, 1) for x in make_anchors(x, self.stride, 0.5)
+            )
+            self.shape = shape
+
+        box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
+        dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
+        y = torch.cat((dbox, cls.sigmoid()), 1)
+        return y
 
 
 class YOLOv8Backbone(nn.Module):
@@ -363,8 +390,8 @@ class AMF_GD_YOLOv8(nn.Module):
                 self.gd_config.model.backbone.out_channels + self.gd_config.model.neck.out_channels
             )
         ]
-        out_channels = [channels_list[6], channels_list[8], channels_list[10]]
-        self.detect = Detect(len(class_names), out_channels).to(device)
+        out_channels = (channels_list[6], channels_list[8], channels_list[10])
+        self.detect = DetectCustom(len(class_names), out_channels).to(device)
         self.detect.stride = torch.tensor([8, 16, 32])
 
         self.args = Args()
@@ -393,43 +420,15 @@ class AMF_GD_YOLOv8(nn.Module):
         self,
         x_left: torch.Tensor | str,
         x_right: torch.Tensor | str,
-    ) -> List[torch.Tensor] | Tuple[torch.Tensor, List[torch.Tensor]]:
-        x_left, x_right = self._pre_process(x_left=x_left, x_right=x_right)
-        xs = self.amfnet(x_left, x_right)
-        xs = self.gd(xs)
-        y = self.detect(xs)
-        return y
-
-    def forward_train(
-        self,
-        x_left: torch.Tensor | str,
-        x_right: torch.Tensor | str,
     ) -> List[torch.Tensor]:
-        if not self.training:
-            raise Exception("The model should be in training mode when calling `forward_train`")
         x_left, x_right = self._pre_process(x_left=x_left, x_right=x_right)
         xs = self.amfnet(x_left, x_right)
         xs = self.gd(xs)
-        output = self.detect(xs)
+        output = self.detect.forward(xs)
         return output
 
-    def forward_eval(
-        self, x_left: torch.Tensor | str, x_right: torch.Tensor | str, force_eval: bool = False
-    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
-        # TODO: Get rid of force_eval and be able to postprocess the output to get preds
-        forced_eval = False
-        if self.training and force_eval:
-            forced_eval = True
-            self.eval()
-        if self.training:
-            raise Exception("The model should be in evaluation mode when calling `forward_eval`")
-        x_left, x_right = self._pre_process(x_left=x_left, x_right=x_right)
-        xs = self.amfnet(x_left, x_right)
-        xs = self.gd(xs)
-        preds, output = self.detect(xs)
-        if forced_eval:
-            self.train()
-        return preds, output
+    def preds_from_output(self, output: List[torch.Tensor]):
+        return self.detect.preds_from_output(output)
 
     def predict_from_preds(
         self,
