@@ -24,15 +24,12 @@ from metrics import plot_sorted_ap, plot_sorted_ap_confs
 from preprocessing.data import get_channels_count
 from preprocessing.rgb_cir import get_rgb_images_paths_from_polygon
 from training import (
-    TreeDataLoader,
     TreeDataset,
     compute_all_ap_metrics,
     create_and_save_splitted_datasets,
     initialize_dataloaders,
     load_tree_datasets_from_split,
     predict_to_geojson,
-    rgb_chm_usage_legend,
-    rgb_chm_usage_postfix,
     train_and_validate,
 )
 from utils import Folders, ImageData, import_tqdm
@@ -322,9 +319,11 @@ class ModelSession:
         # Removes a warning
         warnings.filterwarnings("ignore", category=UserWarning, module="torch.autograd.graph")
 
+        # Load data and model
         model = self._load_model()
         datasets = self._load_datasets()
 
+        # Train and extract the best model
         model = train_and_validate(
             model=model,
             datasets=datasets,
@@ -338,12 +337,14 @@ class ModelSession:
             show_training_metrics=False,
         )
 
+        # Save the best model
         self._save_model(model)
 
         # self.compute_metrics()
 
     @running_message("Computing metrics...")
     def compute_metrics(self):
+        # TODO: Modify this function to use the last metrics functions
 
         model = self._load_model()
         datasets = self._load_datasets()
