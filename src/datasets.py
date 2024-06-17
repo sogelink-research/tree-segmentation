@@ -1,5 +1,6 @@
 import os
 import random
+from copy import deepcopy
 from typing import Dict, List, Tuple
 
 import albumentations as A
@@ -410,8 +411,8 @@ class TreeDataset(Dataset):
         image_chm = self._read_chm_image(chm_path)
 
         # Get bboxes and labels
-        bboxes = self.bboxes[idx]
-        labels = self.labels[idx]
+        bboxes = deepcopy(self.bboxes[idx])
+        labels = deepcopy(self.labels[idx])
 
         # Apply the spatial transform to the two images, bboxes and labels
         if self.transform_spatial is not None:
