@@ -623,13 +623,13 @@ def train_and_validate(
             model,
             train_loader,
             device,
-            os.path.join(Folders.OUTPUT_DIR.value, f"preds_train_{epoch}.png"),
+            os.path.join(Folders.OUTPUT_DIR.value, f"preds_train_{epoch}.geojson"),
         )
         predict_to_geojson(
             model,
             val_loader,
             device,
-            os.path.join(Folders.OUTPUT_DIR.value, f"preds_val_{epoch}.png"),
+            os.path.join(Folders.OUTPUT_DIR.value, f"preds_val_{epoch}.geojson"),
         )
 
     # Save the plot showing the evolution of the metrics
