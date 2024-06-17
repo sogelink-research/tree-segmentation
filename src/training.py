@@ -248,7 +248,6 @@ def train(
     conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
     ap_metrics = APMetrics(conf_thresholds=conf_thresholds)
 
-    total_bboxes: int = 0
     model.train()
     stream = tqdm(train_loader, leave=False, desc="Training")
     for data in stream:
@@ -271,7 +270,6 @@ def train(
         output = model.forward(image_rgb, image_chm)
 
         # Compute the loss
-        total_bboxes += gt_bboxes.shape[0]
         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
         total_loss.backward()
 
@@ -301,8 +299,6 @@ def train(
                 gt_indices=gt_indices,
                 image_indices=image_indices,
             )
-
-    print(f"{total_bboxes = }")
 
     _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
     training_metrics.update("Training", "Best sortedAP", sorted_ap, y_axis="sortedAP")
@@ -577,7 +573,6 @@ def train_and_validate(
     accumulate: int,
     device: torch.device,
     show_training_metrics: bool,
-    model_save_path: Optional[str] = None,
 ) -> AMF_GD_YOLOv8:
 
     train_loader, val_loader, test_loader = initialize_dataloaders(
@@ -595,8 +590,8 @@ def train_and_validate(
     intervals = [(0, 0), (5, 0), (-100, 0), (-25, 0)]
     training_metrics_path = [
         os.path.join(
-            Folders.OUTPUT_DIR.value,
-            f"{model.name}_training_metrics_plot_from_{interval[0]}_{interval[1]}.png",
+            model.weights_path,
+            f"training_plot_{interval[0]}_{interval[1]}.png",
         )
         for interval in intervals
     ]
@@ -622,9 +617,7 @@ def train_and_validate(
         if current_loss < best_loss:
             best_model = model
             best_loss = current_loss
-            if model_save_path is not None:
-                state_dict = best_model.state_dict()
-                torch.save(state_dict, model_save_path)
+            best_model.save_weights()
 
         training_metrics.end_loop(epoch)
 

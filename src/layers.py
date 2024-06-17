@@ -2,20 +2,15 @@ import os
 import sys
 from typing import Dict, List, Tuple
 
-import cv2
-import numpy as np
-import numpy.typing as npt
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 from PIL import Image
-from ultralytics.engine.results import Results
-from ultralytics.models.utils.loss import DETRLoss
 from ultralytics.nn.modules.block import Bottleneck, C2f
 from ultralytics.nn.modules.conv import Conv
 from ultralytics.nn.modules.head import Detect
 from ultralytics.utils.loss import v8DetectionLoss
-from ultralytics.utils.ops import scale_boxes, xywh2xyxy
+from ultralytics.utils.ops import xywh2xyxy
 from ultralytics.utils.tal import make_anchors
 
 from box_cls import Box
@@ -23,6 +18,7 @@ from cbam import CBAM
 from utils import Folders, download_file
 
 
+# To import anything from GoldYolo
 sys.path.append(Folders.GOLD_YOLO.value)
 
 from yolov6.models.yolo import build_network, make_divisible
@@ -114,7 +110,7 @@ class DetectCustom(Detect):
 
 
 class YOLOv8Backbone(nn.Module):
-    """Backbone of the YOLOv8 model (except SPPF)"""
+    """Backbone of the YOLOv8 (by ultralytics) model (except SPPF)"""
 
     INPUT_SIZE = 640
 
@@ -479,8 +475,18 @@ class AMF_GD_YOLOv8(nn.Module):
         batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
         return self.criterion(output, batch)
 
+    def save_weights(self) -> None:
+        model_weights_path = self.get_weights_path()
+        state_dict = self.state_dict()
+        torch.save(state_dict, model_weights_path)
+
+    @property
+    def weights_path(self) -> str:
+        model_weights_path = AMF_GD_YOLOv8.get_weights_path_from_name(self.name)
+        return model_weights_path
+
     @staticmethod
-    def _get_model_name(index: int, epochs: int, postfix: str | None = None) -> str:
+    def _get_name(index: int, epochs: int, postfix: str | None = None) -> str:
         if postfix is None:
             model_name = f"trained_model_{epochs}ep_{index}"
         else:
@@ -488,37 +494,42 @@ class AMF_GD_YOLOv8(nn.Module):
         return model_name
 
     @staticmethod
-    def get_model_path_from_name(model_name: str | None = None) -> str:
-        model_path = os.path.join(Folders.MODELS_AMF_GD_YOLOV8.value, f"{model_name}.pt")
-        return model_path
+    def get_folder_path_from_name(model_name: str | None = None) -> str:
+        model_folder_path = os.path.join(Folders.MODELS_AMF_GD_YOLOV8.value, f"{model_name}")
+        return model_folder_path
 
     @staticmethod
-    def get_last_model_name_and_path(epochs: int, postfix: str | None = None) -> Tuple[str, str]:
+    def get_weights_path_from_name(model_name: str | None = None) -> str:
+        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
+        model_weights_path = os.path.join(model_folder_path, "weights.pt")
+        return model_weights_path
+
+    @staticmethod
+    def get_last_name(epochs: int, postfix: str | None = None) -> str:
         index = 0
-        model_name = AMF_GD_YOLOv8._get_model_name(index, epochs, postfix)
-        model_path = AMF_GD_YOLOv8.get_model_path_from_name(model_name)
+        model_name = AMF_GD_YOLOv8._get_name(index, epochs, postfix)
+        model_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
         if not os.path.exists(model_path):
             raise Exception("No such model exists.")
         while os.path.exists(model_path):
             index += 1
-            model_name = AMF_GD_YOLOv8._get_model_name(index, epochs, postfix)
-            model_path = AMF_GD_YOLOv8.get_model_path_from_name(model_name)
+            model_name = AMF_GD_YOLOv8._get_name(index, epochs, postfix)
+            model_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
 
-        model_name = AMF_GD_YOLOv8._get_model_name(index - 1, epochs, postfix)
-        model_path = AMF_GD_YOLOv8.get_model_path_from_name(model_name)
-        return model_name, model_path
+        model_name = AMF_GD_YOLOv8._get_name(index - 1, epochs, postfix)
+        return model_name
 
     @staticmethod
-    def get_new_model_name_and_path(epochs: int, postfix: str | None = None) -> Tuple[str, str]:
+    def get_new_name(epochs: int, postfix: str | None = None) -> str:
         index = 0
-        model_name = AMF_GD_YOLOv8._get_model_name(index, epochs, postfix)
-        model_path = AMF_GD_YOLOv8.get_model_path_from_name(model_name)
+        model_name = AMF_GD_YOLOv8._get_name(index, epochs, postfix)
+        model_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
         while os.path.exists(model_path):
             index += 1
-            model_name = AMF_GD_YOLOv8._get_model_name(index, epochs, postfix)
-            model_path = AMF_GD_YOLOv8.get_model_path_from_name(model_name)
+            model_name = AMF_GD_YOLOv8._get_name(index, epochs, postfix)
+            model_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
 
-        return model_name, model_path
+        return model_name
 
 
 class TrainingLoss(v8DetectionLoss):
@@ -615,8 +626,6 @@ class TrainingLoss(v8DetectionLoss):
             "Box Loss": batch_size * loss_items[0],
             "Class Loss": batch_size * loss_items[1],
             "Dual Focal Loss": batch_size * loss_items[2],
-            "fg_mask.sum()": fg_mask.sum(),
-            "target_scores_sum": target_scores_sum.clone().detach(),
         }
         return total_loss, loss_dict
 

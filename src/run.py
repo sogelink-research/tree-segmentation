@@ -257,11 +257,11 @@ class ModelSession:
 
         if model_name is not None:
             self.model_name = model_name
-            self.model_path = AMF_GD_YOLOv8.get_model_path_from_name(self.model_name)
         else:
-            self.model_name, self.model_path = AMF_GD_YOLOv8.get_new_model_name_and_path(
+            self.model_name = AMF_GD_YOLOv8.get_new_name(
                 self.training_data.training_params.epochs, self.postfix
             )
+        self.model_path = AMF_GD_YOLOv8.get_weights_path_from_name(self.model_name)
 
     @running_message("Loading the model...")
     def _load_model(self) -> AMF_GD_YOLOv8:
@@ -334,11 +334,10 @@ class ModelSession:
             accumulate=self.training_data.training_params.accumulate,
             device=self.device,
             show_training_metrics=False,
-            model_save_path=self.model_path,
         )
 
-        # # Save the best model
-        # self._save_model(model)
+        # Save the best model
+        self._save_model(model)
 
         # self.compute_metrics()
 
@@ -354,6 +353,8 @@ class ModelSession:
             batch_size=self.training_data.training_params.batch_size,
             num_workers=self.training_data.training_params.num_workers,
         )
+
+        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model.name)
 
         best_sorted_ious_list = []
         best_aps_list = []
@@ -393,9 +394,7 @@ class ModelSession:
                 self.device,
                 use_rgb=use_rgb,
                 use_chm=use_chm,
-                save_path=os.path.join(
-                    Folders.OUTPUT_DIR.value, f"{self.model_name}_{test_name}.geojson"
-                ),
+                save_path=os.path.join(model_folder_path, f"{test_name}.geojson"),
             )
             (
                 sorted_ious_list,
@@ -433,7 +432,7 @@ class ModelSession:
             conf_thresholds=best_conf_threshold__list,
             legend_list=legend_list,
             show=True,
-            save_path=os.path.join(Folders.OUTPUT_DIR.value, f"{self.model_name}_ap_iou.png"),
+            save_path=os.path.join(model_folder_path, "ap_iou.png"),
         )
 
         plot_sorted_ap_confs(
@@ -441,17 +440,17 @@ class ModelSession:
             conf_thresholds_list=conf_thresholds_list,
             legend_list=legend_list,
             show=True,
-            save_path=os.path.join(Folders.OUTPUT_DIR.value, f"{self.model_name}_sap_conf.png"),
+            save_path=os.path.join(model_folder_path, "sap_conf.png"),
         )
 
     @staticmethod
     def _pickle_path(model_name: str) -> str:
-        return os.path.join(Folders.OUTPUT_DIR.value, f"{model_name}.pkl")
+        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
+        return os.path.join(model_folder_path, "model_session.pkl")
 
     def _save_model(self, model: AMF_GD_YOLOv8):
         # Save the weights
-        state_dict = model.state_dict()
-        torch.save(state_dict, self.model_path)
+        model.save_weights()
 
         # Save the class instance
         pickle_path = ModelSession._pickle_path(self.model_name)
