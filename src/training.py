@@ -115,8 +115,8 @@ class TrainingMetrics:
 
         categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
         legend_space = 1.2
-        figsize = (6 * ncols + legend_space, 5 * nrows)
-        legend_y_position = legend_space / figsize[0]
+        figsize = (6 * ncols, 5 * nrows + legend_space)
+        legend_y_position = legend_space / figsize[1]
 
         for interval, save_path in zip(intervals, save_paths):
             plt.clf()
@@ -289,15 +289,16 @@ def train(
             training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
 
         # Compute the AP metrics
-        preds = model.preds_from_output(output)
-        ap_metrics.add_preds(
-            model=model,
-            preds=preds,
-            gt_bboxes=gt_bboxes,
-            gt_classes=gt_classes,
-            gt_indices=gt_indices,
-            image_indices=image_indices,
-        )
+        with torch.no_grad():
+            preds = model.preds_from_output(output)
+            ap_metrics.add_preds(
+                model=model,
+                preds=preds,
+                gt_bboxes=gt_bboxes,
+                gt_classes=gt_classes,
+                gt_indices=gt_indices,
+                image_indices=image_indices,
+            )
 
     _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
     training_metrics.update("Training", "Best sortedAP", sorted_ap, y_axis="sortedAP")

@@ -427,9 +427,11 @@ class AMF_GD_YOLOv8(nn.Module):
         output = self.detect.forward(xs)
         return output
 
+    @torch.no_grad()
     def preds_from_output(self, output: List[torch.Tensor]):
         return self.detect.preds_from_output(output)
 
+    @torch.no_grad()
     def predict_from_preds(
         self,
         preds: torch.Tensor,
@@ -444,6 +446,7 @@ class AMF_GD_YOLOv8(nn.Module):
         )
         return boxes_list, scores_list, classes_list
 
+    @torch.no_grad()
     def predict(
         self,
         x_left: torch.Tensor | str,
@@ -604,7 +607,7 @@ class TrainingLoss(v8DetectionLoss):
             "Class Loss": batch_size * loss_items[1],
             "Dual Focal Loss": batch_size * loss_items[2],
             "fg_mask.sum()": fg_mask.sum(),
-            "target_scores_sum": torch.tensor(target_scores_sum),
+            "target_scores_sum": target_scores_sum.clone().detach(),
         }
         return total_loss, loss_dict
 
