@@ -268,7 +268,7 @@ def train(
         image_indices = image_indices.to(device, non_blocking=True)
 
         # Compute the model output
-        preds, output = model.forward_eval(image_rgb, image_chm)
+        preds, output = model.forward_eval(image_rgb, image_chm, force_eval=True)
         # output = model(image_rgb, image_chm)
 
         # Compute the loss
