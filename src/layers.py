@@ -395,7 +395,7 @@ class AMF_GD_YOLOv8(nn.Module):
 
         # Loss function
         required_loss_weights_keys = ["box", "cls", "dfl"]
-        if set(loss_weights.keys()) == set(required_loss_weights_keys):
+        if set(loss_weights.keys()) != set(required_loss_weights_keys):
             raise ValueError(f"The keys of `loss_weights` should be {required_loss_weights_keys}.")
 
         class Args:

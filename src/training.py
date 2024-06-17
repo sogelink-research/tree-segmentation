@@ -618,7 +618,7 @@ def train_and_validate(
         current_loss = validate(val_loader, model, device, training_metrics)
         scheduler.step()
 
-        # Store the best model
+        # Store and save the best model
         if current_loss < best_loss:
             best_model = model
             best_loss = current_loss
