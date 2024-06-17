@@ -496,6 +496,8 @@ def main():
     proba_drop_rgb = 1 / 3
     proba_drop_chm = 1 / 3
 
+    postfix = "rgb_cir_multi_chm"
+
     training_params = TrainingParams(
         lr=lr,
         epochs=epochs,
@@ -511,7 +513,6 @@ def main():
 
     # Training session
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    postfix = "rgb_cir_multi_chm"
     model_session = ModelSession(training_data=training_data, device=device, postfix=postfix)
 
     model_session.train()

@@ -459,13 +459,13 @@ class AMF_GD_YOLOv8(nn.Module):
 
     def compute_loss(
         self,
-        preds: List[torch.Tensor],
+        output: List[torch.Tensor],
         gt_bboxes: torch.Tensor,
         gt_classes: torch.Tensor,
         gt_indices: torch.Tensor,
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
-        return self.criterion(preds, batch)
+        return self.criterion(output, batch)
 
     @staticmethod
     def _get_model_name(index: int, epochs: int, postfix: str | None = None) -> str:

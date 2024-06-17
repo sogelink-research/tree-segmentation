@@ -268,7 +268,6 @@ def train(
 
         # Compute the model output
         output = model.forward(image_rgb, image_chm)
-        preds = model.preds_from_output(output)
 
         # Compute the loss
         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
@@ -290,6 +289,7 @@ def train(
             training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
 
         # Compute the AP metrics
+        preds = model.preds_from_output(output)
         ap_metrics.add_preds(
             model=model,
             preds=preds,
@@ -341,7 +341,6 @@ def validate(
 
             # Compute the model output
             output = model.forward(image_rgb, image_chm)
-            preds = model.preds_from_output(output)
 
             # Compute the loss
             total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
@@ -357,6 +356,7 @@ def validate(
                 )
 
             # Compute the AP metrics
+            preds = model.preds_from_output(output)
             ap_metrics.add_preds(
                 model=model,
                 preds=preds,
@@ -406,8 +406,8 @@ def predict_to_geojson(
     test_loader: TreeDataLoader,
     device: torch.device,
     save_path: str,
-    use_rgb: bool = False,
-    use_chm: bool = False,
+    use_rgb: bool = True,
+    use_chm: bool = True,
 ):
     model.eval()
     geojson_outputs: List[geojson.FeatureCollection] = []
@@ -457,8 +457,8 @@ def compute_all_ap_metrics(
     test_loader: TreeDataLoader,
     device: torch.device,
     conf_thresholds: List[float],
-    use_rgb: bool = False,
-    use_chm: bool = False,
+    use_rgb: bool = True,
+    use_chm: bool = True,
 ) -> Tuple[List[List[float]], List[List[float]], List[float]]:
     # For sortedAP/conf threshold plotting
     matched_pairs_conf: List[List[Tuple[Tuple[int, int], float]]] = [
@@ -619,6 +619,18 @@ def train_and_validate(
             best_loss = current_loss
 
         training_metrics.end_loop(epoch)
+        predict_to_geojson(
+            model,
+            train_loader,
+            device,
+            os.path.join(Folders.OUTPUT_DIR.value, f"preds_train_{epoch}.png"),
+        )
+        predict_to_geojson(
+            model,
+            val_loader,
+            device,
+            os.path.join(Folders.OUTPUT_DIR.value, f"preds_val_{epoch}.png"),
+        )
 
     # Save the plot showing the evolution of the metrics
     training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
