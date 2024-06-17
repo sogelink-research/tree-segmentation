@@ -333,12 +333,12 @@ class ModelSession:
             num_workers=self.training_data.training_params.num_workers,
             accumulate=self.training_data.training_params.accumulate,
             device=self.device,
-            save_outputs=False,
             show_training_metrics=False,
+            model_save_path=self.model_path,
         )
 
-        # Save the best model
-        self._save_model(model)
+        # # Save the best model
+        # self._save_model(model)
 
         # self.compute_metrics()
 

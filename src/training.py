@@ -576,8 +576,8 @@ def train_and_validate(
     num_workers: int,
     accumulate: int,
     device: torch.device,
-    save_outputs: bool,
     show_training_metrics: bool,
+    model_save_path: Optional[str] = None,
 ) -> AMF_GD_YOLOv8:
 
     train_loader, val_loader, test_loader = initialize_dataloaders(
@@ -622,20 +622,11 @@ def train_and_validate(
         if current_loss < best_loss:
             best_model = model
             best_loss = current_loss
+            if model_save_path is not None:
+                state_dict = best_model.state_dict()
+                torch.save(state_dict, model_save_path)
 
         training_metrics.end_loop(epoch)
-        predict_to_geojson(
-            model,
-            train_loader,
-            device,
-            os.path.join(Folders.OUTPUT_DIR.value, f"preds_train_{epoch}.geojson"),
-        )
-        predict_to_geojson(
-            model,
-            val_loader,
-            device,
-            os.path.join(Folders.OUTPUT_DIR.value, f"preds_val_{epoch}.geojson"),
-        )
 
     # Save the plot showing the evolution of the metrics
     training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
