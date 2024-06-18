@@ -161,15 +161,15 @@ class TrainingMetrics:
             if len(lines) > 0:
                 fig.legend(
                     handles=lines,
-                    loc="upper center",
-                    bbox_to_anchor=(0.5, legend_y_position),
+                    # loc="upper center",
+                    # bbox_to_anchor=(0.5, legend_y_position),
                     ncol=len(lines),
                 )
 
             # fig.tight_layout(rect=(0.0, legend_y_position, 1.0, 1.0))
 
             if save_path is not None:
-                plt.savefig(save_path, dpi=200)
+                plt.savefig(save_path)
 
         if self.show:
             with self.out:
