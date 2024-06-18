@@ -342,7 +342,7 @@ class ModelSession:
         # Save the best model
         self._save_model(model)
 
-        # self.compute_metrics()
+        self.compute_metrics()
 
     @running_message("Computing metrics...")
     def compute_metrics(self):
@@ -446,7 +446,7 @@ def main():
     # Training parameters
 
     lr = 1e-2
-    epochs = 1000
+    epochs = 10
     batch_size = 10
     num_workers = 0
     accumulate = 10
