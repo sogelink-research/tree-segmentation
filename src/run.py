@@ -368,20 +368,15 @@ class ModelSession:
         use_rgbs = [True, False]
         use_chms = [True, False]
 
-        iterations = product(use_rgbs, use_chms)
+        iterations = list(product(use_rgbs, use_chms))
 
         for loader, loader_postfix, loader_legend in tqdm(loaders_zip):
-            print()
-            print(f"{list(iterations) = }")
-            print(f"{use_rgbs = }")
-            print(f"{use_chms = }")
             ap_metrics_list = AP_Metrics_List()
             for use_rgb, use_chm in tqdm(iterations, leave=False):
 
                 data_postfix = rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)
                 data_legend = rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)
                 full_postfix = "_".join([loader_postfix, data_postfix])
-                print(f"{full_postfix = }")
                 ap_metrics = evaluate_model(
                     model,
                     loader,
