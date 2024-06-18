@@ -168,6 +168,8 @@ class TrainingMetrics:
 
             fig.tight_layout(rect=(0.0, legend_y_position, 1.0, 1.0))
 
+            plt.show()
+
             if save_path is not None:
                 plt.savefig(save_path, dpi=200)
 
