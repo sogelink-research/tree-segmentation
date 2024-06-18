@@ -311,6 +311,10 @@ def train(
                     image_indices=image_indices,
                 )
 
+                print(f"{train_loader.dataset.get_rgb_image(dataset_idx).dtype = }")
+                print(f"{torch.tensor(
+                    train_loader.dataset.get_rgb_image(dataset_idx)
+                ).permute((2, 0, 1)).dtype = }")
                 image_rgb_initial = torch.tensor(
                     train_loader.dataset.get_rgb_image(dataset_idx)
                 ).permute((2, 0, 1))

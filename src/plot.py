@@ -196,6 +196,7 @@ def create_bboxes_training_image(
         )
 
     print(f"{image_rgb.shape = }")
+    print(f"{image_rgb.dtype = }")
 
     images = [
         image_rgb[idx : idx + 3].cpu().detach().numpy().transpose((1, 2, 0))
