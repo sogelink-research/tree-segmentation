@@ -298,7 +298,7 @@ def train(
             if dataset_idx in image_indices.tolist():
                 batch_idx = image_indices.tolist().index(dataset_idx)
 
-                boxes_per_image, scores_per_image, classes_per_image = model.predict_from_preds(
+                bboxes_per_image, scores_per_image, classes_per_image = model.predict_from_preds(
                     preds[batch_idx : batch_idx + 1],
                     iou_threshold=0.5,
                     conf_threshold=0.0,
@@ -325,7 +325,7 @@ def train(
                 create_bboxes_training_image(
                     image_rgb=image_rgb_initial,
                     image_chm=image_chm_initial,
-                    pred_bboxes=boxes_per_image[0],
+                    pred_bboxes=bboxes_per_image[0],
                     pred_labels=classes_per_image[0],
                     pred_scores=scores_per_image[0],
                     gt_bboxes=gt_bboxes_per_image[batch_idx],

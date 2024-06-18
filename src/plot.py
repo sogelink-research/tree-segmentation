@@ -10,7 +10,12 @@ import torch
 from matplotlib import pyplot as plt
 from skimage import io
 
-from box_cls import Box, box_pixels_cropped_to_full, box_pixels_to_coordinates
+from box_cls import (
+    Box,
+    box_crop_in_box,
+    box_pixels_cropped_to_full,
+    box_pixels_to_coordinates,
+)
 from geojson_conversions import bboxes_to_geojson_feature_collection, save_geojson
 from utils import (
     get_coordinates_bbox_from_full_image_file_name,
@@ -58,18 +63,20 @@ def get_bounding_boxes(
 
 def add_bbox_to_image(
     image: np.ndarray,
-    bbox: List[Number],
+    bbox: Box,
     color: Tuple[int, int, int] = (128, 128, 128),
     lw: int = 2,
 ):
     lw = 2
     margin_lw = int(np.ceil(lw / 2))
+    bbox = box_crop_in_box(bbox, Box(0, 0, image.shape[1], image.shape[0]))
     x0, y0, x1, y1 = (
-        round(bbox[0]),
-        round(bbox[1]),
-        round(bbox[2]),
-        round(bbox[3]),
+        round(bbox.x_min),
+        round(bbox.y_min),
+        round(bbox.x_max),
+        round(bbox.y_max),
     )
+
     cv2.rectangle(
         image,
         (x0 - margin_lw - 1, y0 - margin_lw - 1),
@@ -82,7 +89,7 @@ def add_bbox_to_image(
 
 def add_label_to_image(
     image: np.ndarray,
-    bbox: List[Number],
+    bbox: Box,
     label: str | None = None,
     color: Tuple[int, int, int] = (128, 128, 128),
     txt_color: Tuple[int, int, int] = (255, 255, 255),
@@ -92,11 +99,12 @@ def add_label_to_image(
 ):
     if label is None:
         return
+    bbox = box_crop_in_box(bbox, Box(0, 0, image.shape[1], image.shape[0]))
     x0, y0, x1, y1 = (
-        round(bbox[0]),
-        round(bbox[1]),
-        round(bbox[2]),
-        round(bbox[3]),
+        round(bbox.x_min),
+        round(bbox.y_min),
+        round(bbox.x_max),
+        round(bbox.y_max),
     )
     (w, h), baseline = cv2.getTextSize(label, 0, fontScale=font_scale, thickness=thickness)
     margin = round(0.5 * baseline)
@@ -150,7 +158,7 @@ def add_label_to_image(
 
 def create_bboxes_image(
     image: np.ndarray,
-    bboxes: List[List[Number]],
+    bboxes: List[Box],
     labels: List[str],
     colors_dict: Dict[str, Tuple[int, int, int]],
     scores: Optional[List[float] | np.ndarray] = None,
@@ -210,8 +218,6 @@ def create_bboxes_training_image(
 
     number_images = len(images)
 
-    pred_bboxes_list = [bbox.as_list() for bbox in pred_bboxes]
-    gt_bboxes_list = [bbox.as_list() for bbox in gt_bboxes]
     pred_labels_str = [labels_int_to_str[label] for label in pred_labels]
     gt_labels_str = [labels_int_to_str[label] for label in gt_labels]
 
@@ -223,10 +229,10 @@ def create_bboxes_training_image(
 
     for index, image in enumerate(images):
         image_pred_boxes = create_bboxes_image(
-            image, pred_bboxes_list, pred_labels_str, colors_dict, pred_scores, color_mode="bgr"
+            image, pred_bboxes, pred_labels_str, colors_dict, pred_scores, color_mode="rgb"
         )
         images_gt_boxes = create_bboxes_image(
-            image, gt_bboxes_list, gt_labels_str, colors_dict, color_mode="bgr"
+            image, gt_bboxes, gt_labels_str, colors_dict, color_mode="rgb"
         )
 
         image_name = f"Image {index}"
@@ -267,8 +273,7 @@ def create_gt_bboxes_image(
     """
     rgb_image = io.imread(rgb_path)
     bboxes, labels = get_bounding_boxes(annotations_path)
-    bboxes_list = [bbox.as_list() for bbox in bboxes]
-    image = create_bboxes_image(rgb_image, bboxes_list, labels, class_colors)
+    image = create_bboxes_image(rgb_image, bboxes, labels, class_colors)
     if output_path is not None:
         io.imsave(output_path, image)
     return image
