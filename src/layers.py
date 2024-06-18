@@ -177,7 +177,7 @@ class YOLOv8Backbone(nn.Module):
         else:
             return list(map(lambda i: outputs[i - 1], output_indices))
 
-    def load_from_real_state(self, state_path: str | None = None):
+    def load_from_real_state(self, state_path: Optional[str] = None):
         if state_path is None:
             state_path = self.default_state_path
         state_dict = torch.load(state_path)
@@ -186,7 +186,7 @@ class YOLOv8Backbone(nn.Module):
     def load_from_yolo_original(
         self,
         first_conv: str,
-        state_path: str | None = None,
+        state_path: Optional[str] = None,
         download_if_missing: bool = True,
     ):
         first_conv_values = ["exact", "average"]
@@ -225,7 +225,7 @@ class YOLOv8Backbone(nn.Module):
                     weights = weights_averaged.repeat(1, self.c_input, 1, 1)
                 self.state_dict()[real_name].data.copy_(weights)
 
-    def save_real_state(self, state_path: str | None = None):
+    def save_real_state(self, state_path: Optional[str] = None):
         if state_path is None:
             state_path = self.default_state_path
         state_dict = self.state_dict()
@@ -356,7 +356,7 @@ class AMF_GD_YOLOv8(nn.Module):
         scale: str = "n",
         r: int = 16,
         loss_weights: Dict[str, float] = {"box": 20, "cls": 1, "dfl": 10},
-        gd_config_file: str | None = None,
+        gd_config_file: Optional[str] = None,
     ) -> None:
         super().__init__()
 
@@ -481,8 +481,8 @@ class AMF_GD_YOLOv8(nn.Module):
         batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
         return self.criterion(output, batch)
 
-    def save_weights(self) -> None:
-        model_weights_path = self.weights_path
+    def save_weights(self, epoch: Optional[int] = None) -> None:
+        model_weights_path = self.weights_path(epoch)
         state_dict = self.state_dict()
         torch.save(state_dict, model_weights_path)
 
@@ -491,13 +491,12 @@ class AMF_GD_YOLOv8(nn.Module):
         model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(self.name)
         return model_folder_path
 
-    @property
-    def weights_path(self) -> str:
+    def weights_path(self, epoch: Optional[int] = None) -> str:
         model_weights_path = AMF_GD_YOLOv8.get_weights_path_from_name(self.name)
         return model_weights_path
 
     @staticmethod
-    def _get_name(index: int, epochs: int, postfix: str | None = None) -> str:
+    def _get_name(index: int, epochs: int, postfix: Optional[str] = None) -> str:
         if postfix is None:
             model_name = f"trained_model_{epochs}ep_{index}"
         else:
@@ -505,18 +504,21 @@ class AMF_GD_YOLOv8(nn.Module):
         return model_name
 
     @staticmethod
-    def get_folder_path_from_name(model_name: str | None = None) -> str:
+    def get_folder_path_from_name(model_name: Optional[str] = None) -> str:
         model_folder_path = os.path.join(Folders.MODELS_AMF_GD_YOLOV8.value, f"{model_name}")
         return model_folder_path
 
     @staticmethod
-    def get_weights_path_from_name(model_name: str | None = None) -> str:
+    def get_weights_path_from_name(
+        model_name: Optional[str] = None, epoch: Optional[int] = None
+    ) -> str:
         model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
-        model_weights_path = os.path.join(model_folder_path, "weights.pt")
+        epoch_str = "_" if epoch is None else f"_{epoch}ep"
+        model_weights_path = os.path.join(model_folder_path, f"weights{epoch_str}.pt")
         return model_weights_path
 
     @staticmethod
-    def get_last_name(epochs: int, postfix: str | None = None) -> str:
+    def get_last_name(epochs: int, postfix: Optional[str] = None) -> str:
         index = 0
         model_name = AMF_GD_YOLOv8._get_name(index, epochs, postfix)
         model_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
@@ -531,7 +533,7 @@ class AMF_GD_YOLOv8(nn.Module):
         return model_name
 
     @staticmethod
-    def get_new_name(epochs: int, postfix: str | None = None) -> str:
+    def get_new_name(epochs: int, postfix: Optional[str] = None) -> str:
         index = 0
         model_name = AMF_GD_YOLOv8._get_name(index, epochs, postfix)
         model_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)

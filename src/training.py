@@ -649,8 +649,12 @@ def train_and_validate(
 
     best_model = model
     best_loss = np.inf
+    temp_models_interval = 4
 
     for epoch in tqdm(range(1, epochs + 1), desc="Epoch"):
+        if epoch % temp_models_interval == 1:
+            best_temp_model = model
+            best_temp_loss = np.inf
         training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
         running_accumulation_step = train(
             train_loader,
@@ -670,6 +674,14 @@ def train_and_validate(
             best_model = model
             best_loss = current_loss
             best_model.save_weights()
+
+        # Store and save the best temp model
+        if current_loss < best_temp_loss:
+            best_temp_model = model
+            best_temp_loss = current_loss
+
+        if epoch % temp_models_interval == 0:
+            best_temp_model.save_weights(epoch=epoch)
 
         training_metrics.end_loop(epoch)
 
