@@ -465,7 +465,7 @@ def rgb_chm_usage_legend(use_rgb: bool, use_chm: bool):
 #             image_chm = image_chm.to(device, non_blocking=True)
 
 #             # Compute model output
-#             bboxes_list, scores_list, classes_as_ints_list = model.predict(image_rgb, image_chm)
+#             bboxes_list, scores_list, classes_as_ints_list = model.predict(image_rgb, image_chm, number_best=40)
 #             classes_as_strs_list = [
 #                 [model.class_names[i] for i in classes_as_ints]
 #                 for classes_as_ints in classes_as_ints_list
@@ -553,7 +553,9 @@ def evaluate_model(
                 )
 
             if output_geojson_save_path is not None:
-                bboxes_list, scores_list, classes_as_ints_list = model.predict_from_preds(preds)
+                bboxes_list, scores_list, classes_as_ints_list = model.predict_from_preds(
+                    preds, number_best=40
+                )
                 classes_as_strs_list = [
                     [model.class_names[i] for i in classes_as_ints]
                     for classes_as_ints in classes_as_ints_list

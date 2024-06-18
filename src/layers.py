@@ -459,12 +459,16 @@ class AMF_GD_YOLOv8(nn.Module):
         x_left: torch.Tensor | str,
         x_right: torch.Tensor | str,
         iou_threshold: float = 0.5,
-        conf_threshold: float = 0.5,
+        conf_threshold: Optional[float] = None,
+        number_best: Optional[int] = None,
     ) -> Tuple[List[List[Box]], List[List[float]], List[List[int]]]:
         output = self.forward(x_left, x_right)
         preds = self.preds_from_output(output)
         return self.predict_from_preds(
-            preds, iou_threshold=iou_threshold, conf_threshold=conf_threshold
+            preds,
+            iou_threshold=iou_threshold,
+            conf_threshold=conf_threshold,
+            number_best=number_best,
         )
 
     def compute_loss(
