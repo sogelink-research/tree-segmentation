@@ -348,7 +348,7 @@ class TreeDataset(Dataset):
             image = np.array(Image.open(image_path))
         if len(image.shape) == 2:
             image = image[..., np.newaxis]
-        return image.astype(np.int8)
+        return image.astype(np.uint8)
 
     def _read_chm_image(self, image_path: str) -> np.ndarray:
         if is_tif_file(image_path):
