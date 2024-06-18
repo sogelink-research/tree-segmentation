@@ -203,11 +203,9 @@ def create_bboxes_training_image(
     ]
 
     print(f"{images[0].shape = }")
-    dims = (0, 1)
-    dtype = images[0].dtype if torch.is_floating_point(images[0]) else torch.float32
-    print(f"{torch.mean(images[0].to(dtype), dim=dims).reshape(-1) = }")
-    print(f"{torch.amin(images[0].to(dtype), dim=dims).reshape(-1) = }")
-    print(f"{torch.amax(images[0].to(dtype), dim=dims).reshape(-1) = }")
+    axis = (0, 1)
+    print(f"{np.amin(images[0], axis=axis) = }")
+    print(f"{np.amax(images[0], axis=axis) = }")
 
     number_images = len(images)
 
