@@ -580,7 +580,7 @@ def train_and_validate(
     intervals = [(0, 0), (5, 0), (-100, 0), (-25, 0)]
     training_metrics_path = [
         os.path.join(
-            model.weights_path,
+            model.folder_path,
             f"training_plot_{interval[0]}_{interval[1]}.png",
         )
         for interval in intervals

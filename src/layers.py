@@ -478,7 +478,7 @@ class AMF_GD_YOLOv8(nn.Module):
         return self.criterion(output, batch)
 
     def save_weights(self) -> None:
-        model_weights_path = self.get_weights_path()
+        model_weights_path = self.weights_path
         state_dict = self.state_dict()
         torch.save(state_dict, model_weights_path)
 
