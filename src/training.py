@@ -294,6 +294,7 @@ def train(
             )
 
             used_image = 42
+            print(f"{image_indices.tolist() = }")
             if used_image in image_indices.tolist():
                 idx = image_indices.tolist().index(used_image)
 
