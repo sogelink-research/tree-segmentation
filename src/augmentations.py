@@ -148,6 +148,7 @@ def main():
         ax.set_axis_off()
     plt.tight_layout()
     plt.show()
+    plt.close()
 
 
 if __name__ == "__main__":

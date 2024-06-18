@@ -218,7 +218,7 @@ def create_bboxes_training_image(
 
     nrows = number_images
     ncols = 2
-    figsize = (5 * ncols, 6 * nrows)
+    figsize = (3 * ncols, 3.2 * nrows)
     fig = plt.figure(figsize=figsize)
 
     for index, image in enumerate(images):

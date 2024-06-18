@@ -137,7 +137,6 @@ def plot_ap_iou(
     save_path: str | None = None,
 ):
     plt.figure(figsize=(10, 6))
-    plt.clf()  # Clear the current figure
 
     for sorted_ious, aps, sorted_ap, legend, conf_threshold in zip(
         sorted_ious_list, aps_list, sorted_ap_list, legend_list, conf_threshold_list
@@ -182,7 +181,6 @@ def plot_sap_conf(
     save_path: str | None = None,
 ):
     plt.figure(figsize=(10, 6))
-    plt.clf()  # Clear the current figure
 
     for sorted_ap, conf_threshold, legend in zip(
         sorted_ap_lists, conf_threshold_lists, legend_list

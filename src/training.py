@@ -34,6 +34,15 @@ class TrainingMetrics:
         self.float_precision = float_precision
         self.show = show
         self.reset()
+        self.fig_num = None
+
+    def _create_fig_num(self) -> None:
+        if self.fig_num is None:
+            existing_figures = plt.get_fignums()
+            if existing_figures:
+                self.fig_num = max(existing_figures) + 1
+            else:
+                self.fig_num = 1
 
     def reset(self):
         self.metrics = defaultdict(lambda: defaultdict(lambda: {"epochs": [], "avgs": []}))
@@ -106,13 +115,13 @@ class TrainingMetrics:
         cmap = plt.get_cmap("tab10")
 
         categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
-        legend_space = 10
-        figsize = (6 * ncols, 5 * nrows + legend_space)
-        print()
+        legend_space = 1.5
+        figsize = (4 * ncols, 3 * nrows + legend_space)
         legend_y_position = legend_space / figsize[1]
 
         for interval, save_path in zip(intervals, save_paths):
-            fig = plt.figure(figsize=figsize)
+            self._create_fig_num()
+            fig = plt.figure(self.fig_num, figsize=figsize)
 
             for metric_name, metric_dict in self.metrics.items():
                 index = metrics_index[metric_name]
@@ -162,12 +171,12 @@ class TrainingMetrics:
             if len(lines) > 0:
                 fig.legend(
                     handles=lines,
-                    # loc="upper center",
-                    # bbox_to_anchor=(0.5, legend_y_position),
+                    loc="upper center",
+                    bbox_to_anchor=(0.5, legend_y_position),
                     ncol=len(lines),
                 )
 
-            # fig.tight_layout(rect=(0.0, legend_y_position, 1.0, 1.0))
+            fig.tight_layout(rect=(0.0, legend_y_position, 1.0, 1.0))
 
             if save_path is not None:
                 plt.savefig(save_path)
