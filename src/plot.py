@@ -243,6 +243,7 @@ def create_bboxes_training_image(
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=300)
+    plt.close()
 
 
 def create_gt_bboxes_image(
