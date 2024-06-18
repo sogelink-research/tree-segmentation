@@ -372,7 +372,10 @@ class ModelSession:
         iterations = product(use_rgbs, use_chms)
 
         for loader, loader_postfix, loader_legend in tqdm(loaders_zip):
+            print()
             print(f"{list(iterations) = }")
+            print(f"{use_rgbs = }")
+            print(f"{use_chms = }")
             ap_metrics_list = AP_Metrics_List()
             for use_rgb, use_chm in tqdm(iterations, leave=False):
 
