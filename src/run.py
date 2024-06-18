@@ -363,16 +363,16 @@ class ModelSession:
         loaders = [train_loader, val_loader, test_loader]
         loaders_postfix = ["train-set", "val-set", "test-set"]
         loaders_legend = ["Training set", "Validation set", "Test set"]
-        loaders_zip = zip(loaders, loaders_postfix, loaders_legend)
+        loaders_zip = list(zip(loaders, loaders_postfix, loaders_legend))
 
         use_rgbs = [True, False]
         use_chms = [True, False]
 
         iterations = list(product(use_rgbs, use_chms))
 
-        for loader, loader_postfix, loader_legend in tqdm(loaders_zip):
+        for loader, loader_postfix, loader_legend in tqdm(loaders_zip, desc="Datasets"):
             ap_metrics_list = AP_Metrics_List()
-            for use_rgb, use_chm in tqdm(iterations, leave=False):
+            for use_rgb, use_chm in tqdm(iterations, desc="Type of input", leave=False):
 
                 data_postfix = rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)
                 data_legend = rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)

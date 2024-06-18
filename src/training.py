@@ -587,7 +587,7 @@ def train_and_validate(
     running_accumulation_step = 0
 
     training_metrics = TrainingMetrics(show=show_training_metrics)
-    intervals = [(0, 0), (-1600, 0), (-400, 0), (-100, 0), (-25, 0)]
+    intervals = [(0, 0), (10, 0), (-1000, 0), (-500, 0), (-100, 0)]
     training_metrics_path = [
         os.path.join(
             model.folder_path,
@@ -598,24 +598,15 @@ def train_and_validate(
 
     best_model = model
     best_loss = np.inf
-    temp_models_interval = 4
+    skip_until = 3
+    temp_models_interval = 100
 
     for epoch in tqdm(range(1, epochs + 1), desc="Epoch"):
         if epoch % temp_models_interval == 1:
             best_temp_model = model
             best_temp_loss = np.inf
 
-        print()
-        print(0)
-        print(f"{training_metrics.metrics = }")
-        print(f"{training_metrics.metrics_loop = }")
-
         training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
-
-        print()
-        print(1)
-        print(f"{training_metrics.metrics = }")
-        print(f"{training_metrics.metrics_loop = }")
 
         running_accumulation_step = train(
             train_loader,
@@ -628,39 +619,25 @@ def train_and_validate(
             epoch=epoch,
         )
 
-        print()
-        print(2)
-        print(f"{training_metrics.metrics = }")
-        print(f"{training_metrics.metrics_loop = }")
-
         current_loss = validate(val_loader, model, device, training_metrics)
         scheduler.step()
 
-        print()
-        print(3)
-        print(f"{training_metrics.metrics = }")
-        print(f"{training_metrics.metrics_loop = }")
+        if epoch >= skip_until:
+            # Store and save the best model
+            if current_loss < best_loss:
+                best_model = model
+                best_loss = current_loss
+                best_model.save_weights()
 
-        # Store and save the best model
-        if current_loss < best_loss:
-            best_model = model
-            best_loss = current_loss
-            best_model.save_weights()
+            # Store and save the best temp model
+            if current_loss < best_temp_loss:
+                best_temp_model = model
+                best_temp_loss = current_loss
 
-        # Store and save the best temp model
-        if current_loss < best_temp_loss:
-            best_temp_model = model
-            best_temp_loss = current_loss
-
-        if epoch % temp_models_interval == 0:
-            best_temp_model.save_weights(epoch=epoch)
+            if epoch % temp_models_interval == 0:
+                best_temp_model.save_weights(epoch=epoch)
 
         training_metrics.end_loop(epoch)
-
-        print()
-        print(4)
-        print(f"{training_metrics.metrics = }")
-        print(f"{training_metrics.metrics_loop = }")
 
     # Save the plot showing the evolution of the metrics
     training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
