@@ -303,42 +303,45 @@ def train(
                 image_indices=image_indices,
             )
 
-            dataset_idx = 42
-            if dataset_idx in image_indices.tolist():
-                batch_idx = image_indices.tolist().index(dataset_idx)
+            if epoch % 20 == 0:
+                dataset_idx = 42
+                if dataset_idx in image_indices.tolist():
+                    batch_idx = image_indices.tolist().index(dataset_idx)
 
-                bboxes_per_image, scores_per_image, classes_per_image = model.predict_from_preds(
-                    preds[batch_idx : batch_idx + 1],
-                    iou_threshold=0.5,
-                    conf_threshold=0.0,
-                    number_best=40,
-                )
-                gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
-                    gt_bboxes=gt_bboxes,
-                    gt_classes=gt_classes,
-                    gt_indices=gt_indices,
-                    image_indices=image_indices,
-                )
+                    bboxes_per_image, scores_per_image, classes_per_image = (
+                        model.predict_from_preds(
+                            preds[batch_idx : batch_idx + 1],
+                            iou_threshold=0.5,
+                            conf_threshold=0.0,
+                            number_best=40,
+                        )
+                    )
+                    gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
+                        gt_bboxes=gt_bboxes,
+                        gt_classes=gt_classes,
+                        gt_indices=gt_indices,
+                        image_indices=image_indices,
+                    )
 
-                image_rgb_initial = torch.tensor(
-                    train_loader.dataset.get_rgb_image(dataset_idx)
-                ).permute((2, 0, 1))
-                image_chm_initial = torch.tensor(
-                    train_loader.dataset.get_chm_image(dataset_idx)
-                ).permute((2, 0, 1))
+                    image_rgb_initial = torch.tensor(
+                        train_loader.dataset.get_rgb_image(dataset_idx)
+                    ).permute((2, 0, 1))
+                    image_chm_initial = torch.tensor(
+                        train_loader.dataset.get_chm_image(dataset_idx)
+                    ).permute((2, 0, 1))
 
-                create_bboxes_training_image(
-                    image_rgb=image_rgb_initial,
-                    image_chm=image_chm_initial,
-                    pred_bboxes=bboxes_per_image[0],
-                    pred_labels=classes_per_image[0],
-                    pred_scores=scores_per_image[0],
-                    gt_bboxes=gt_bboxes_per_image[batch_idx],
-                    gt_labels=gt_classes_per_image[batch_idx],
-                    labels_int_to_str=model.class_names,
-                    colors_dict=DatasetConst.CLASS_COLORS.value,
-                    save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}.png"),
-                )
+                    create_bboxes_training_image(
+                        image_rgb=image_rgb_initial,
+                        image_chm=image_chm_initial,
+                        pred_bboxes=bboxes_per_image[0],
+                        pred_labels=classes_per_image[0],
+                        pred_scores=scores_per_image[0],
+                        gt_bboxes=gt_bboxes_per_image[batch_idx],
+                        gt_labels=gt_classes_per_image[batch_idx],
+                        labels_int_to_str=model.class_names,
+                        colors_dict=DatasetConst.CLASS_COLORS.value,
+                        save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}.png"),
+                    )
 
     _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
     training_metrics.update("Training", "Best sortedAP", sorted_ap, y_axis="sortedAP")
