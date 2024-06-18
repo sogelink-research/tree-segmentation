@@ -372,21 +372,21 @@ class ModelSession:
         iterations = product(use_rgbs, use_chms)
 
         for loader, loader_postfix, loader_legend in tqdm(loaders_zip):
+            print(f"{iterations = }")
             ap_metrics_list = AP_Metrics_List()
             for use_rgb, use_chm in tqdm(iterations, leave=False):
-                postfix = "_".join(
-                    [loader_postfix, rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)]
-                )
-                legend = " ".join(
-                    [loader_legend, rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)]
-                )
+
+                data_postfix = rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)
+                data_legend = rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)
+                full_postfix = "_".join([loader_postfix, data_postfix])
+                print(f"{full_postfix = }")
                 predict_to_geojson(
                     model,
                     loader,
                     self.device,
                     use_rgb=use_rgb,
                     use_chm=use_chm,
-                    save_path=os.path.join(model_folder_path, f"{postfix}.geojson"),
+                    save_path=os.path.join(model_folder_path, f"{full_postfix}.geojson"),
                 )
                 ap_metrics = compute_all_ap_metrics(
                     model,
@@ -397,7 +397,7 @@ class ModelSession:
                     use_chm=use_chm,
                 )
 
-                ap_metrics_list.add_ap_metrics(ap_metrics, legend=legend)
+                ap_metrics_list.add_ap_metrics(ap_metrics, legend=data_legend)
 
             ap_metrics_list.plot_ap_iou(
                 save_path=os.path.join(model_folder_path, f"ap_iou_{loader_postfix}.png"),
