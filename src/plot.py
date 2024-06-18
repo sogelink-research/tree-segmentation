@@ -195,7 +195,7 @@ def create_bboxes_training_image(
             f"The number of dimensions of image_rgb should be a multiple of 3, not {dimensions}"
         )
 
-    images = [image_rgb[idx : idx + 3].detach().numpy() for idx in range(0, dimensions, 3)]
+    images = [image_rgb[idx : idx + 3].cpu().detach().numpy() for idx in range(0, dimensions, 3)]
     images_with_pred_boxes = []
     images_with_gt_boxes = []
     number_images = len(images)
