@@ -638,7 +638,7 @@ def train_and_validate(
     running_accumulation_step = 0
 
     training_metrics = TrainingMetrics(show=show_training_metrics)
-    intervals = [(0, 0), (5, 0), (-100, 0), (-25, 0)]
+    intervals = [(0, 0), (-1600, 0), (-400, 0), (-100, 0), (-25, 0)]
     training_metrics_path = [
         os.path.join(
             model.folder_path,
@@ -668,6 +668,9 @@ def train_and_validate(
         )
         current_loss = validate(val_loader, model, device, training_metrics)
         scheduler.step()
+
+        print(f"{epoch = }")
+        print(f"{current_loss = }")
 
         # Store and save the best model
         if current_loss < best_loss:
