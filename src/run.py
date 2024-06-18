@@ -26,11 +26,10 @@ from preprocessing.data import get_channels_count
 from preprocessing.rgb_cir import get_rgb_images_paths_from_polygon
 from training import (
     TreeDataset,
-    compute_all_ap_metrics,
     create_and_save_splitted_datasets,
+    evaluate_model,
     initialize_dataloaders,
     load_tree_datasets_from_split,
-    predict_to_geojson,
     rgb_chm_usage_legend,
     rgb_chm_usage_postfix,
     train_and_validate,
@@ -383,21 +382,16 @@ class ModelSession:
                 data_legend = rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)
                 full_postfix = "_".join([loader_postfix, data_postfix])
                 print(f"{full_postfix = }")
-                predict_to_geojson(
+                ap_metrics = evaluate_model(
                     model,
                     loader,
                     self.device,
                     use_rgb=use_rgb,
                     use_chm=use_chm,
-                    save_path=os.path.join(model_folder_path, f"{full_postfix}.geojson"),
-                )
-                ap_metrics = compute_all_ap_metrics(
-                    model,
-                    loader,
-                    self.device,
                     conf_thresholds=conf_thresholds,
-                    use_rgb=use_rgb,
-                    use_chm=use_chm,
+                    output_geojson_save_path=os.path.join(
+                        model_folder_path, f"{full_postfix}.geojson"
+                    ),
                 )
 
                 ap_metrics_list.add_ap_metrics(ap_metrics, legend=data_legend)

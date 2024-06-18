@@ -442,71 +442,82 @@ def rgb_chm_usage_legend(use_rgb: bool, use_chm: bool):
             return "No data"
 
 
-def predict_to_geojson(
+# def predict_to_geojson(
+#     model: AMF_GD_YOLOv8,
+#     data_loader: TreeDataLoader,
+#     device: torch.device,
+#     save_path: str,
+#     use_rgb: bool = True,
+#     use_chm: bool = True,
+# ):
+#     model.eval()
+#     geojson_outputs: List[geojson.FeatureCollection] = []
+#     with torch.no_grad():
+#         for data in tqdm(data_loader, leave=False, desc="Exporting output"):
+#             # Get data
+#             image_rgb: torch.Tensor = data["image_rgb"]
+#             if not use_rgb:
+#                 image_rgb = torch.zeros_like(image_rgb)
+#             image_chm: torch.Tensor = data["image_chm"]
+#             if not use_chm:
+#                 image_chm = torch.zeros_like(image_chm)
+#             image_rgb = image_rgb.to(device, non_blocking=True)
+#             image_chm = image_chm.to(device, non_blocking=True)
+
+#             # Compute model output
+#             bboxes_list, scores_list, classes_as_ints_list = model.predict(image_rgb, image_chm)
+#             classes_as_strs_list = [
+#                 [model.class_names[i] for i in classes_as_ints]
+#                 for classes_as_ints in classes_as_ints_list
+#             ]
+
+#             idx_all = data["image_indices"]
+
+#             # Store the bounding boxes in a GeoJSON file
+#             for idx, bboxes, scores, classes_as_strs in zip(
+#                 idx_all, bboxes_list, scores_list, classes_as_strs_list
+#             ):
+#                 full_image_name = data_loader.dataset.get_full_image_name(idx)
+#                 cropped_coords_name = data_loader.dataset.get_cropped_coords_name(idx)
+#                 geojson_features = create_geojson_output(
+#                     full_image_name=full_image_name,
+#                     cropped_coords_name=cropped_coords_name,
+#                     bboxes=bboxes,
+#                     labels=classes_as_strs,
+#                     scores=scores,
+#                     # save_path=save_path,
+#                 )
+#                 geojson_outputs.append(geojson_features)
+
+#     geojson_outputs_merged = merge_geojson_feature_collections(geojson_outputs)
+#     save_geojson(geojson_outputs_merged, save_path)
+
+
+def evaluate_model(
     model: AMF_GD_YOLOv8,
     data_loader: TreeDataLoader,
     device: torch.device,
-    save_path: str,
     use_rgb: bool = True,
     use_chm: bool = True,
-):
-    model.eval()
-    geojson_outputs: List[geojson.FeatureCollection] = []
-    with torch.no_grad():
-        for data in tqdm(data_loader, leave=False, desc="Exporting output"):
-            # Get data
-            image_rgb: torch.Tensor = data["image_rgb"]
-            if not use_rgb:
-                image_rgb = torch.zeros_like(image_rgb)
-            image_chm: torch.Tensor = data["image_chm"]
-            if not use_chm:
-                image_chm = torch.zeros_like(image_chm)
-            image_rgb = image_rgb.to(device, non_blocking=True)
-            image_chm = image_chm.to(device, non_blocking=True)
-
-            # Compute model output
-            bboxes_list, scores_list, classes_as_ints_list = model.predict(image_rgb, image_chm)
-            classes_as_strs_list = [
-                [model.class_names[i] for i in classes_as_ints]
-                for classes_as_ints in classes_as_ints_list
-            ]
-
-            idx_all = data["image_indices"]
-
-            # Store the bounding boxes in a GeoJSON file
-            for idx, bboxes, scores, classes_as_strs in zip(
-                idx_all, bboxes_list, scores_list, classes_as_strs_list
-            ):
-                full_image_name = data_loader.dataset.get_full_image_name(idx)
-                cropped_coords_name = data_loader.dataset.get_cropped_coords_name(idx)
-                geojson_features = create_geojson_output(
-                    full_image_name=full_image_name,
-                    cropped_coords_name=cropped_coords_name,
-                    bboxes=bboxes,
-                    labels=classes_as_strs,
-                    scores=scores,
-                    save_path=save_path,
-                )
-                geojson_outputs.append(geojson_features)
-
-    geojson_outputs_merged = merge_geojson_feature_collections(geojson_outputs)
-    save_geojson(geojson_outputs_merged, save_path)
-
-
-def compute_all_ap_metrics(
-    model: AMF_GD_YOLOv8,
-    data_loader: TreeDataLoader,
-    device: torch.device,
-    conf_thresholds: List[float],
-    use_rgb: bool = True,
-    use_chm: bool = True,
+    conf_thresholds: Optional[List[float]] = None,
+    output_geojson_save_path: Optional[str] = None,
 ) -> AP_Metrics:
-    # AP metrics
-    ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
+
+    if conf_thresholds is None and output_geojson_save_path is None:
+        raise ValueError(
+            "At least one of conf_thresholds and output_geojson_save_path should be specified."
+        )
+
+    if conf_thresholds is not None:
+        # AP metrics
+        ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
+
+    if output_geojson_save_path is not None:
+        geojson_outputs: List[geojson.FeatureCollection] = []
 
     model.eval()
     with torch.no_grad():
-        for data in tqdm(data_loader, leave=False, desc="Computing metrics"):
+        for data in tqdm(data_loader, leave=False, desc="Evaluating the model"):
             # Get the data
             image_rgb: torch.Tensor = data["image_rgb"]
             if not use_rgb:
@@ -531,14 +542,42 @@ def compute_all_ap_metrics(
 
             # Compute the AP metrics
             preds = model.preds_from_output(output)
-            ap_metrics.add_preds(
-                model=model,
-                preds=preds,
-                gt_bboxes=gt_bboxes,
-                gt_classes=gt_classes,
-                gt_indices=gt_indices,
-                image_indices=image_indices,
-            )
+            if conf_thresholds is not None:
+                ap_metrics.add_preds(
+                    model=model,
+                    preds=preds,
+                    gt_bboxes=gt_bboxes,
+                    gt_classes=gt_classes,
+                    gt_indices=gt_indices,
+                    image_indices=image_indices,
+                )
+
+            if output_geojson_save_path is not None:
+                bboxes_list, scores_list, classes_as_ints_list = model.predict_from_preds(preds)
+                classes_as_strs_list = [
+                    [model.class_names[i] for i in classes_as_ints]
+                    for classes_as_ints in classes_as_ints_list
+                ]
+
+                # Store the bounding boxes in a GeoJSON file
+                for idx, bboxes, scores, classes_as_strs in zip(
+                    image_indices, bboxes_list, scores_list, classes_as_strs_list
+                ):
+                    full_image_name = data_loader.dataset.get_full_image_name(int(idx))
+                    cropped_coords_name = data_loader.dataset.get_cropped_coords_name(int(idx))
+                    geojson_features = create_geojson_output(
+                        full_image_name=full_image_name,
+                        cropped_coords_name=cropped_coords_name,
+                        bboxes=bboxes,
+                        labels=classes_as_strs,
+                        scores=scores,
+                        # save_path=output_geojson_save_path,
+                    )
+                    geojson_outputs.append(geojson_features)
+
+    if output_geojson_save_path is not None:
+        geojson_outputs_merged = merge_geojson_feature_collections(geojson_outputs)
+        save_geojson(geojson_outputs_merged, output_geojson_save_path)
 
     return ap_metrics
 
