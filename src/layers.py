@@ -15,7 +15,7 @@ from ultralytics.utils.tal import make_anchors
 
 from box_cls import Box
 from cbam import CBAM
-from utils import Folders, download_file
+from utils import Folders, create_folder, download_file
 
 
 # To import anything from GoldYolo
@@ -496,6 +496,7 @@ class AMF_GD_YOLOv8(nn.Module):
     @staticmethod
     def get_folder_path_from_name(model_name: str | None = None) -> str:
         model_folder_path = os.path.join(Folders.MODELS_AMF_GD_YOLOV8.value, f"{model_name}")
+        create_folder(model_folder_path)
         return model_folder_path
 
     @staticmethod

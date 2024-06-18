@@ -5,6 +5,7 @@ import multiprocessing as mp
 import os
 import pickle
 import warnings
+from itertools import product
 from typing import Callable, Dict, Optional, Sequence, Tuple
 
 import albumentations as A
@@ -20,7 +21,7 @@ from dataset_constants import DatasetConst
 from datasets import compute_mean_and_std
 from geojson_conversions import open_geojson_feature_collection
 from layers import AMF_GD_YOLOv8
-from metrics import plot_sorted_ap, plot_sorted_ap_confs
+from metrics import AP_Metrics_List
 from preprocessing.data import get_channels_count
 from preprocessing.rgb_cir import get_rgb_images_paths_from_polygon
 from training import (
@@ -30,6 +31,8 @@ from training import (
     initialize_dataloaders,
     load_tree_datasets_from_split,
     predict_to_geojson,
+    rgb_chm_usage_legend,
+    rgb_chm_usage_postfix,
     train_and_validate,
 )
 from utils import Folders, ImageData, import_tqdm
@@ -343,12 +346,10 @@ class ModelSession:
 
     @running_message("Computing metrics...")
     def compute_metrics(self):
-        # TODO: Modify this function to use the last metrics functions
-
         model = self._load_model()
         datasets = self._load_datasets()
 
-        _, _, test_loader = initialize_dataloaders(
+        train_loader, val_loader, test_loader = initialize_dataloaders(
             datasets=datasets,
             batch_size=self.training_data.training_params.batch_size,
             num_workers=self.training_data.training_params.num_workers,
@@ -356,92 +357,50 @@ class ModelSession:
 
         model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model.name)
 
-        best_sorted_ious_list = []
-        best_aps_list = []
-        best_sorted_ap_list = []
-        best_conf_threshold__list = []
-
-        sorted_ap_lists = []
-        conf_thresholds_list = []
-
-        legend_list = []
-
         thresholds_low = np.power(10, np.linspace(-4, -1, 10))
         thresholds_high = np.linspace(0.1, 1.0, 19)
         conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
 
-        use_rgbs = [False, False, True, True]
-        use_chms = [False, True, False, True]
-        test_names = ["all", "use_chm", "use_rgb", "use_chm_use_rgb"]
+        loaders = [train_loader, val_loader, test_loader]
+        loaders_postfix = ["train-set", "val-set", "test-set"]
+        loaders_legend = ["Training set", "Validation set", "Test set"]
+        loaders_zip = list(zip(loaders, loaders_postfix, loaders_legend))
 
-        pbar = tqdm(zip(use_rgbs, use_chms, test_names), total=len(use_rgbs))
-        for use_rgb, use_chm, test_name in pbar:
-            if use_rgb:
-                if use_chm:
-                    legend = "No data"
-                else:
-                    legend = "CHM"
-            else:
-                if use_chm:
-                    legend = "RGB"
-                else:
-                    legend = "RGB and CHM"
-            pbar.set_description(legend)
-            pbar.refresh()
+        use_rgbs = [True, False]
+        use_chms = [True, False]
+
+        iterations = product(loaders_zip, use_rgbs, use_chms)
+        ap_metrics_list = AP_Metrics_List()
+
+        pbar = tqdm(iterations)
+        for (loader, loader_postfix, loader_legend), use_rgb, use_chm in pbar:
+            postfix = "_".join(
+                [loader_postfix, rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)]
+            )
+            legend = " ".join(
+                [loader_legend, rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)]
+            )
             predict_to_geojson(
                 model,
-                test_loader,
+                loader,
                 self.device,
                 use_rgb=use_rgb,
                 use_chm=use_chm,
-                save_path=os.path.join(model_folder_path, f"{test_name}.geojson"),
+                save_path=os.path.join(model_folder_path, f"{postfix}.geojson"),
             )
-            (
-                sorted_ious_list,
-                aps_list,
-                sorted_ap_list,
-            ) = compute_all_ap_metrics(
+            ap_metrics = compute_all_ap_metrics(
                 model,
-                test_loader,
+                loader,
                 self.device,
                 conf_thresholds=conf_thresholds,
                 use_rgb=use_rgb,
                 use_chm=use_chm,
             )
 
-            best_index = sorted_ap_list.index(max(sorted_ap_list))
-            best_sorted_ious = sorted_ious_list[best_index]
-            best_aps = aps_list[best_index]
-            best_sorted_ap = sorted_ap_list[best_index]
-            best_conf_threshold = conf_thresholds[best_index]
+            ap_metrics_list.add_ap_metrics(ap_metrics, legend=legend)
 
-            best_sorted_ious_list.append(best_sorted_ious)
-            best_aps_list.append(best_aps)
-            best_sorted_ap_list.append(best_sorted_ap)
-            best_conf_threshold__list.append(best_conf_threshold)
-
-            sorted_ap_lists.append(sorted_ap_list)
-            conf_thresholds_list.append(conf_thresholds)
-
-            legend_list.append(legend)
-
-        plot_sorted_ap(
-            best_sorted_ious_list,
-            best_aps_list,
-            best_sorted_ap_list,
-            conf_thresholds=best_conf_threshold__list,
-            legend_list=legend_list,
-            show=True,
-            save_path=os.path.join(model_folder_path, "ap_iou.png"),
-        )
-
-        plot_sorted_ap_confs(
-            sorted_ap_lists=sorted_ap_lists,
-            conf_thresholds_list=conf_thresholds_list,
-            legend_list=legend_list,
-            show=True,
-            save_path=os.path.join(model_folder_path, "sap_conf.png"),
-        )
+        ap_metrics_list.plot_ap_iou(save_path=os.path.join(model_folder_path, "ap_iou.png"))
+        ap_metrics_list.plot_sap_conf(save_path=os.path.join(model_folder_path, "sap_conf.png"))
 
     @staticmethod
     def _pickle_path(model_name: str) -> str:

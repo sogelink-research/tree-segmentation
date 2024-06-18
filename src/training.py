@@ -14,21 +14,12 @@ import torch
 import torch.nn as nn
 from IPython import display
 from ipywidgets import Output
-from PIL import Image
 
-from dataloaders import TreeDataLoader, extract_ground_truth_from_dataloader
+from dataloaders import TreeDataLoader
 from datasets import TreeDataset
 from geojson_conversions import merge_geojson_feature_collections, save_geojson
 from layers import AMF_GD_YOLOv8
-from metrics import (
-    APMetrics,
-    compute_sorted_ap,
-    compute_sorted_ap_confs,
-    hungarian_algorithm,
-    hungarian_algorithm_confs,
-    plot_sorted_ap,
-    plot_sorted_ap_confs,
-)
+from metrics import AP_Metrics
 from plot import create_geojson_output
 from preprocessing.data import ImageData
 from utils import Folders, import_tqdm
@@ -246,7 +237,7 @@ def train(
     thresholds_low = np.power(10, np.linspace(-4, -1, 10))
     thresholds_high = np.linspace(0.1, 1.0, 19)
     conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
-    ap_metrics = APMetrics(conf_thresholds=conf_thresholds)
+    ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
 
     model.train()
     stream = tqdm(train_loader, leave=False, desc="Training")
@@ -319,7 +310,7 @@ def validate(
     thresholds_low = np.power(10, np.linspace(-4, -1, 10))
     thresholds_high = np.linspace(0.1, 1.0, 19)
     conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
-    ap_metrics = APMetrics(conf_thresholds=conf_thresholds)
+    ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
 
     model.eval()
     stream = tqdm(val_loader, leave=False, desc="Validation")
@@ -455,82 +446,52 @@ def predict_to_geojson(
 
 def compute_all_ap_metrics(
     model: AMF_GD_YOLOv8,
-    test_loader: TreeDataLoader,
+    data_loader: TreeDataLoader,
     device: torch.device,
     conf_thresholds: List[float],
     use_rgb: bool = True,
     use_chm: bool = True,
-) -> Tuple[List[List[float]], List[List[float]], List[float]]:
-    # For sortedAP/conf threshold plotting
-    matched_pairs_conf: List[List[Tuple[Tuple[int, int], float]]] = [
-        [] for _ in range(len(conf_thresholds))
-    ]
-    unmatched_pred_conf: List[List[int]] = [[] for _ in range(len(conf_thresholds))]
-    unmatched_gt_conf: List[List[int]] = [[] for _ in range(len(conf_thresholds))]
+) -> AP_Metrics:
+    # AP metrics
+    ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
 
     model.eval()
     with torch.no_grad():
-        for data in tqdm(test_loader, leave=False, desc="Computing metrics"):
-            # Get data
+        for data in tqdm(data_loader, leave=False, desc="Computing metrics"):
+            # Get the data
             image_rgb: torch.Tensor = data["image_rgb"]
             if not use_rgb:
                 image_rgb = torch.zeros_like(image_rgb)
             image_chm: torch.Tensor = data["image_chm"]
             if not use_chm:
                 image_chm = torch.zeros_like(image_chm)
+            gt_bboxes: torch.Tensor = data["bboxes"]
+            gt_classes: torch.Tensor = data["labels"]
+            gt_indices: torch.Tensor = data["indices"]
+            image_indices: torch.Tensor = data["indices"]
+
             image_rgb = image_rgb.to(device, non_blocking=True)
             image_chm = image_chm.to(device, non_blocking=True)
+            gt_bboxes = gt_bboxes.to(device, non_blocking=True)
+            gt_classes = gt_classes.to(device, non_blocking=True)
+            gt_indices = gt_indices.to(device, non_blocking=True)
+            image_indices = image_indices.to(device, non_blocking=True)
 
-            # Compute model output
-            lowest_conf_threshold = min(conf_thresholds)
-            bboxes_list, scores_list, classes_as_ints_list = model.predict(
-                image_rgb, image_chm, conf_threshold=lowest_conf_threshold
+            # Compute the model output
+            output = model.forward(image_rgb, image_chm)
+
+            # Compute the AP metrics
+            preds = model.preds_from_output(output)
+            ap_metrics.add_preds(
+                model=model,
+                preds=preds,
+                gt_bboxes=gt_bboxes,
+                gt_classes=gt_classes,
+                gt_indices=gt_indices,
+                image_indices=image_indices,
             )
 
-            # Get ground truth
-            gt_bboxes_per_image, gt_classes_per_image = extract_ground_truth_from_dataloader(data)
-
-            # Compute the matching
-            iou_threshold = 1e-6
-            for bboxes, scores, classes_as_ints, gt_bboxes, gt_classes in zip(
-                bboxes_list,
-                scores_list,
-                classes_as_ints_list,
-                gt_bboxes_per_image,
-                gt_classes_per_image,
-            ):
-                matched_pairs_conf_temp, unmatched_pred_conf_temp, unmatched_gt_conf_temp = (
-                    hungarian_algorithm_confs(
-                        pred_bboxes=bboxes,
-                        pred_labels=classes_as_ints,
-                        pred_scores=scores,
-                        gt_bboxes=gt_bboxes,
-                        gt_labels=gt_classes,
-                        iou_threshold=iou_threshold,
-                        conf_thresholds=conf_thresholds,
-                        agnostic=False,
-                    )
-                )
-                for i in range(len(conf_thresholds)):
-                    matched_pairs_conf[i].extend(matched_pairs_conf_temp[i])
-                    unmatched_pred_conf[i].extend(unmatched_pred_conf_temp[i])
-                    unmatched_gt_conf[i].extend(unmatched_gt_conf_temp[i])
-
-    sorted_ious_list, aps_list, sorted_ap_list = compute_sorted_ap_confs(
-        matched_pairs_conf, unmatched_pred_conf, unmatched_gt_conf
-    )
-
-    best_index = sorted_ap_list.index(max(sorted_ap_list))
-    best_sorted_ious = sorted_ious_list[best_index]
-    best_aps = aps_list[best_index]
-    best_sorted_ap = sorted_ap_list[best_index]
-    best_conf_threshold = conf_thresholds[best_index]
-
-    return (
-        sorted_ious_list,
-        aps_list,
-        sorted_ap_list,
-    )
+    return ap_metrics
 
 
 def initialize_dataloaders(

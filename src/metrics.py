@@ -1,5 +1,5 @@
 import itertools
-from typing import List, Tuple, TypeVar, cast
+from typing import List, Optional, Tuple, TypeVar, cast
 
 import numpy as np
 import torch
@@ -64,14 +64,14 @@ def hungarian_algorithm_confs(
     gt_bboxes: List[Box],
     gt_labels: List_int_or_str,
     iou_threshold: float,
-    conf_thresholds: List[float],
+    conf_threshold_list: List[float],
     agnostic: bool,
 ) -> Tuple[List[List[Tuple[Tuple[int, int], float]]], List[List[int]], List[List[int]]]:
     matched_pairs_list: List[List[Tuple[Tuple[int, int], float]]] = []
     unmatched_pred_list: List[List[int]] = []
     unmatched_gt_list: List[List[int]] = []
 
-    for conf_threshold in conf_thresholds:
+    for conf_threshold in conf_threshold_list:
         mask = [i for i in range(len(pred_scores)) if pred_scores[i] > conf_threshold]
         pred_bboxes_conf = [pred_bboxes[i] for i in mask]
         pred_labels_conf = cast(List_int_or_str, [pred_labels[i] for i in mask])
@@ -128,12 +128,12 @@ def compute_sorted_ap_confs(
     return sorted_ious_list, aps_list, sorted_ap_list
 
 
-def plot_sorted_ap(
+def plot_ap_iou(
     sorted_ious_list: List[List[float]],
     aps_list: List[List[float]],
     sorted_ap_list: List[float],
+    conf_threshold_list: List[float],
     legend_list: List[str],
-    conf_thresholds: List[float],
     show: bool = False,
     save_path: str | None = None,
 ):
@@ -141,7 +141,7 @@ def plot_sorted_ap(
     plt.clf()  # Clear the current figure
 
     for sorted_ious, aps, sorted_ap, legend, conf_threshold in zip(
-        sorted_ious_list, aps_list, sorted_ap_list, legend_list, conf_thresholds
+        sorted_ious_list, aps_list, sorted_ap_list, legend_list, conf_threshold_list
     ):
         x = [0.0]
         y = [aps[0] if len(aps) > 0 else 0.0]
@@ -175,9 +175,9 @@ def plot_sorted_ap(
     plt.close()
 
 
-def plot_sorted_ap_confs(
+def plot_sap_conf(
     sorted_ap_lists: List[List[float]],
-    conf_thresholds_list: List[List[float]],
+    conf_threshold_lists: List[List[float]],
     legend_list: List[str],
     show: bool = False,
     save_path: str | None = None,
@@ -186,7 +186,7 @@ def plot_sorted_ap_confs(
     plt.clf()  # Clear the current figure
 
     for sorted_ap, conf_threshold, legend in zip(
-        sorted_ap_lists, conf_thresholds_list, legend_list
+        sorted_ap_lists, conf_threshold_lists, legend_list
     ):
         x = conf_threshold
         y = sorted_ap
@@ -212,19 +212,19 @@ def plot_sorted_ap_confs(
     plt.close()
 
 
-class APMetrics:
-    def __init__(self, conf_thresholds: List[float], agnostic: bool = False) -> None:
-        self.conf_thresholds = conf_thresholds
+class AP_Metrics:
+    def __init__(self, conf_threshold_list: List[float], agnostic: bool = False) -> None:
+        self.conf_threshold_list = conf_threshold_list
         self.agnostic = agnostic
 
         self.reset()
 
     def reset(self) -> None:
         self.matched_pairs: List[List[Tuple[Tuple[int, int], float]]] = [
-            [] for _ in range(len(self.conf_thresholds))
+            [] for _ in range(len(self.conf_threshold_list))
         ]
-        self.unmatched_pred: List[List[int]] = [[] for _ in range(len(self.conf_thresholds))]
-        self.unmatched_gt: List[List[int]] = [[] for _ in range(len(self.conf_thresholds))]
+        self.unmatched_pred: List[List[int]] = [[] for _ in range(len(self.conf_threshold_list))]
+        self.unmatched_gt: List[List[int]] = [[] for _ in range(len(self.conf_threshold_list))]
 
         self.sorted_ap_updated = False
 
@@ -237,7 +237,7 @@ class APMetrics:
         gt_indices: torch.Tensor,
         image_indices: torch.Tensor,
     ) -> None:
-        lowest_conf_threshold = min(self.conf_thresholds)
+        lowest_conf_threshold = min(self.conf_threshold_list)
         bboxes_list, scores_list, classes_as_ints_list = model.predict_from_preds(
             preds, conf_threshold=lowest_conf_threshold
         )
@@ -264,10 +264,10 @@ class APMetrics:
                 gt_bboxes=gt_bboxes_list,
                 gt_labels=gt_classes_list,
                 iou_threshold=iou_threshold,
-                conf_thresholds=self.conf_thresholds,
+                conf_threshold_list=self.conf_threshold_list,
                 agnostic=self.agnostic,
             )
-            for i in range(len(self.conf_thresholds)):
+            for i in range(len(self.conf_threshold_list)):
                 self.matched_pairs[i].extend(matched_pairs_temp[i])
                 self.unmatched_pred[i].extend(unmatched_pred_temp[i])
                 self.unmatched_gt[i].extend(unmatched_gt_temp[i])
@@ -281,9 +281,26 @@ class APMetrics:
             )
             self.sorted_ap_updated = True
 
-    def get_sorted_ap(self) -> Tuple[List[List[float]], List[List[float]], List[float]]:
+    def get_sorted_aps(
+        self,
+    ) -> Tuple[List[List[float]], List[List[float]], List[float], List[float]]:
+        """Returns the data of the sortedAP for all the confidence thresholds given to the class.
+
+        Returns:
+            Tuple[List[List[float]], List[List[float]], List[float], List[float]]:
+            (sorted_ious_list, aps_list, sorted_ap_list, conf_threshold_list) where the first
+            dimension of each list corresponds to one confidence threshold value:
+            - sorted_ious_list contains the lists of IoUs between the matched pairs, in increasing
+            order, for all threshold values.
+            - aps_list contains the lists of AP scores corresponding to the IoUs in
+            sorted_ious_list.
+            - sorted_ap_list contains the sortedAP metrics (the integral of aps w.r.t.
+            sorted_ious).
+            - conf_threshold_list contains the model confidence thresholds used to compute the
+            metrics above.
+        """
         self._compute_sorted_ap()
-        return self.sorted_ious_list, self.aps_list, self.sorted_ap_list
+        return self.sorted_ious_list, self.aps_list, self.sorted_ap_list, self.conf_threshold_list
 
     def get_best_sorted_ap(self) -> Tuple[List[float], List[float], float, float]:
         """Returns the best sortedAP among those computed with the confidence thresholds given to
@@ -296,12 +313,75 @@ class APMetrics:
             - sorted_ious is the list of IoUs between the matched pairs, in increasing order.
             - aps is the list of AP scores corresponding to the IoUs in sorted_ious.
             - sorted_ap is the sortedAP metrics (the integral of aps w.r.t. sorted_ious).
-            - conf_threshold is the model confidence threshold corresponding
+            - conf_threshold is the corresponding model confidence threshold.
         """
         self._compute_sorted_ap()
         best_index = self.sorted_ap_list.index(max(self.sorted_ap_list))
         best_sorted_ious = self.sorted_ious_list[best_index]
         best_aps = self.aps_list[best_index]
         best_sorted_ap = self.sorted_ap_list[best_index]
-        best_conf_threshold = self.conf_thresholds[best_index]
+        best_conf_threshold = self.conf_threshold_list[best_index]
         return best_sorted_ious, best_aps, best_sorted_ap, best_conf_threshold
+
+
+class AP_Metrics_List:
+    def __init__(
+        self,
+        ap_metrics_list: Optional[List[AP_Metrics]] = None,
+        legend_list: Optional[List[str]] = None,
+    ) -> None:
+        if (ap_metrics_list is None and legend_list is not None) or (
+            ap_metrics_list is not None and legend_list is None
+        ):
+            raise ValueError(
+                "You should either specify ap_metrics_list and legend_list or neither."
+            )
+        if (ap_metrics_list is not None and legend_list is not None) and (
+            len(ap_metrics_list) != len(legend_list)
+        ):
+            raise ValueError("ap_metrics_list and legend_list should have the same length.")
+        self.ap_metrics_list = [] if ap_metrics_list is None else ap_metrics_list
+        self.legend_list = [] if legend_list is None else legend_list
+
+    def add_ap_metrics(self, ap_metrics: AP_Metrics, legend) -> None:
+        self.ap_metrics_list.append(ap_metrics)
+        self.legend_list.append(legend)
+
+    def plot_ap_iou(self, save_path: str) -> None:
+        best_sorted_ious_list = []
+        best_aps_list = []
+        best_sorted_ap_list = []
+        best_conf_threshold_list = []
+
+        for ap_metrics in self.ap_metrics_list:
+            best_sorted_ious, best_aps, best_sorted_ap, best_conf_threshold = (
+                ap_metrics.get_best_sorted_ap()
+            )
+            best_sorted_ious_list.append(best_sorted_ious)
+            best_aps_list.append(best_aps)
+            best_sorted_ap_list.append(best_sorted_ap)
+            best_conf_threshold_list.append(best_conf_threshold)
+
+        plot_ap_iou(
+            sorted_ious_list=best_sorted_ious_list,
+            aps_list=best_aps_list,
+            sorted_ap_list=best_sorted_ap_list,
+            conf_threshold_list=best_conf_threshold_list,
+            legend_list=self.legend_list,
+            save_path=save_path,
+        )
+
+    def plot_sap_conf(self, save_path: str) -> None:
+        sorted_ap_lists = []
+        conf_threshold_lists = []
+
+        for ap_metrics in self.ap_metrics_list:
+            sorted_ap_lists.append(ap_metrics.sorted_ap_list)
+            conf_threshold_lists.append(ap_metrics.conf_threshold_list)
+
+        plot_sap_conf(
+            sorted_ap_lists=sorted_ap_lists,
+            conf_threshold_lists=conf_threshold_lists,
+            legend_list=self.legend_list,
+            save_path=save_path,
+        )
