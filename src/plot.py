@@ -195,12 +195,20 @@ def create_bboxes_training_image(
             f"The number of dimensions of image_rgb should be a multiple of 3, not {dimensions}"
         )
 
+    print(f"{image_rgb.shape = }")
+
     images = [
         image_rgb[idx : idx + 3].cpu().detach().numpy().transpose((1, 2, 0))
         for idx in range(0, dimensions, 3)
     ]
-    images_with_pred_boxes = []
-    images_with_gt_boxes = []
+
+    print(f"{images[0].shape = }")
+    dims = (0, 1)
+    dtype = images[0].dtype if torch.is_floating_point(images[0]) else torch.float32
+    print(f"{torch.mean(images[0].to(dtype), dim=dims).reshape(-1) = }")
+    print(f"{torch.amin(images[0].to(dtype), dim=dims).reshape(-1) = }")
+    print(f"{torch.amax(images[0].to(dtype), dim=dims).reshape(-1) = }")
+
     number_images = len(images)
 
     pred_bboxes_list = [bbox.as_list() for bbox in pred_bboxes]
@@ -216,9 +224,11 @@ def create_bboxes_training_image(
 
     for index, image in enumerate(images):
         image_pred_boxes = create_bboxes_image(
-            image, pred_bboxes_list, pred_labels_str, colors_dict, pred_scores
+            image, pred_bboxes_list, pred_labels_str, colors_dict, pred_scores, color_mode="bgr"
         )
-        images_gt_boxes = create_bboxes_image(image, gt_bboxes_list, gt_labels_str, colors_dict)
+        images_gt_boxes = create_bboxes_image(
+            image, gt_bboxes_list, gt_labels_str, colors_dict, color_mode="bgr"
+        )
 
         image_name = f"Image {index}"
 
