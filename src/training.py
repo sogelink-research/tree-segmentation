@@ -15,12 +15,13 @@ import torch.nn as nn
 from IPython import display
 from ipywidgets import Output
 
-from dataloaders import TreeDataLoader
+from dataloaders import TreeDataLoader, convert_ground_truth_from_tensors
+from dataset_constants import DatasetConst
 from datasets import TreeDataset
 from geojson_conversions import merge_geojson_feature_collections, save_geojson
 from layers import AMF_GD_YOLOv8
 from metrics import AP_Metrics
-from plot import create_geojson_output
+from plot import create_bboxes_training_image, create_geojson_output
 from preprocessing.data import ImageData
 from utils import Folders, import_tqdm
 
@@ -232,6 +233,7 @@ def train(
     accumulation_steps: int,
     running_accumulation_step: int,
     training_metrics: TrainingMetrics,
+    epoch: int,
 ) -> int:
     # AP metrics
     thresholds_low = np.power(10, np.linspace(-4, -1, 10))
@@ -290,6 +292,33 @@ def train(
                 gt_indices=gt_indices,
                 image_indices=image_indices,
             )
+
+            used_image = 42
+            if used_image in image_indices.tolist():
+                idx = image_indices.tolist().index(used_image)
+
+                boxes_per_image, scores_per_image, classes_per_image = model.predict_from_preds(
+                    preds[idx : idx + 1], iou_threshold=0.5, conf_threshold=0.0, number_best=40
+                )
+                gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
+                    gt_bboxes=gt_bboxes[idx : idx + 1],
+                    gt_classes=gt_classes[idx : idx + 1],
+                    gt_indices=gt_indices[idx : idx + 1],
+                    image_indices=image_indices[idx : idx + 1],
+                )
+
+                create_bboxes_training_image(
+                    image_rgb=image_rgb[idx : idx + 1],
+                    image_chm=image_chm[idx : idx + 1],
+                    pred_bboxes=boxes_per_image[0],
+                    pred_labels=classes_per_image[0],
+                    pred_scores=scores_per_image[0],
+                    gt_bboxes=gt_bboxes_per_image[0],
+                    gt_labels=gt_classes_per_image[0],
+                    labels_int_to_str=model.class_names,
+                    colors_dict=DatasetConst.CLASS_COLORS.value,
+                    save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}.png"),
+                )
 
     _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
     training_metrics.update("Training", "Best sortedAP", sorted_ap, y_axis="sortedAP")
@@ -570,6 +599,7 @@ def train_and_validate(
             accumulation_steps,
             running_accumulation_step,
             training_metrics,
+            epoch=epoch,
         )
         current_loss = validate(val_loader, model, device, training_metrics)
         scheduler.step()

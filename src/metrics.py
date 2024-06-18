@@ -10,7 +10,6 @@ from skimage import io
 from box_cls import Box, compute_iou
 from dataloaders import convert_ground_truth_from_tensors
 from layers import AMF_GD_YOLOv8
-from plot import create_bboxes_image
 
 
 List_int_or_str = TypeVar("List_int_or_str", List[int], List[str])

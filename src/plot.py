@@ -1,11 +1,13 @@
 import json
 from copy import deepcopy
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import geojson
 import numpy as np
 import numpy.typing as npt
+import torch
+from matplotlib import pyplot as plt
 from skimage import io
 
 from box_cls import Box, box_pixels_cropped_to_full, box_pixels_to_coordinates
@@ -55,7 +57,7 @@ def get_bounding_boxes(
 
 
 def add_bbox_to_image(
-    image: npt.NDArray,
+    image: np.ndarray,
     bbox: List[Number],
     color: Tuple[int, int, int] = (128, 128, 128),
     lw: int = 2,
@@ -79,7 +81,7 @@ def add_bbox_to_image(
 
 
 def add_label_to_image(
-    image: npt.NDArray,
+    image: np.ndarray,
     bbox: List[Number],
     label: str | None = None,
     color: Tuple[int, int, int] = (128, 128, 128),
@@ -147,13 +149,13 @@ def add_label_to_image(
 
 
 def create_bboxes_image(
-    image: npt.NDArray,
+    image: np.ndarray,
     bboxes: List[List[Number]],
     labels: List[str],
     colors_dict: Dict[str, Tuple[int, int, int]],
-    scores: List[float] | np.ndarray[Any, np.dtype[np.float_]] | None = None,
+    scores: Optional[List[float] | np.ndarray] = None,
     color_mode: str = "rgb",
-) -> npt.NDArray:
+) -> np.ndarray:
     image_copy = deepcopy(image)
     if color_mode == "bgr":
         image_copy = cv2.cvtColor(image_copy, cv2.COLOR_BGR2RGB)
@@ -173,6 +175,62 @@ def create_bboxes_image(
         add_label_to_image(image_copy, bbox, full_labels[i], colors[i])
 
     return image_copy
+
+
+def create_bboxes_training_image(
+    image_rgb: torch.Tensor,
+    image_chm: torch.Tensor,
+    pred_bboxes: List[Box],
+    pred_labels: List[int],
+    pred_scores: List[float],
+    gt_bboxes: List[Box],
+    gt_labels: List[int],
+    labels_int_to_str: Dict[int, str],
+    colors_dict: Dict[str, Tuple[int, int, int]],
+    save_path: str,
+) -> None:
+    dimensions = image_rgb.shape[0]
+    if dimensions % 3 != 0:
+        raise ValueError(
+            f"The number of dimensions of image_rgb should be a multiple of 3, not {dimensions}"
+        )
+
+    images = [image_rgb[idx : idx + 3].detach().numpy() for idx in range(0, dimensions, 3)]
+    images_with_pred_boxes = []
+    images_with_gt_boxes = []
+    number_images = len(images)
+
+    pred_bboxes_list = [bbox.as_list() for bbox in pred_bboxes]
+    gt_bboxes_list = [bbox.as_list() for bbox in gt_bboxes]
+    pred_labels_str = [labels_int_to_str[label] for label in pred_labels]
+    gt_labels_str = [labels_int_to_str[label] for label in gt_labels]
+
+    nrows = number_images
+    ncols = 2
+    figsize = (5 * ncols, 6 * nrows)
+    plt.clf()
+    fig = plt.figure(1, figsize=figsize)
+
+    for index, image in enumerate(images):
+        image_pred_boxes = create_bboxes_image(
+            image, pred_bboxes_list, pred_labels_str, colors_dict, pred_scores
+        )
+        images_gt_boxes = create_bboxes_image(image, gt_bboxes_list, gt_labels_str, colors_dict)
+
+        image_name = f"Image {index}"
+
+        ax = fig.add_subplot(nrows, ncols, 2 * index + 1)
+        ax.imshow(image_pred_boxes)
+        ax.set_title(f"{image_name} predictions")
+        ax.set_axis_off()
+
+        ax = fig.add_subplot(nrows, ncols, 2 * index + 2)
+        ax.imshow(images_gt_boxes)
+        ax.set_title(f"{image_name} ground truth")
+        ax.set_axis_off()
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
 
 
 def create_gt_bboxes_image(

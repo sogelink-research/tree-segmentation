@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -441,13 +441,15 @@ class AMF_GD_YOLOv8(nn.Module):
         self,
         preds: torch.Tensor,
         iou_threshold: float = 0.5,
-        conf_threshold: float = 0.5,
+        conf_threshold: Optional[float] = None,
+        number_best: Optional[int] = None,
     ) -> Tuple[List[List[Box]], List[List[float]], List[List[int]]]:
         # Extract the results
         boxes_list, scores_list, classes_list = extract_bboxes(
             preds,
-            iou_thres=iou_threshold,
-            conf_thres=conf_threshold,
+            iou_threshold=iou_threshold,
+            conf_threshold=conf_threshold,
+            number_best=number_best,
         )
         return boxes_list, scores_list, classes_list
 
@@ -479,6 +481,11 @@ class AMF_GD_YOLOv8(nn.Module):
         model_weights_path = self.get_weights_path()
         state_dict = self.state_dict()
         torch.save(state_dict, model_weights_path)
+
+    @property
+    def folder_path(self) -> str:
+        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(self.name)
+        return model_folder_path
 
     @property
     def weights_path(self) -> str:
@@ -632,17 +639,17 @@ class TrainingLoss(v8DetectionLoss):
 
 
 def non_max_suppression(
-    prediction,
-    conf_thres=0.25,
-    iou_thres=0.45,
-    classes=None,
-    agnostic=False,
-    multi_label=False,
-    max_det=300,
-    max_nms=30000,
-    max_wh=7680,
-    in_place=True,
-):
+    prediction: torch.Tensor,
+    conf_thres: float = 0.25,
+    iou_thres: float = 0.45,
+    classes: Optional[List[int]] = None,
+    agnostic: bool = False,
+    multi_label: bool = False,
+    max_det: int = 300,
+    max_nms: int = 30000,
+    max_wh: int = 7680,
+    in_place: bool = True,
+) -> List[torch.Tensor]:
     """
     Perform non-maximum suppression (NMS) on a set of boxes, with support for masks and multiple labels per box.
 
@@ -741,13 +748,23 @@ def non_max_suppression(
 
 def extract_bboxes(
     preds: torch.Tensor,
-    iou_thres: float,
-    conf_thres: float,
+    iou_threshold: float,
+    conf_threshold: Optional[float] = None,
+    number_best: Optional[int] = None,
 ) -> Tuple[List[List[Box]], List[List[float]], List[List[int]]]:
     batch_size = preds.shape[0]
-    preds_nms = non_max_suppression(preds, conf_thres, iou_thres)
 
-    boxes_list = [list(map(Box.from_list, preds_nms[i][:, :4])) for i in range(batch_size)]
+    if number_best is None and conf_threshold is None:
+        raise ValueError("At least one of conf_threshold or number_best should be specified.")
+
+    conf_threshold = 0.0 if conf_threshold is None else conf_threshold
+    number_best = 300 if number_best is None else number_best
+
+    preds_nms = non_max_suppression(
+        preds, conf_thres=conf_threshold, iou_thres=iou_threshold, max_det=number_best
+    )
+
+    boxes_list = [list(map(Box.from_list, preds_nms[i][:, :4].tolist())) for i in range(batch_size)]
     scores_list = [list(map(float, preds_nms[i][:, 4])) for i in range(batch_size)]
     classes_list = [list(map(int, preds_nms[i][:, 5])) for i in range(batch_size)]
     return boxes_list, scores_list, classes_list
