@@ -106,7 +106,7 @@ class TrainingMetrics:
         cmap = plt.get_cmap("tab10")
 
         categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
-        legend_space = 1.2
+        legend_space = 10
         figsize = (6 * ncols, 5 * nrows + legend_space)
         legend_y_position = legend_space / figsize[1]
 
