@@ -442,57 +442,6 @@ def rgb_chm_usage_legend(use_rgb: bool, use_chm: bool):
             return "No data"
 
 
-# def predict_to_geojson(
-#     model: AMF_GD_YOLOv8,
-#     data_loader: TreeDataLoader,
-#     device: torch.device,
-#     save_path: str,
-#     use_rgb: bool = True,
-#     use_chm: bool = True,
-# ):
-#     model.eval()
-#     geojson_outputs: List[geojson.FeatureCollection] = []
-#     with torch.no_grad():
-#         for data in tqdm(data_loader, leave=False, desc="Exporting output"):
-#             # Get data
-#             image_rgb: torch.Tensor = data["image_rgb"]
-#             if not use_rgb:
-#                 image_rgb = torch.zeros_like(image_rgb)
-#             image_chm: torch.Tensor = data["image_chm"]
-#             if not use_chm:
-#                 image_chm = torch.zeros_like(image_chm)
-#             image_rgb = image_rgb.to(device, non_blocking=True)
-#             image_chm = image_chm.to(device, non_blocking=True)
-
-#             # Compute model output
-#             bboxes_list, scores_list, classes_as_ints_list = model.predict(image_rgb, image_chm, number_best=40)
-#             classes_as_strs_list = [
-#                 [model.class_names[i] for i in classes_as_ints]
-#                 for classes_as_ints in classes_as_ints_list
-#             ]
-
-#             idx_all = data["image_indices"]
-
-#             # Store the bounding boxes in a GeoJSON file
-#             for idx, bboxes, scores, classes_as_strs in zip(
-#                 idx_all, bboxes_list, scores_list, classes_as_strs_list
-#             ):
-#                 full_image_name = data_loader.dataset.get_full_image_name(idx)
-#                 cropped_coords_name = data_loader.dataset.get_cropped_coords_name(idx)
-#                 geojson_features = create_geojson_output(
-#                     full_image_name=full_image_name,
-#                     cropped_coords_name=cropped_coords_name,
-#                     bboxes=bboxes,
-#                     labels=classes_as_strs,
-#                     scores=scores,
-#                     # save_path=save_path,
-#                 )
-#                 geojson_outputs.append(geojson_features)
-
-#     geojson_outputs_merged = merge_geojson_feature_collections(geojson_outputs)
-#     save_geojson(geojson_outputs_merged, save_path)
-
-
 def evaluate_model(
     model: AMF_GD_YOLOv8,
     data_loader: TreeDataLoader,
@@ -655,7 +604,19 @@ def train_and_validate(
         if epoch % temp_models_interval == 1:
             best_temp_model = model
             best_temp_loss = np.inf
+
+        print()
+        print(0)
+        print(f"{training_metrics.metrics = }")
+        print(f"{training_metrics.metrics_loop = }")
+
         training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
+
+        print()
+        print(1)
+        print(f"{training_metrics.metrics = }")
+        print(f"{training_metrics.metrics_loop = }")
+
         running_accumulation_step = train(
             train_loader,
             model,
@@ -666,11 +627,19 @@ def train_and_validate(
             training_metrics,
             epoch=epoch,
         )
+
+        print()
+        print(2)
+        print(f"{training_metrics.metrics = }")
+        print(f"{training_metrics.metrics_loop = }")
+
         current_loss = validate(val_loader, model, device, training_metrics)
         scheduler.step()
 
-        print(f"{epoch = }")
-        print(f"{current_loss = }")
+        print()
+        print(3)
+        print(f"{training_metrics.metrics = }")
+        print(f"{training_metrics.metrics_loop = }")
 
         # Store and save the best model
         if current_loss < best_loss:
@@ -687,6 +656,11 @@ def train_and_validate(
             best_temp_model.save_weights(epoch=epoch)
 
         training_metrics.end_loop(epoch)
+
+        print()
+        print(4)
+        print(f"{training_metrics.metrics = }")
+        print(f"{training_metrics.metrics_loop = }")
 
     # Save the plot showing the evolution of the metrics
     training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
