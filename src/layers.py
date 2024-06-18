@@ -492,7 +492,7 @@ class AMF_GD_YOLOv8(nn.Module):
         return model_folder_path
 
     def weights_path(self, epoch: Optional[int] = None) -> str:
-        model_weights_path = AMF_GD_YOLOv8.get_weights_path_from_name(self.name)
+        model_weights_path = AMF_GD_YOLOv8.get_weights_path_from_name(self.name, epoch)
         return model_weights_path
 
     @staticmethod
