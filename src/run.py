@@ -369,38 +369,43 @@ class ModelSession:
         use_rgbs = [True, False]
         use_chms = [True, False]
 
-        iterations = product(loaders_zip, use_rgbs, use_chms)
-        ap_metrics_list = AP_Metrics_List()
+        iterations = product(use_rgbs, use_chms)
 
         pbar = tqdm(iterations)
-        for (loader, loader_postfix, loader_legend), use_rgb, use_chm in pbar:
-            postfix = "_".join(
-                [loader_postfix, rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)]
-            )
-            legend = " ".join(
-                [loader_legend, rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)]
-            )
-            predict_to_geojson(
-                model,
-                loader,
-                self.device,
-                use_rgb=use_rgb,
-                use_chm=use_chm,
-                save_path=os.path.join(model_folder_path, f"{postfix}.geojson"),
-            )
-            ap_metrics = compute_all_ap_metrics(
-                model,
-                loader,
-                self.device,
-                conf_thresholds=conf_thresholds,
-                use_rgb=use_rgb,
-                use_chm=use_chm,
-            )
+        for loader, loader_postfix, loader_legend in loaders_zip:
+            ap_metrics_list = AP_Metrics_List()
+            for use_rgb, use_chm in pbar:
+                postfix = "_".join(
+                    [loader_postfix, rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)]
+                )
+                legend = " ".join(
+                    [loader_legend, rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)]
+                )
+                predict_to_geojson(
+                    model,
+                    loader,
+                    self.device,
+                    use_rgb=use_rgb,
+                    use_chm=use_chm,
+                    save_path=os.path.join(model_folder_path, f"{postfix}.geojson"),
+                )
+                ap_metrics = compute_all_ap_metrics(
+                    model,
+                    loader,
+                    self.device,
+                    conf_thresholds=conf_thresholds,
+                    use_rgb=use_rgb,
+                    use_chm=use_chm,
+                )
 
-            ap_metrics_list.add_ap_metrics(ap_metrics, legend=legend)
+                ap_metrics_list.add_ap_metrics(ap_metrics, legend=legend)
 
-        ap_metrics_list.plot_ap_iou(save_path=os.path.join(model_folder_path, "ap_iou.png"))
-        ap_metrics_list.plot_sap_conf(save_path=os.path.join(model_folder_path, "sap_conf.png"))
+            ap_metrics_list.plot_ap_iou(
+                save_path=os.path.join(model_folder_path, f"ap_iou_{loader_postfix}.png")
+            )
+            ap_metrics_list.plot_sap_conf(
+                save_path=os.path.join(model_folder_path, f"sap_conf_{loader_postfix}.png")
+            )
 
     @staticmethod
     def _pickle_path(model_name: str) -> str:
