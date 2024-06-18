@@ -293,13 +293,16 @@ def train(
                 image_indices=image_indices,
             )
 
-            used_image = 42
+            dataset_idx = 42
             print(f"{image_indices.tolist() = }")
-            if used_image in image_indices.tolist():
-                idx = image_indices.tolist().index(used_image)
+            if dataset_idx in image_indices.tolist():
+                batch_idx = image_indices.tolist().index(dataset_idx)
 
                 boxes_per_image, scores_per_image, classes_per_image = model.predict_from_preds(
-                    preds[idx : idx + 1], iou_threshold=0.5, conf_threshold=0.0, number_best=40
+                    preds[batch_idx : batch_idx + 1],
+                    iou_threshold=0.5,
+                    conf_threshold=0.0,
+                    number_best=40,
                 )
                 gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
                     gt_bboxes=gt_bboxes,
@@ -308,14 +311,21 @@ def train(
                     image_indices=image_indices,
                 )
 
+                image_rgb_initial = torch.tensor(
+                    train_loader.dataset.get_rgb_image(dataset_idx)
+                ).permute((2, 0, 1))
+                image_chm_initial = torch.tensor(
+                    train_loader.dataset.get_chm_image(dataset_idx)
+                ).permute((2, 0, 1))
+
                 create_bboxes_training_image(
-                    image_rgb=image_rgb[idx],
-                    image_chm=image_chm[idx],
+                    image_rgb=image_rgb_initial,
+                    image_chm=image_chm_initial,
                     pred_bboxes=boxes_per_image[0],
                     pred_labels=classes_per_image[0],
                     pred_scores=scores_per_image[0],
-                    gt_bboxes=gt_bboxes_per_image[idx],
-                    gt_labels=gt_classes_per_image[idx],
+                    gt_bboxes=gt_bboxes_per_image[batch_idx],
+                    gt_labels=gt_classes_per_image[batch_idx],
                     labels_int_to_str=model.class_names,
                     colors_dict=DatasetConst.CLASS_COLORS.value,
                     save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}.png"),

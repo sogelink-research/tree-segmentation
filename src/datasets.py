@@ -197,6 +197,31 @@ def normalize(
     return (image - mean) / std
 
 
+def denormalize(image: torch.Tensor, mean: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
+    if len(image.shape) == 2:
+        image = image.unsqueeze(0)
+
+    channels = image.shape[0]
+
+    def reshape(tensor: torch.Tensor, name: str) -> torch.Tensor:
+        if len(tensor.shape) == 0:
+            tensor = torch.full((channels,), tensor.item())
+        elif len(tensor.shape) == 1 and tensor.shape[0] == 1:
+            tensor = torch.full((channels,), tensor[0].item())
+        elif len(tensor.shape) == 1 and tensor.shape[0] == channels:
+            pass
+        else:
+            raise ValueError(
+                f"Unsupported shape for `{name}`. It should be a tensor or shape [], [1] or [{channels}]"
+            )
+        return tensor.view(-1, 1, 1)
+
+    mean = reshape(mean, "mean").to(image.dtype)
+    std = reshape(std, "std").to(image.dtype)
+
+    return std * image + mean
+
+
 def is_tif_file(file_path: str) -> bool:
     return file_path.lower().endswith((".tif", ".tiff"))
 
@@ -480,6 +505,20 @@ class TreeDataset(Dataset):
         rgb_path = files_paths["rgb"]
         image_rgb = self._read_rgb_image(rgb_path)
         return image_rgb
+
+    def get_chm_image(self, idx: int) -> np.ndarray:
+        """Returns the CHM image corresponding to the index.
+
+        Args:
+            idx (int): index of the data.
+
+        Returns:
+            np.ndarray: CHM image.
+        """
+        files_paths = self.files_paths_list[idx]
+        chm_path = files_paths["chm"]
+        image_chm = self._read_chm_image(chm_path)
+        return image_chm
 
     def get_full_coords_name(self, idx: int) -> str:
         """Returns the full coordinates name of the data corresponding to the image.
