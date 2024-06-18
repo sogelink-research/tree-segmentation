@@ -102,12 +102,13 @@ class TrainingMetrics:
         n_metrics = len(metrics_index)
         scale = max(ceil(n_metrics**0.5), 1)
         nrows = scale
-        ncols = (n_metrics + scale - 1) // scale
+        ncols = max((n_metrics + scale - 1) // scale, 1)
         cmap = plt.get_cmap("tab10")
 
         categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
         legend_space = 10
         figsize = (6 * ncols, 5 * nrows + legend_space)
+        print()
         legend_y_position = legend_space / figsize[1]
 
         for interval, save_path in zip(intervals, save_paths):
