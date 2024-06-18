@@ -302,20 +302,20 @@ def train(
                     preds[idx : idx + 1], iou_threshold=0.5, conf_threshold=0.0, number_best=40
                 )
                 gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
-                    gt_bboxes=gt_bboxes[idx : idx + 1],
-                    gt_classes=gt_classes[idx : idx + 1],
-                    gt_indices=gt_indices[idx : idx + 1],
-                    image_indices=image_indices[idx : idx + 1],
+                    gt_bboxes=gt_bboxes,
+                    gt_classes=gt_classes,
+                    gt_indices=gt_indices,
+                    image_indices=image_indices,
                 )
 
                 create_bboxes_training_image(
-                    image_rgb=image_rgb[idx : idx + 1],
-                    image_chm=image_chm[idx : idx + 1],
+                    image_rgb=image_rgb[idx],
+                    image_chm=image_chm[idx],
                     pred_bboxes=boxes_per_image[0],
                     pred_labels=classes_per_image[0],
                     pred_scores=scores_per_image[0],
-                    gt_bboxes=gt_bboxes_per_image[0],
-                    gt_labels=gt_classes_per_image[0],
+                    gt_bboxes=gt_bboxes_per_image[idx],
+                    gt_labels=gt_classes_per_image[idx],
                     labels_int_to_str=model.class_names,
                     colors_dict=DatasetConst.CLASS_COLORS.value,
                     save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}.png"),
