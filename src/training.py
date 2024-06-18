@@ -250,7 +250,7 @@ def train(
         gt_bboxes: torch.Tensor = data["bboxes"]
         gt_classes: torch.Tensor = data["labels"]
         gt_indices: torch.Tensor = data["indices"]
-        image_indices: torch.Tensor = data["indices"]
+        image_indices: torch.Tensor = data["image_indices"]
 
         image_rgb = image_rgb.to(device, non_blocking=True)
         image_chm = image_chm.to(device, non_blocking=True)
@@ -352,7 +352,7 @@ def validate(
             gt_bboxes: torch.Tensor = data["bboxes"]
             gt_classes: torch.Tensor = data["labels"]
             gt_indices: torch.Tensor = data["indices"]
-            image_indices: torch.Tensor = data["indices"]
+            image_indices: torch.Tensor = data["image_indices"]
 
             image_rgb = image_rgb.to(device, non_blocking=True)
             image_chm = image_chm.to(device, non_blocking=True)
@@ -498,7 +498,7 @@ def compute_all_ap_metrics(
             gt_bboxes: torch.Tensor = data["bboxes"]
             gt_classes: torch.Tensor = data["labels"]
             gt_indices: torch.Tensor = data["indices"]
-            image_indices: torch.Tensor = data["indices"]
+            image_indices: torch.Tensor = data["image_indices"]
 
             image_rgb = image_rgb.to(device, non_blocking=True)
             image_chm = image_chm.to(device, non_blocking=True)
