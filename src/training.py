@@ -166,9 +166,7 @@ class TrainingMetrics:
                     ncol=len(lines),
                 )
 
-            fig.tight_layout(rect=(0.0, legend_y_position, 1.0, 1.0))
-
-            plt.show()
+            # fig.tight_layout(rect=(0.0, legend_y_position, 1.0, 1.0))
 
             if save_path is not None:
                 plt.savefig(save_path, dpi=200)

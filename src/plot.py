@@ -67,9 +67,10 @@ def add_bbox_to_image(
     color: Tuple[int, int, int] = (128, 128, 128),
     lw: int = 2,
 ):
-    lw = 2
     margin_lw = int(np.ceil(lw / 2))
     bbox = box_crop_in_box(bbox, Box(0, 0, image.shape[1], image.shape[0]))
+    if bbox.area == 0:
+        return
     x0, y0, x1, y1 = (
         round(bbox.x_min),
         round(bbox.y_min),
@@ -100,6 +101,8 @@ def add_label_to_image(
     if label is None:
         return
     bbox = box_crop_in_box(bbox, Box(0, 0, image.shape[1], image.shape[0]))
+    if bbox.area == 0:
+        return
     x0, y0, x1, y1 = (
         round(bbox.x_min),
         round(bbox.y_min),

@@ -21,6 +21,7 @@ class Box:
     def __hash__(self) -> int:
         return (self.x_min, self.y_min, self.x_max, self.y_max).__hash__()
 
+    @property
     def area(self) -> float:
         """Returns the area of the box.
 
@@ -79,8 +80,9 @@ class BoxInt(Box):
         self.x_max = round(x_max)
         self.y_max = round(y_max)
 
+    @property
     def area(self) -> int:
-        return round(super().area())
+        return round(super().area)
 
     def as_list(self) -> List[int]:
         return list(map(round, super().as_list()))
@@ -135,9 +137,9 @@ def intersection_ratio(annot: Box, limits: Box) -> float:
     Returns:
         float: (Area of the intersection of annot and limits) / (Area of annot).
     """
-    if annot.area() == 0:
+    if annot.area == 0:
         raise ValueError("The area of annot is 0.")
-    return intersection(annot, limits) / annot.area()
+    return intersection(annot, limits) / annot.area
 
 
 def compute_iou(box1: Box, box2: Box) -> float:
@@ -158,7 +160,7 @@ def compute_iou(box1: Box, box2: Box) -> float:
 
     # Compute the area of the intersection
     inter_area = max(inter_x_max - inter_x_min, 0) * max(inter_y_max - inter_y_min, 0)
-    union_area = box1.area() + box2.area() - inter_area
+    union_area = box1.area + box2.area - inter_area
 
     return inter_area / union_area if union_area > 0 else 0
 
@@ -174,10 +176,10 @@ def box_crop_in_box(to_crop: Box, limits: Box) -> Box:
         Box: box cropped to fit in the limits.
     """
     return Box(
-        x_min=max(to_crop.x_min, limits.x_min),
-        y_min=max(to_crop.y_min, limits.y_min),
-        x_max=min(to_crop.x_max, limits.x_max),
-        y_max=min(to_crop.y_max, limits.y_max),
+        x_min=min(max(to_crop.x_min, limits.x_min), limits.x_max),
+        y_min=min(max(to_crop.y_min, limits.y_min), limits.y_max),
+        x_max=min(max(to_crop.x_max, limits.x_min), limits.x_max),
+        y_max=min(max(to_crop.y_max, limits.y_min), limits.y_max),
     )
 
 
