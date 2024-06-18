@@ -133,6 +133,7 @@ def plot_ap_iou(
     sorted_ap_list: List[float],
     conf_threshold_list: List[float],
     legend_list: List[str],
+    title: Optional[str] = None,
     show: bool = False,
     save_path: str | None = None,
 ):
@@ -157,7 +158,8 @@ def plot_ap_iou(
         plt.xlabel("IoU")
         plt.ylabel("AP")
 
-    plt.title("Sorted AP")
+    title = "Sorted AP curve" if title is None else title
+    plt.title(title)
     plt.tight_layout()
 
     has_legend, _ = plt.gca().get_legend_handles_labels()
@@ -177,8 +179,9 @@ def plot_sap_conf(
     sorted_ap_lists: List[List[float]],
     conf_threshold_lists: List[List[float]],
     legend_list: List[str],
+    title: Optional[str] = None,
     show: bool = False,
-    save_path: str | None = None,
+    save_path: Optional[str] = None,
 ):
     plt.figure(figsize=(10, 6))
 
@@ -193,7 +196,8 @@ def plot_sap_conf(
         plt.xlabel("Confidence threshold")
         plt.ylabel("Sorted AP")
 
-    plt.title("Sorted AP w.r.t the confidence threshold")
+    title = "Sorted AP w.r.t the confidence threshold" if title is None else title
+    plt.title(title)
     plt.tight_layout()
 
     has_legend, _ = plt.gca().get_legend_handles_labels()
@@ -344,7 +348,7 @@ class AP_Metrics_List:
         self.ap_metrics_list.append(ap_metrics)
         self.legend_list.append(legend)
 
-    def plot_ap_iou(self, save_path: str) -> None:
+    def plot_ap_iou(self, save_path: str, title: Optional[str] = None) -> None:
         best_sorted_ious_list = []
         best_aps_list = []
         best_sorted_ap_list = []
@@ -365,10 +369,11 @@ class AP_Metrics_List:
             sorted_ap_list=best_sorted_ap_list,
             conf_threshold_list=best_conf_threshold_list,
             legend_list=self.legend_list,
+            title=title,
             save_path=save_path,
         )
 
-    def plot_sap_conf(self, save_path: str) -> None:
+    def plot_sap_conf(self, save_path: str, title: Optional[str] = None) -> None:
         sorted_ap_lists = []
         conf_threshold_lists = []
 
@@ -380,5 +385,6 @@ class AP_Metrics_List:
             sorted_ap_lists=sorted_ap_lists,
             conf_threshold_lists=conf_threshold_lists,
             legend_list=self.legend_list,
+            title=title,
             save_path=save_path,
         )

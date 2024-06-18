@@ -364,17 +364,16 @@ class ModelSession:
         loaders = [train_loader, val_loader, test_loader]
         loaders_postfix = ["train-set", "val-set", "test-set"]
         loaders_legend = ["Training set", "Validation set", "Test set"]
-        loaders_zip = list(zip(loaders, loaders_postfix, loaders_legend))
+        loaders_zip = zip(loaders, loaders_postfix, loaders_legend)
 
         use_rgbs = [True, False]
         use_chms = [True, False]
 
         iterations = product(use_rgbs, use_chms)
 
-        pbar = tqdm(iterations)
-        for loader, loader_postfix, loader_legend in loaders_zip:
+        for loader, loader_postfix, loader_legend in tqdm(loaders_zip):
             ap_metrics_list = AP_Metrics_List()
-            for use_rgb, use_chm in pbar:
+            for use_rgb, use_chm in tqdm(iterations, leave=False):
                 postfix = "_".join(
                     [loader_postfix, rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)]
                 )
@@ -401,10 +400,12 @@ class ModelSession:
                 ap_metrics_list.add_ap_metrics(ap_metrics, legend=legend)
 
             ap_metrics_list.plot_ap_iou(
-                save_path=os.path.join(model_folder_path, f"ap_iou_{loader_postfix}.png")
+                save_path=os.path.join(model_folder_path, f"ap_iou_{loader_postfix}.png"),
+                title=f"Sorted AP curve on the {loader_legend}",
             )
             ap_metrics_list.plot_sap_conf(
-                save_path=os.path.join(model_folder_path, f"sap_conf_{loader_postfix}.png")
+                save_path=os.path.join(model_folder_path, f"sap_conf_{loader_postfix}.png"),
+                title=f"Sorted AP w.r.t the confidence threshold on the {loader_legend}",
             )
 
     @staticmethod
@@ -451,7 +452,7 @@ def main():
     # Training parameters
 
     lr = 1e-2
-    epochs = 10
+    epochs = 1
     batch_size = 10
     num_workers = 0
     accumulate = 10

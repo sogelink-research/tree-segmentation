@@ -115,13 +115,14 @@ class TrainingMetrics:
         cmap = plt.get_cmap("tab10")
 
         categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
-        legend_space = 1.5
-        figsize = (4 * ncols, 3 * nrows + legend_space)
+        legend_space = 1
+        figsize = (7 * ncols, 5 * nrows + legend_space)
         legend_y_position = legend_space / figsize[1]
 
         for interval, save_path in zip(intervals, save_paths):
             self._create_fig_num()
             fig = plt.figure(self.fig_num, figsize=figsize)
+            plt.clf()
 
             for metric_name, metric_dict in self.metrics.items():
                 index = metrics_index[metric_name]
@@ -443,7 +444,7 @@ def rgb_chm_usage_legend(use_rgb: bool, use_chm: bool):
 
 def predict_to_geojson(
     model: AMF_GD_YOLOv8,
-    test_loader: TreeDataLoader,
+    data_loader: TreeDataLoader,
     device: torch.device,
     save_path: str,
     use_rgb: bool = True,
@@ -452,7 +453,7 @@ def predict_to_geojson(
     model.eval()
     geojson_outputs: List[geojson.FeatureCollection] = []
     with torch.no_grad():
-        for data in tqdm(test_loader, leave=False, desc="Exporting output"):
+        for data in tqdm(data_loader, leave=False, desc="Exporting output"):
             # Get data
             image_rgb: torch.Tensor = data["image_rgb"]
             if not use_rgb:
@@ -476,8 +477,8 @@ def predict_to_geojson(
             for idx, bboxes, scores, classes_as_strs in zip(
                 idx_all, bboxes_list, scores_list, classes_as_strs_list
             ):
-                full_image_name = test_loader.dataset.get_full_image_name(idx)
-                cropped_coords_name = test_loader.dataset.get_cropped_coords_name(idx)
+                full_image_name = data_loader.dataset.get_full_image_name(idx)
+                cropped_coords_name = data_loader.dataset.get_cropped_coords_name(idx)
                 geojson_features = create_geojson_output(
                     full_image_name=full_image_name,
                     cropped_coords_name=cropped_coords_name,
