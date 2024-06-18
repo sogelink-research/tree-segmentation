@@ -496,7 +496,6 @@ class AMF_GD_YOLOv8(nn.Module):
     @staticmethod
     def get_folder_path_from_name(model_name: str | None = None) -> str:
         model_folder_path = os.path.join(Folders.MODELS_AMF_GD_YOLOV8.value, f"{model_name}")
-        create_folder(model_folder_path)
         return model_folder_path
 
     @staticmethod
@@ -518,6 +517,7 @@ class AMF_GD_YOLOv8(nn.Module):
             model_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
 
         model_name = AMF_GD_YOLOv8._get_name(index - 1, epochs, postfix)
+        create_folder(AMF_GD_YOLOv8.get_folder_path_from_name(model_name))
         return model_name
 
     @staticmethod
