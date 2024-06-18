@@ -111,8 +111,7 @@ class TrainingMetrics:
         legend_y_position = legend_space / figsize[1]
 
         for interval, save_path in zip(intervals, save_paths):
-            plt.clf()
-            fig = plt.figure(1, figsize=figsize)
+            fig = plt.figure(figsize=figsize)
 
             for metric_name, metric_dict in self.metrics.items():
                 index = metrics_index[metric_name]
@@ -294,7 +293,6 @@ def train(
             )
 
             dataset_idx = 42
-            print(f"{image_indices.tolist() = }")
             if dataset_idx in image_indices.tolist():
                 batch_idx = image_indices.tolist().index(dataset_idx)
 
@@ -311,10 +309,6 @@ def train(
                     image_indices=image_indices,
                 )
 
-                print(f"{train_loader.dataset.get_rgb_image(dataset_idx).dtype = }")
-                print(
-                    f"{torch.tensor(train_loader.dataset.get_rgb_image(dataset_idx)).permute((2, 0, 1)).dtype = }"
-                )
                 image_rgb_initial = torch.tensor(
                     train_loader.dataset.get_rgb_image(dataset_idx)
                 ).permute((2, 0, 1))

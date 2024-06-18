@@ -203,18 +203,10 @@ def create_bboxes_training_image(
             f"The number of dimensions of image_rgb should be a multiple of 3, not {dimensions}"
         )
 
-    print(f"{image_rgb.shape = }")
-    print(f"{image_rgb.dtype = }")
-
     images = [
         image_rgb[idx : idx + 3].cpu().detach().numpy().transpose((1, 2, 0))
         for idx in range(0, dimensions, 3)
     ]
-
-    print(f"{images[0].shape = }")
-    axis = (0, 1)
-    print(f"{np.amin(images[0], axis=axis) = }")
-    print(f"{np.amax(images[0], axis=axis) = }")
 
     number_images = len(images)
 
@@ -224,8 +216,7 @@ def create_bboxes_training_image(
     nrows = number_images
     ncols = 2
     figsize = (5 * ncols, 6 * nrows)
-    plt.clf()
-    fig = plt.figure(1, figsize=figsize)
+    fig = plt.figure(figsize=figsize)
 
     for index, image in enumerate(images):
         image_pred_boxes = create_bboxes_image(

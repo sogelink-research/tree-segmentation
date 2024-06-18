@@ -131,7 +131,7 @@ def main():
     images, images_transformed = split_images(images, images_transformed, types)
 
     # Plot images
-    fig = plt.figure(1, figsize=(19, 11))
+    fig = plt.figure(figsize=(19, 11))
     scale = ceil((len(images)) ** 0.5)
     nrows = scale
     ncols = 2 * scale
