@@ -208,15 +208,14 @@ def get_perfect_preds(
         for cls in extracted_classes
     ]
     print(f"{len(extracted_bboxes[0]) = }")
-    print(f"{torch.cat(extracted_bboxes[0], dim=-1).shape = }")
-    print(f"{torch.cat(extracted_bboxes[0], dim=1).shape = }")
+    print(f"{torch.stack(extracted_bboxes[0], dim=0).shape = }")
     print(f"{extracted_bboxes[0][0].shape = }")
     print(f"{extracted_scores[0].shape = }")
     print(
-        f"{torch.cat((torch.cat(extracted_bboxes[0], dim=-1), extracted_scores[0]), dim=1).shape = }"
+        f"{torch.cat((torch.stack(extracted_bboxes[0], dim=0), extracted_scores[0]), dim=1).shape = }"
     )
     perfect_preds = [
-        torch.cat((torch.cat(bboxes, dim=0), scores), dim=1).permute((1, 0)).unsqueeze(0)
+        torch.cat((torch.stack(bboxes, dim=0), scores), dim=1).permute((1, 0)).unsqueeze(0)
         for bboxes, scores in zip(extracted_bboxes, extracted_scores)
     ]
     print(f"{perfect_preds[0].shape = }")
