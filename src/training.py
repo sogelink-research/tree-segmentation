@@ -211,16 +211,17 @@ def get_perfect_preds(
         torch.cat((torch.stack(bboxes, dim=0), scores), dim=1).unsqueeze(0)
         for bboxes, scores in zip(extracted_bboxes, extracted_scores)
     ]
+    print(f"{perfect_preds[0].shape = }")
     perfect_preds = torch.cat(
         [
             torch.cat(
                 (
                     pred,
-                    torch.zeros((pred.shape[0], 8400 - pred.shape[1], pred.shape[2])).to(
+                    torch.zeros((pred.shape[0], pred.shape[1], 8400 - pred.shape[2])).to(
                         pred.device
                     ),
                 ),
-                dim=1,
+                dim=2,
             )
             for pred in perfect_preds
         ]
