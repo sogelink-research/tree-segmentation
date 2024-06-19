@@ -14,6 +14,7 @@ import torch
 import torch.nn as nn
 from IPython import display
 from ipywidgets import Output
+from ultralytics.utils.tal import make_anchors
 
 from dataloaders import TreeDataLoader, convert_ground_truth_from_tensors
 from dataset_constants import DatasetConst
@@ -189,12 +190,18 @@ class TrainingMetrics:
 
 
 def get_perfect_preds(
+    model: AMF_GD_YOLOv8,
+    output: List[torch.Tensor],
     gt_bboxes: torch.Tensor,
     gt_classes: torch.Tensor,
     gt_indices: torch.Tensor,
     batch_size: int,
     num_classes: int,
 ) -> torch.Tensor:
+    anchor_points, stride_tensor = make_anchors(output, model.criterion.stride, 0.5)
+    print(f"{anchor_points = }")
+    print(f"{stride_tensor = }")
+
     device = gt_bboxes.device
     extracted_bboxes: List[List[torch.Tensor]] = [[]] * batch_size
     extracted_classes: List[List[torch.Tensor]] = [[]] * batch_size
@@ -298,7 +305,7 @@ def train(
         with torch.no_grad():
             # Try the perfect output
             perfect_preds = get_perfect_preds(
-                gt_bboxes, gt_classes, gt_indices, batch_size, len(model.class_names)
+                model, output, gt_bboxes, gt_classes, gt_indices, batch_size, len(model.class_names)
             )
             total_loss_perf, loss_dict_perf = model.compute_loss_from_preds(
                 output, perfect_preds, gt_bboxes, gt_classes, gt_indices
