@@ -208,6 +208,7 @@ def get_perfect_preds(
         for cls in extracted_classes
     ]
     print(f"{len(extracted_bboxes[0]) = }")
+    print(f"{torch.cat(extracted_bboxes[0], dim=0).shape = }")
     print(f"{extracted_bboxes[0][0].shape = }")
     print(f"{extracted_scores[0].shape = }")
     perfect_preds = [
