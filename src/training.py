@@ -193,22 +193,24 @@ def get_perfect_preds(
     gt_classes: torch.Tensor,
     gt_indices: torch.Tensor,
     batch_size: int,
+    num_classes: int,
 ) -> torch.Tensor:
-    extracted_bboxes = [[]] * batch_size
-    extracted_classes = [[]] * batch_size
+    extracted_bboxes: List[List[torch.Tensor]] = [[]] * batch_size
+    extracted_classes: List[List[torch.Tensor]] = [[]] * batch_size
     for bbox_idx, image_idx in enumerate(gt_indices):
         slice_bboxes = gt_bboxes[bbox_idx]
         extracted_bboxes[image_idx].append(slice_bboxes)
         slice_classes = gt_classes[bbox_idx].long()
         extracted_classes[image_idx].append(slice_classes)
     extracted_scores = [
-        20 * nn.functional.one_hot(torch.tensor(cls), num_classes=5) - 0.5
+        20 * nn.functional.one_hot(torch.tensor(cls), num_classes=num_classes) - 0.5
         for cls in extracted_classes
     ]
     perfect_preds = [
-        torch.cat((torch.tensor(bboxes), scores), dim=1).permute((1, 0)).unsqueeze(0)
+        torch.cat((torch.cat(bboxes, dim=0), scores), dim=1).permute((1, 0)).unsqueeze(0)
         for bboxes, scores in zip(extracted_bboxes, extracted_scores)
     ]
+    print(f"{perfect_preds[0].shape = }")
     perfect_preds = torch.cat(
         [
             torch.cat(
@@ -223,6 +225,7 @@ def get_perfect_preds(
             for pred in perfect_preds
         ]
     )
+    print(f"{perfect_preds.shape = }")
     return perfect_preds
 
 
@@ -295,7 +298,9 @@ def train(
 
         with torch.no_grad():
             # Try the perfect output
-            perfect_preds = get_perfect_preds(gt_bboxes, gt_classes, gt_indices, batch_size)
+            perfect_preds = get_perfect_preds(
+                gt_bboxes, gt_classes, gt_indices, batch_size, len(model.class_names)
+            )
             total_loss_perf, loss_dict_perf = model.compute_loss_from_preds(
                 output, perfect_preds, gt_bboxes, gt_classes, gt_indices
             )
