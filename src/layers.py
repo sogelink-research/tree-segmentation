@@ -591,6 +591,8 @@ class TrainingLoss(v8DetectionLoss):
         pred_scores = pred_scores.permute(0, 2, 1).contiguous()
         pred_distri = pred_distri.permute(0, 2, 1).contiguous()
 
+        print(f"{pred_distri.shape = }")
+
         dtype = pred_scores.dtype
         batch_size = pred_scores.shape[0]
         imgsz = (
@@ -670,6 +672,8 @@ class TrainingLoss(v8DetectionLoss):
             [xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2
         ).split((self.reg_max * 4, self.nc), 1)
 
+        print(f"{torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).shape = }")
+
         pred_scores = pred_scores.permute(0, 2, 1).contiguous()
         pred_distri = pred_distri.permute(0, 2, 1).contiguous()
 
@@ -703,18 +707,9 @@ class TrainingLoss(v8DetectionLoss):
         # # Pboxes
         # pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
 
-        # _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
-        #     pred_scores.detach().sigmoid(),
-        #     (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
-        #     anchor_points * stride_tensor,
-        #     gt_labels,
-        #     gt_bboxes,
-        #     mask_gt,
-        # )
-
         _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
             pred_scores.detach().sigmoid(),
-            (pred_bboxes.detach()).type(gt_bboxes.dtype),
+            (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
             anchor_points * stride_tensor,
             gt_labels,
             gt_bboxes,

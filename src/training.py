@@ -204,7 +204,7 @@ def get_perfect_preds(
         slice_classes = gt_classes[bbox_idx].long()
         extracted_classes[image_idx].append(slice_classes)
     extracted_scores = [
-        20 * nn.functional.one_hot(torch.tensor(cls), num_classes=num_classes).to(device) - 0.5
+        20 * (nn.functional.one_hot(torch.tensor(cls), num_classes=num_classes).to(device) - 0.5)
         for cls in extracted_classes
     ]
     perfect_preds = [
@@ -227,7 +227,7 @@ def get_perfect_preds(
         ]
     )
     print(f"{perfect_preds.shape = }")
-    return perfect_preds
+    return perfect_preds / 8.0
 
 
 def print_current_memory():
