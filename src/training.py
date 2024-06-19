@@ -191,7 +191,7 @@ class TrainingMetrics:
 
 def dist2bbox(distance, anchor_points, xywh=True, dim=-1):
     """Transform distance(ltrb) to box(xywh or xyxy)."""
-    print(f"100 {distance.shape = }")
+    # print(f"100 {distance.shape = }")
     lt, rb = distance.chunk(2, dim)
     x1y1 = anchor_points - lt
     x2y2 = anchor_points + rb
@@ -199,15 +199,15 @@ def dist2bbox(distance, anchor_points, xywh=True, dim=-1):
         c_xy = (x1y1 + x2y2) / 2
         wh = x2y2 - x1y1
         return torch.cat((c_xy, wh), dim)  # xywh bbox
-    print(f"101 {torch.cat((x1y1, x2y2), dim).shape = }")
+    # print(f"101 {torch.cat((x1y1, x2y2), dim).shape = }")
     return torch.cat((x1y1, x2y2), dim)  # xyxy bbox
 
 
 def bbox2dist(anchor_points, bbox, reg_max):
     """Transform bbox(xyxy) to dist(ltrb)."""
-    print(f"010 {bbox.shape = }")
+    # print(f"010 {bbox.shape = }")
     x1y1, x2y2 = bbox.chunk(2, -1)
-    print(f"011 {torch.cat((anchor_points - x1y1, x2y2 - anchor_points), -1).clamp_(0, reg_max - 0.01).shape = }")
+    # print(f"011 {torch.cat((anchor_points - x1y1, x2y2 - anchor_points), -1).clamp_(0, reg_max - 0.01).shape = }")
     return torch.cat((anchor_points - x1y1, x2y2 - anchor_points), -1).clamp_(0, reg_max - 0.01)  # dist (lt, rb)
 
 def bbox_decode(anchor_points, pred_dist, use_dfl, proj):
@@ -387,6 +387,7 @@ def train(
             )
             
             perfect_distri = bbox_encode(model=model, output=output, pred_bboxes=perfect_preds)
+            perfect_distri = perfect_distri.permute(0, 2, 1).contiguous()
             total_loss_perf, loss_dict_perf = model.compute_loss_from_preds(
                 output, perfect_distri, perfect_preds, gt_bboxes, gt_classes, gt_indices
             )
