@@ -18,7 +18,7 @@ dependencies:
   # Pytorch
   - pytorch>=2.3.0
   - torchvision>=0.18.0
-  - pytorch-cuda=11.8
+  - pytorch-cuda>=11.8
   # - torchinfo
 
   # Deep Learning
