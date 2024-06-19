@@ -595,11 +595,15 @@ class TrainingLoss(v8DetectionLoss):
         targets = self.preprocess(
             targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]]
         )
+
+        print(f"{targets.shape = }")
+
         gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
         mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)
 
         # Pboxes
         pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
+        print(f"{pred_bboxes.shape = }")
 
         _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
             pred_scores.detach().sigmoid(),
