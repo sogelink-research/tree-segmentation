@@ -481,6 +481,17 @@ class AMF_GD_YOLOv8(nn.Module):
         batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
         return self.criterion(output, batch)
 
+    def compute_loss_from_preds(
+        self,
+        output: List[torch.Tensor],
+        preds: torch.Tensor,
+        gt_bboxes: torch.Tensor,
+        gt_classes: torch.Tensor,
+        gt_indices: torch.Tensor,
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
+        return self.criterion.loss_from_preds(output, preds, batch)
+
     def save_weights(self, epoch: Optional[int] = None) -> None:
         model_weights_path = self.weights_path(epoch)
         state_dict = self.state_dict()
@@ -569,11 +580,89 @@ class TrainingLoss(v8DetectionLoss):
         return out
 
     def __call__(
-        self, preds: List[torch.Tensor], batch: Dict[str, torch.Tensor]
+        self, output: List[torch.Tensor], batch: Dict[str, torch.Tensor]
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
         loss = torch.zeros(3, device=self.device)  # box, cls, dfl
-        feats = preds[1] if isinstance(preds, tuple) else preds
+        pred_distri, pred_scores = torch.cat(
+            [xi.view(output[0].shape[0], self.no, -1) for xi in output], 2
+        ).split((self.reg_max * 4, self.nc), 1)
+
+        pred_scores = pred_scores.permute(0, 2, 1).contiguous()
+        pred_distri = pred_distri.permute(0, 2, 1).contiguous()
+
+        dtype = pred_scores.dtype
+        batch_size = pred_scores.shape[0]
+        imgsz = (
+            torch.tensor(output[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]
+        )  # image size (h,w)
+        anchor_points, stride_tensor = make_anchors(output, self.stride, 0.5)
+
+        # Targets
+        targets = torch.cat(
+            (batch["batch_idx"].view(-1, 1), batch["cls"].view(-1, 1), batch["bboxes"]), 1
+        )
+        targets = self.preprocess(
+            targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]]
+        )
+
+        print(f"{targets.shape = }")
+
+        gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
+        mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)
+
+        # Pboxes
+        pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
+        print(f"{pred_bboxes.shape = }")
+
+        _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
+            pred_scores.detach().sigmoid(),
+            (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
+            anchor_points * stride_tensor,
+            gt_labels,
+            gt_bboxes,
+            mask_gt,
+        )
+
+        target_scores_sum = max(target_scores.sum(), torch.tensor(1))
+
+        # Cls loss
+        # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
+        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+
+        # Bbox loss
+        if fg_mask.sum():
+            target_bboxes /= stride_tensor
+            loss[0], loss[2] = self.bbox_loss(
+                pred_distri,
+                pred_bboxes,
+                anchor_points,
+                target_bboxes,
+                target_scores,
+                target_scores_sum,
+                fg_mask,
+            )
+
+        loss[0] *= self.hyp.box  # box gain
+        loss[1] *= self.hyp.cls  # cls gain
+        loss[2] *= self.hyp.dfl  # dfl gain
+
+        total_loss = loss.sum() * batch_size
+        loss_items = loss.detach()  # loss(box, cls, dfl)
+
+        loss_dict = {
+            "Box Loss": batch_size * loss_items[0],
+            "Class Loss": batch_size * loss_items[1],
+            "Dual Focal Loss": batch_size * loss_items[2],
+        }
+        return total_loss, loss_dict
+
+    def loss_from_preds(
+        self, output: List[torch.Tensor], preds: torch.Tensor, batch: Dict[str, torch.Tensor]
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
+        loss = torch.zeros(3, device=self.device)  # box, cls, dfl
+        feats = output
         pred_distri, pred_scores = torch.cat(
             [xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2
         ).split((self.reg_max * 4, self.nc), 1)
@@ -596,14 +685,17 @@ class TrainingLoss(v8DetectionLoss):
             targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]]
         )
 
-        print(f"{targets.shape = }")
-
         gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
         mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)
 
         # Pboxes
         pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
+
+        ###### Modified ######
+        pred_bboxes, pred_scores = preds.split((4, self.nc), 2)
         print(f"{pred_bboxes.shape = }")
+        print(f"{pred_scores.shape = }")
+        ###### Modified ######
 
         _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
             pred_scores.detach().sigmoid(),
