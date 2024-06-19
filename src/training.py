@@ -207,6 +207,9 @@ def get_perfect_preds(
         20 * nn.functional.one_hot(torch.tensor(cls), num_classes=num_classes).to(device) - 0.5
         for cls in extracted_classes
     ]
+    print(f"{len(extracted_bboxes[0]) = }")
+    print(f"{extracted_bboxes[0][0].shape = }")
+    print(f"{extracted_scores[0].shape = }")
     perfect_preds = [
         torch.cat((torch.cat(bboxes, dim=0), scores), dim=1).permute((1, 0)).unsqueeze(0)
         for bboxes, scores in zip(extracted_bboxes, extracted_scores)
