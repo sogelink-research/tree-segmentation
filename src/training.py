@@ -189,8 +189,18 @@ class TrainingMetrics:
                 display.clear_output(wait=True)
 
 
-def bbox_encode(anchor_points: torch.Tensor):
-    raise NotImplementedError()
+def bbox_encode(model: AMF_GD_YOLOv8, output: List[torch.Tensor], anchor_points: torch.Tensor):
+
+    bboxes = ...
+    anchor_points, stride_tensor = make_anchors(output, model.criterion.stride, 0.5)
+    pred_dist = bbox2dist(anchor_points=anchor_points, bbox=bboxes, reg_max=model.criterion.reg_max)
+    if model.criterion.use_dfl:
+        proj_inv = 1 / model.criterion.proj
+        b, a, _, c_over_4 = pred_dist.shape  # batch, anchors, 4, channels // 4
+        pred_dist = pred_dist.matmul(proj_inv.type(pred_dist.dtype))
+        logits = torch.log(pred_dist)
+        pred_dist = logits - torch.logsumexp(logits, dim=0)
+        pred_dist.view(b, a, c_over_4 * 4)
 
 
 def get_perfect_preds(
