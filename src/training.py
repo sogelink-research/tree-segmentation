@@ -303,6 +303,28 @@ def train(
             total_loss_perf, loss_dict_perf = model.compute_loss_from_preds(
                 output, perfect_preds, gt_bboxes, gt_classes, gt_indices
             )
+
+            gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
+                gt_bboxes=gt_bboxes,
+                gt_classes=gt_classes,
+                gt_indices=gt_indices,
+                image_indices=image_indices,
+            )
+
+            print(f"{gt_bboxes_per_image[0] = }")
+            print(f"{gt_classes_per_image[0] = }")
+
+            batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
+            targets = torch.cat(
+                (batch["batch_idx"].view(-1, 1), batch["cls"].view(-1, 1), batch["bboxes"]), 1
+            )
+            targets = model.criterion.preprocess(
+                targets.to(model.criterion.device), batch_size, scale_tensor=None
+            )
+            extracted_gt_labels, extracted_gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
+            print(f"{extracted_gt_bboxes[0] = }")
+            print(f"{extracted_gt_labels[0] = }")
+
             training_metrics.update(
                 "Perfect predictions",
                 "Total Loss",
