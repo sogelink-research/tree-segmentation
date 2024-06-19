@@ -614,6 +614,11 @@ class TrainingLoss(v8DetectionLoss):
         # Pboxes
         pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
         print(f"{pred_bboxes.shape = }")
+        print(f"{torch.min(pred_bboxes) = }")
+        print(f"{torch.max(pred_bboxes) = }")
+
+        print(f"{torch.min(pred_bboxes.detach() * stride_tensor) = }")
+        print(f"{torch.max(pred_bboxes.detach() * stride_tensor) = }")
 
         _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
             pred_scores.detach().sigmoid(),
