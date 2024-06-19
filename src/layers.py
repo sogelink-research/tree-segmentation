@@ -576,7 +576,7 @@ class TrainingLoss(v8DetectionLoss):
                 n = matches.sum()
                 if n:
                     out[j, :n] = targets[matches, 1:]
-            out[..., 1:5] = xywh2xyxy(out[..., 1:5].mul_(scale_tensor))  # Original line
+            # out[..., 1:5] = xywh2xyxy(out[..., 1:5].mul_(scale_tensor))  # Original line
         return out
 
     def __call__(
@@ -695,6 +695,7 @@ class TrainingLoss(v8DetectionLoss):
         pred_bboxes, pred_scores = preds.split((4, self.nc), 2)
         print(f"{pred_bboxes.shape = }")
         print(f"{pred_scores.shape = }")
+        print(f"{imgsz = }")
         ###### Modified ######
 
         _, target_bboxes, target_scores, fg_mask, _ = self.assigner(

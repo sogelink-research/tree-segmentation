@@ -274,8 +274,6 @@ def train(
 
         # Compute the model output
         output = model.forward(image_rgb, image_chm)
-        print(f"{len(output) = }")
-        print(f"{output[0].shape = }")
 
         # Compute the loss
         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
@@ -305,7 +303,7 @@ def train(
                 output, perfect_preds, gt_bboxes, gt_classes, gt_indices
             )
             training_metrics.update(
-                "Perfect output",
+                "Perfect predictions",
                 "Total Loss",
                 total_loss_perf.item(),
                 count=batch_size,
@@ -313,7 +311,7 @@ def train(
             )
             for key, value in loss_dict_perf.items():
                 training_metrics.update(
-                    "Perfect output", key, value.item(), count=batch_size, y_axis="Loss"
+                    "Perfect predictions", key, value.item(), count=batch_size, y_axis="Loss"
                 )
 
         # Compute the AP metrics
