@@ -697,6 +697,10 @@ class TrainingLoss(v8DetectionLoss):
         gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
         mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)
 
+        print(f"{stride_tensor.shape = }")
+        print(f"{torch.min(stride_tensor) = }")
+        print(f"{torch.max(stride_tensor) = }")
+
         print(f"{torch.min(gt_bboxes) = }")
         print(f"{torch.max(gt_bboxes) = }")
         print(f"{torch.min(gt_labels) = }")
