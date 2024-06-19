@@ -584,21 +584,20 @@ class TrainingLoss(v8DetectionLoss):
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
         loss = torch.zeros(3, device=self.device)  # box, cls, dfl
+        feats = output
         pred_distri, pred_scores = torch.cat(
-            [xi.view(output[0].shape[0], self.no, -1) for xi in output], 2
+            [xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2
         ).split((self.reg_max * 4, self.nc), 1)
 
         pred_scores = pred_scores.permute(0, 2, 1).contiguous()
         pred_distri = pred_distri.permute(0, 2, 1).contiguous()
 
-        print(f"{pred_distri.shape = }")
-
         dtype = pred_scores.dtype
         batch_size = pred_scores.shape[0]
         imgsz = (
-            torch.tensor(output[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]
+            torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]
         )  # image size (h,w)
-        anchor_points, stride_tensor = make_anchors(output, self.stride, 0.5)
+        anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
 
         # Targets
         targets = torch.cat(
@@ -607,18 +606,11 @@ class TrainingLoss(v8DetectionLoss):
         targets = self.preprocess(
             targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]]
         )
-
         gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
         mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)
 
         # Pboxes
         pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
-        print(f"{pred_bboxes.shape = }")
-        print(f"{torch.min(pred_bboxes) = }")
-        print(f"{torch.max(pred_bboxes) = }")
-
-        print(f"{torch.min(pred_bboxes.detach() * stride_tensor) = }")
-        print(f"{torch.max(pred_bboxes.detach() * stride_tensor) = }")
 
         _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
             pred_scores.detach().sigmoid(),

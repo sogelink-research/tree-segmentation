@@ -302,49 +302,49 @@ def train(
         for key, value in loss_dict.items():
             training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
 
-        with torch.no_grad():
-            # Try the perfect output
-            perfect_preds = get_perfect_preds(
-                model, output, gt_bboxes, gt_classes, gt_indices, batch_size, len(model.class_names)
-            )
-            total_loss_perf, loss_dict_perf = model.compute_loss_from_preds(
-                output, perfect_preds, gt_bboxes, gt_classes, gt_indices
-            )
+        # with torch.no_grad():
+        #     # Try the perfect output
+        #     perfect_preds = get_perfect_preds(
+        #         model, output, gt_bboxes, gt_classes, gt_indices, batch_size, len(model.class_names)
+        #     )
+        #     total_loss_perf, loss_dict_perf = model.compute_loss_from_preds(
+        #         output, perfect_preds, gt_bboxes, gt_classes, gt_indices
+        #     )
 
-            # gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
-            #     gt_bboxes=gt_bboxes,
-            #     gt_classes=gt_classes,
-            #     gt_indices=gt_indices,
-            #     image_indices=image_indices,
-            # )
+        #     # gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
+        #     #     gt_bboxes=gt_bboxes,
+        #     #     gt_classes=gt_classes,
+        #     #     gt_indices=gt_indices,
+        #     #     image_indices=image_indices,
+        #     # )
 
-            # print(f"{gt_bboxes_per_image[0] = }")
-            # print(f"{gt_classes_per_image[0] = }")
+        #     # print(f"{gt_bboxes_per_image[0] = }")
+        #     # print(f"{gt_classes_per_image[0] = }")
 
-            # batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
-            # targets = torch.cat(
-            #     (batch["batch_idx"].view(-1, 1), batch["cls"].view(-1, 1), batch["bboxes"]), 1
-            # )
-            # targets = model.criterion.preprocess(
-            #     targets.to(model.criterion.device), batch_size, scale_tensor=None
-            # )
-            # extracted_gt_labels, extracted_gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
-            # extracted_mask_gt = extracted_gt_bboxes.sum(2, keepdim=True).gt_(0)
-            # print(f"{extracted_gt_bboxes[0] = }")
-            # print(f"{extracted_gt_labels[0] = }")
-            # print(f"{extracted_mask_gt[0] = }")
+        #     # batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
+        #     # targets = torch.cat(
+        #     #     (batch["batch_idx"].view(-1, 1), batch["cls"].view(-1, 1), batch["bboxes"]), 1
+        #     # )
+        #     # targets = model.criterion.preprocess(
+        #     #     targets.to(model.criterion.device), batch_size, scale_tensor=None
+        #     # )
+        #     # extracted_gt_labels, extracted_gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
+        #     # extracted_mask_gt = extracted_gt_bboxes.sum(2, keepdim=True).gt_(0)
+        #     # print(f"{extracted_gt_bboxes[0] = }")
+        #     # print(f"{extracted_gt_labels[0] = }")
+        #     # print(f"{extracted_mask_gt[0] = }")
 
-            training_metrics.update(
-                "Perfect predictions",
-                "Total Loss",
-                total_loss_perf.item(),
-                count=batch_size,
-                y_axis="Loss",
-            )
-            for key, value in loss_dict_perf.items():
-                training_metrics.update(
-                    "Perfect predictions", key, value.item(), count=batch_size, y_axis="Loss"
-                )
+        #     training_metrics.update(
+        #         "Perfect predictions",
+        #         "Total Loss",
+        #         total_loss_perf.item(),
+        #         count=batch_size,
+        #         y_axis="Loss",
+        #     )
+        #     for key, value in loss_dict_perf.items():
+        #         training_metrics.update(
+        #             "Perfect predictions", key, value.item(), count=batch_size, y_axis="Loss"
+        #         )
 
         # Compute the AP metrics
         with torch.no_grad():
@@ -358,7 +358,7 @@ def train(
                 image_indices=image_indices,
             )
 
-            if epoch % 20 == 0:
+            if epoch % 5 == 0:
                 dataset_idx = 42
                 if dataset_idx in image_indices.tolist():
                     batch_idx = image_indices.tolist().index(dataset_idx)
@@ -412,6 +412,7 @@ def validate(
     model: AMF_GD_YOLOv8,
     device: torch.device,
     training_metrics: TrainingMetrics,
+    epoch: int,
 ) -> float:
     # AP metrics
     thresholds_low = np.power(10, np.linspace(-4, -1, 10))
@@ -464,6 +465,48 @@ def validate(
                 gt_indices=gt_indices,
                 image_indices=image_indices,
             )
+
+        # Compute the AP metrics
+        with torch.no_grad():
+            if epoch % 5 == 0:
+                dataset_idx = 42
+                if dataset_idx in image_indices.tolist():
+                    batch_idx = image_indices.tolist().index(dataset_idx)
+
+                    bboxes_per_image, scores_per_image, classes_per_image = (
+                        model.predict_from_preds(
+                            preds[batch_idx : batch_idx + 1],
+                            iou_threshold=0.5,
+                            conf_threshold=0.0,
+                            number_best=40,
+                        )
+                    )
+                    gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
+                        gt_bboxes=gt_bboxes,
+                        gt_classes=gt_classes,
+                        gt_indices=gt_indices,
+                        image_indices=image_indices,
+                    )
+
+                    image_rgb_initial = torch.tensor(
+                        val_loader.dataset.get_rgb_image(dataset_idx)
+                    ).permute((2, 0, 1))
+                    image_chm_initial = torch.tensor(
+                        val_loader.dataset.get_chm_image(dataset_idx)
+                    ).permute((2, 0, 1))
+
+                    create_bboxes_training_image(
+                        image_rgb=image_rgb_initial,
+                        image_chm=image_chm_initial,
+                        pred_bboxes=bboxes_per_image[0],
+                        pred_labels=classes_per_image[0],
+                        pred_scores=scores_per_image[0],
+                        gt_bboxes=gt_bboxes_per_image[batch_idx],
+                        gt_labels=gt_classes_per_image[batch_idx],
+                        labels_int_to_str=model.class_names,
+                        colors_dict=DatasetConst.CLASS_COLORS.value,
+                        save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}.png"),
+                    )
 
     _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
     training_metrics.update("Validation", "Best sortedAP", sorted_ap, y_axis="sortedAP")
@@ -677,7 +720,7 @@ def train_and_validate(
             epoch=epoch,
         )
 
-        current_loss = validate(val_loader, model, device, training_metrics)
+        current_loss = validate(val_loader, model, device, training_metrics, epoch=epoch)
         scheduler.step()
 
         if epoch >= skip_until:
