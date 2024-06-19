@@ -216,11 +216,11 @@ def get_perfect_preds(
             torch.cat(
                 (
                     pred,
-                    torch.zeros((pred.shape[0], pred.shape[1], 8400 - pred.shape[2])).to(
+                    torch.zeros((pred.shape[0], 8400 - pred.shape[1], pred.shape[2])).to(
                         pred.device
                     ),
                 ),
-                dim=2,
+                dim=1,
             )
             for pred in perfect_preds
         ]
