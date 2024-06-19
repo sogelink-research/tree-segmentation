@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 from IPython import display
 from ipywidgets import Output
-from ultralytics.utils.tal import make_anchors
+from ultralytics.utils.tal import bbox2dist, make_anchors
 
 from dataloaders import TreeDataLoader, convert_ground_truth_from_tensors
 from dataset_constants import DatasetConst
@@ -189,6 +189,10 @@ class TrainingMetrics:
                 display.clear_output(wait=True)
 
 
+def bbox_encode(anchor_points: torch.Tensor):
+    raise NotImplementedError()
+
+
 def get_perfect_preds(
     model: AMF_GD_YOLOv8,
     output: List[torch.Tensor],
@@ -234,7 +238,7 @@ def get_perfect_preds(
         ]
     )
     print(f"{perfect_preds.shape = }")
-    return perfect_preds / 8.0
+    return perfect_preds
 
 
 def print_current_memory():
