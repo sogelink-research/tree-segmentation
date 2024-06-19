@@ -195,6 +195,7 @@ def get_perfect_preds(
     batch_size: int,
     num_classes: int,
 ) -> torch.Tensor:
+    device = gt_bboxes.device
     extracted_bboxes: List[List[torch.Tensor]] = [[]] * batch_size
     extracted_classes: List[List[torch.Tensor]] = [[]] * batch_size
     for bbox_idx, image_idx in enumerate(gt_indices):
@@ -203,7 +204,7 @@ def get_perfect_preds(
         slice_classes = gt_classes[bbox_idx].long()
         extracted_classes[image_idx].append(slice_classes)
     extracted_scores = [
-        20 * nn.functional.one_hot(torch.tensor(cls), num_classes=num_classes) - 0.5
+        20 * nn.functional.one_hot(torch.tensor(cls), num_classes=num_classes).to(device) - 0.5
         for cls in extracted_classes
     ]
     perfect_preds = [
