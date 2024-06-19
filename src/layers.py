@@ -668,9 +668,8 @@ class TrainingLoss(v8DetectionLoss):
         ).split((self.reg_max * 4, self.nc), 1)
 
         ###### Modified ######
+        preds = preds.permute(0, 2, 1).contiguous()
         pred_bboxes, pred_scores = preds.split((4, self.nc), 2)
-        pred_bboxes = pred_bboxes.permute(0, 2, 1).contiguous()
-        pred_scores = pred_scores.permute(0, 2, 1).contiguous()
         print(f"{pred_bboxes.shape = }")
         print(f"{pred_scores.shape = }")
         print(f"{torch.min(pred_bboxes) = }")
