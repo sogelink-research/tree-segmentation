@@ -6,10 +6,11 @@ import os
 import pickle
 import warnings
 from itertools import product
-from typing import Callable, Dict, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import albumentations as A
 import numpy as np
+import tifffile
 import torch
 
 from augmentations import (
@@ -17,14 +18,18 @@ from augmentations import (
     get_transform_pixel_rgb,
     get_transform_spatial,
 )
+from box_cls import Box
+from dataloaders import convert_ground_truth_from_tensors
 from dataset_constants import DatasetConst
 from datasets import compute_mean_and_std
 from geojson_conversions import open_geojson_feature_collection
 from layers import AMF_GD_YOLOv8
-from metrics import AP_Metrics_List
+from metrics import AP_Metrics, AP_Metrics_List
+from plot import create_bboxes_training_image
 from preprocessing.data import get_channels_count
 from preprocessing.rgb_cir import get_rgb_images_paths_from_polygon
 from training import (
+    TrainingMetrics,
     TreeDataset,
     create_and_save_splitted_datasets,
     evaluate_model,
@@ -445,7 +450,7 @@ def main():
 
     lr = 1e-2
     epochs = 200
-    batch_size = 10
+    batch_size = 1
     num_workers = 0
     accumulate = 10
 
@@ -472,6 +477,129 @@ def main():
     model_session = ModelSession(training_data=training_data, device=device, postfix=postfix)
 
     model_session.train()
+
+
+# def simple_test():
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     model = AMF_GD_YOLOv8(
+#         3,
+#         1,
+#         class_names=DatasetConst.CLASS_NAMES.value,
+#         device=device,
+#         name="simple_test",
+#         scale="n",
+#     )
+#     optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+#     scheduler = torch.optim.lr_scheduler.LambdaLR(
+#         optimizer, lambda i: 1 / np.sqrt(i + 2), last_epoch=-1
+#     )
+#     training_metrics = TrainingMetrics(show=False)
+#     intervals: List[Tuple[int, int]] = [(0, 0)]
+
+#     image_rgb_path = os.path.join(
+#         Folders.RGB_IMAGES.value, "cropped", "2023_122000_484000_RGB_hrl", "0_0_640_640.tif"
+#     )
+#     image_chm_path = os.path.join(
+#         Folders.CHM.value,
+#         "8cm",
+#         "filtered",
+#         "-inf_inf",
+#         "cropped",
+#         "122000_484000",
+#         "0_0_640_640.tif",
+#     )
+#     gt_bboxes = torch.tensor([[128.8, 217.4, 271.0, 394.7]]).to(torch.float32).to(device)
+#     gt_classes = torch.tensor([1]).to(torch.float32).to(device)
+#     gt_indices = torch.tensor([0]).to(torch.float32).to(device)
+#     image_indices = torch.tensor([0]).to(device)
+
+#     image_rgb_initial = tifffile.imread(image_rgb_path).astype(np.uint8)
+#     if len(image_rgb_initial.shape) == 2:
+#         image_rgb_initial = image_rgb_initial[..., np.newaxis]
+#     image_rgb = image_rgb_initial.astype(np.float32)
+#     image_rgb = torch.from_numpy(image_rgb).permute((2, 0, 1)).unsqueeze(0).to(device)
+
+#     image_chm_initial = tifffile.imread(image_chm_path).astype(np.float32)
+#     if len(image_chm_initial.shape) == 2:
+#         image_chm_initial = image_chm_initial[..., np.newaxis]
+#     image_chm = image_chm_initial.astype(np.float32)
+#     image_chm = torch.from_numpy(image_chm).permute((2, 0, 1)).unsqueeze(0).to(device)
+
+#     epochs = 100
+#     for epoch in range(1, epochs + 1):
+#         thresholds_low = np.power(10, np.linspace(-4, -1, 10))
+#         thresholds_high = np.linspace(0.1, 1.0, 19)
+#         conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
+#         ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
+
+#         training_metrics.visualize(
+#             intervals=intervals, save_paths=["Simple_Test_training_plot.png"]
+#         )
+#         output = model.forward(image_rgb, image_chm)
+#         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
+#         total_loss.backward()
+
+#         with torch.no_grad():
+#             preds = model.preds_from_output(output)
+#             ap_metrics.add_preds(
+#                 model=model,
+#                 preds=preds,
+#                 gt_bboxes=gt_bboxes,
+#                 gt_classes=gt_classes,
+#                 gt_indices=gt_indices,
+#                 image_indices=image_indices,
+#             )
+
+#             if epoch % 5 == 0:
+#                 dataset_idx = 0
+#                 if dataset_idx in image_indices.tolist():
+#                     batch_idx = image_indices.tolist().index(dataset_idx)
+
+#                     bboxes_per_image, confs_per_image, classes_per_image = model.predict_from_preds(
+#                         preds[batch_idx : batch_idx + 1],
+#                         iou_threshold=0.5,
+#                         conf_threshold=0.1,
+#                         number_best=40,
+#                     )
+#                     gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
+#                         gt_bboxes=gt_bboxes,
+#                         gt_classes=gt_classes,
+#                         gt_indices=gt_indices,
+#                         image_indices=image_indices,
+#                     )
+
+#                     # print(f"{gt_bboxes_per_image = }")
+
+#                     # print(f"{bboxes_per_image = }")
+
+#                     image_rgb_initial_torch = torch.tensor(image_rgb_initial).permute((2, 0, 1))
+#                     image_chm_initial_torch = torch.tensor(image_chm_initial).permute((2, 0, 1))
+
+#                     create_bboxes_training_image(
+#                         image_rgb=image_rgb_initial_torch,
+#                         image_chm=image_chm_initial_torch,
+#                         pred_bboxes=bboxes_per_image[0],
+#                         pred_labels=classes_per_image[0],
+#                         pred_scores=confs_per_image[0],
+#                         gt_bboxes=gt_bboxes_per_image[batch_idx],
+#                         gt_labels=gt_classes_per_image[batch_idx],
+#                         labels_int_to_str=model.class_names,
+#                         colors_dict=DatasetConst.CLASS_COLORS.value,
+#                         save_path=f"Data_epoch_{epoch}_train.png",
+#                     )
+
+#         optimizer.step()
+#         optimizer.zero_grad()
+#         scheduler.step()
+
+#         batch_size = image_rgb.shape[0]
+#         training_metrics.update(
+#             "Training", "Total Loss", total_loss.item(), count=batch_size, y_axis="Loss"
+#         )
+#         for key, value in loss_dict.items():
+#             training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
+
+#         training_metrics.end_loop(epoch)
 
 
 if __name__ == "__main__":

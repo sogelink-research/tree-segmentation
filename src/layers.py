@@ -5,13 +5,12 @@ from typing import Dict, List, Optional, Tuple
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
-import ultralytics.utils.ops
 from PIL import Image
 from ultralytics.nn.modules.block import Bottleneck, C2f
 from ultralytics.nn.modules.conv import Conv
 from ultralytics.nn.modules.head import Detect
 from ultralytics.utils.loss import v8DetectionLoss
-from ultralytics.utils.ops import non_max_suppression, xywh2xyxy
+from ultralytics.utils.ops import xywh2xyxy
 from ultralytics.utils.tal import make_anchors
 
 from box_cls import Box
@@ -484,13 +483,13 @@ class AMF_GD_YOLOv8(nn.Module):
         number_best: Optional[int] = None,
     ) -> Tuple[List[List[Box]], List[List[float]], List[List[int]]]:
         # Extract the results
-        boxes_list, scores_list, classes_list = extract_bboxes(
+        boxes_list, confs_list, classes_list = extract_bboxes(
             preds,
             iou_threshold=iou_threshold,
             conf_threshold=conf_threshold,
             number_best=number_best,
         )
-        return boxes_list, scores_list, classes_list
+        return boxes_list, confs_list, classes_list
 
     @torch.no_grad()
     def predict(
@@ -694,200 +693,109 @@ class TrainingLoss(v8DetectionLoss):
         }
         return total_loss, loss_dict
 
-    def loss_from_preds(
-        self, output: List[torch.Tensor], preds: torch.Tensor, pred_distri: torch.Tensor, batch: Dict[str, torch.Tensor]
-    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-        """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
-        loss = torch.zeros(3, device=self.device)  # box, cls, dfl
-        feats = output
-        # pred_distri, pred_scores = torch.cat(
-        #     [xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2
-        # ).split((self.reg_max * 4, self.nc), 1)
 
-        print(f"{torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).shape = }")
+def non_max_suppression(
+    prediction: torch.Tensor,
+    conf_thres: float = 0.25,
+    iou_thres: float = 0.45,
+    classes: Optional[List[int]] = None,
+    agnostic: bool = False,
+    multi_label: bool = False,
+    max_det: int = 300,
+    max_nms: int = 30000,
+    max_wh: int = 7680,
+    in_place: bool = True,
+) -> List[torch.Tensor]:
+    """
+    Perform non-maximum suppression (NMS) on a set of boxes, with support for masks and multiple labels per box.
 
-        # pred_scores = pred_scores.permute(0, 2, 1).contiguous()
-        # pred_distri = pred_distri.permute(0, 2, 1).contiguous()
+    Args:
+        prediction (torch.Tensor): A tensor of shape (batch_size, num_classes + 4 + num_masks, num_boxes)
+        containing the predicted boxes, classes, and masks. The tensor should be in the format
+        output by a model, such as YOLO.
+        conf_thres (float): The confidence threshold below which boxes will be filtered out.
+        Valid values are between 0.0 and 1.0.
+        iou_thres (float): The IoU threshold below which boxes will be filtered out during NMS.
+        Valid values are between 0.0 and 1.0.
+        classes (List[int]): A list of class indices to consider. If None, all classes will be considered.
+        agnostic (bool): If True, the model is agnostic to the number of classes, and all
+        classes will be considered as one.
+        multi_label (bool): If True, each box may have multiple labels.
+        max_det (int): The maximum number of boxes to keep after NMS.
+        max_nms (int): The maximum number of boxes into torchvision.ops.nms().
+        max_wh (int): The maximum box width and height in pixels.
+        in_place (bool): If True, the input prediction tensor will be modified in place.
 
-        ###### Modified ######
-        preds = preds.permute(0, 2, 1).contiguous()
-        pred_bboxes, pred_scores = preds.split((4, self.nc), 2)
-        ###### Modified ######
+    Returns:
+        (List[torch.Tensor]): A list of length batch_size, where each element is a tensor of
+        shape (num_boxes, 6 + num_masks) containing the kept boxes, with columns
+        (x1, y1, x2, y2, confidence, class, mask1, mask2, ...).
+    """
+    import torchvision  # scope for faster 'import ultralytics'
 
-        dtype = pred_scores.dtype
-        batch_size = pred_scores.shape[0]
-        imgsz = (
-            torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]
-        )  # image size (h,w)
-        anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
+    # Checks
+    assert (
+        0 <= conf_thres <= 1
+    ), f"Invalid Confidence threshold {conf_thres}, valid values are between 0.0 and 1.0"
+    assert 0 <= iou_thres <= 1, f"Invalid IoU {iou_thres}, valid values are between 0.0 and 1.0"
 
-        # Targets
-        targets = torch.cat(
-            (batch["batch_idx"].view(-1, 1), batch["cls"].view(-1, 1), batch["bboxes"]), 1
-        )
-        targets = self.preprocess(
-            targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]]
-        )
+    bs = prediction.shape[0]  # batch size
+    nc = prediction.shape[1] - 4  # number of classes
+    nm = prediction.shape[1] - nc - 4  # number of masks
+    mi = 4 + nc  # mask start index
+    xc = prediction[:, 4:mi].amax(1) > conf_thres  # candidates
 
-        gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
-        mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)
+    prediction = prediction.transpose(-1, -2)  # shape(1,84,6300) to shape(1,6300,84)
+    if in_place:
+        prediction[..., :4] = xywh2xyxy(prediction[..., :4])  # xywh to xyxy
+    else:
+        prediction = torch.cat(
+            (xywh2xyxy(prediction[..., :4]), prediction[..., 4:]), dim=-1
+        )  # xywh to xyxy
 
-        print(f"{stride_tensor.shape = }")
-        print(f"{torch.min(stride_tensor) = }")
-        print(f"{torch.max(stride_tensor) = }")
+    output = [torch.zeros((0, 6 + nm), device=prediction.device)] * bs
+    for xi, x in enumerate(prediction):  # image index, image inference
+        # Apply constraints
+        # x[((x[:, 2:4] < min_wh) | (x[:, 2:4] > max_wh)).any(1), 4] = 0  # width-height
+        x = x[xc[xi]]  # confidence
 
-        # # Pboxes
-        # pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
+        # If none remain process next image
+        if not x.shape[0]:
+            continue
 
-        _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
-            pred_scores.detach().sigmoid(),
-            (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
-            anchor_points * stride_tensor,
-            gt_labels,
-            gt_bboxes,
-            mask_gt,
-        )
+        # Detections matrix nx6 (xyxy, conf, cls)
+        box, cls, mask = x.split((4, nc, nm), 1)
 
-        target_scores_sum = max(target_scores.sum(), torch.tensor(1))
+        if multi_label:
+            i, j = torch.where(cls > conf_thres)
+            x = torch.cat((box[i], x[i, 4 + j, None], j[:, None].float(), mask[i]), 1)
+        else:  # best class only
+            conf, j = cls.max(1, keepdim=True)
+            x = torch.cat((box, conf, j.float(), mask), 1)[conf.view(-1) > conf_thres]
 
-        # Cls loss
-        # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
-        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+        # Filter by class
+        if classes is not None:
+            x = x[(x[:, 5:6] == torch.tensor(classes, device=x.device)).any(1)]
 
-        # Bbox loss
-        if fg_mask.sum():
-            target_bboxes /= stride_tensor
-            loss[0], loss[2] = self.bbox_loss(
-                pred_distri,
-                pred_bboxes,
-                anchor_points,
-                target_bboxes,
-                target_scores,
-                target_scores_sum,
-                fg_mask,
-            )
+        # Check shape
+        n = x.shape[0]  # number of boxes
+        if not n:  # no boxes
+            continue
+        if n > max_nms:  # excess boxes
+            x = x[
+                x[:, 4].argsort(descending=True)[:max_nms]
+            ]  # sort by confidence and remove excess boxes
 
-        loss[0] *= self.hyp.box  # box gain
-        loss[1] *= self.hyp.cls  # cls gain
-        loss[2] *= self.hyp.dfl  # dfl gain
+        # Batched NMS
+        c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
+        scores = x[:, 4]  # scores
+        boxes = x[:, :4] + c  # boxes (offset by class)
+        i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
+        i = i[:max_det]  # limit detections
 
-        total_loss = loss.sum() * batch_size
-        loss_items = loss.detach()  # loss(box, cls, dfl)
+        output[xi] = x[i]
 
-        loss_dict = {
-            "Box Loss": batch_size * loss_items[0],
-            "Class Loss": batch_size * loss_items[1],
-            "Dual Focal Loss": batch_size * loss_items[2],
-        }
-        return total_loss, loss_dict
-
-
-# def non_max_suppression(
-#     prediction: torch.Tensor,
-#     conf_thres: float = 0.25,
-#     iou_thres: float = 0.45,
-#     classes: Optional[List[int]] = None,
-#     agnostic: bool = False,
-#     multi_label: bool = False,
-#     max_det: int = 300,
-#     max_nms: int = 30000,
-#     max_wh: int = 7680,
-#     in_place: bool = True,
-# ) -> List[torch.Tensor]:
-#     """
-#     Perform non-maximum suppression (NMS) on a set of boxes, with support for masks and multiple labels per box.
-
-#     Args:
-#         prediction (torch.Tensor): A tensor of shape (batch_size, num_classes + 4 + num_masks, num_boxes)
-#         containing the predicted boxes, classes, and masks. The tensor should be in the format
-#         output by a model, such as YOLO.
-#         conf_thres (float): The confidence threshold below which boxes will be filtered out.
-#         Valid values are between 0.0 and 1.0.
-#         iou_thres (float): The IoU threshold below which boxes will be filtered out during NMS.
-#         Valid values are between 0.0 and 1.0.
-#         classes (List[int]): A list of class indices to consider. If None, all classes will be considered.
-#         agnostic (bool): If True, the model is agnostic to the number of classes, and all
-#         classes will be considered as one.
-#         multi_label (bool): If True, each box may have multiple labels.
-#         max_det (int): The maximum number of boxes to keep after NMS.
-#         max_nms (int): The maximum number of boxes into torchvision.ops.nms().
-#         max_wh (int): The maximum box width and height in pixels.
-#         in_place (bool): If True, the input prediction tensor will be modified in place.
-
-#     Returns:
-#         (List[torch.Tensor]): A list of length batch_size, where each element is a tensor of
-#         shape (num_boxes, 6 + num_masks) containing the kept boxes, with columns
-#         (x1, y1, x2, y2, confidence, class, mask1, mask2, ...).
-#     """
-#     import torchvision  # scope for faster 'import ultralytics'
-
-#     # Checks
-#     assert (
-#         0 <= conf_thres <= 1
-#     ), f"Invalid Confidence threshold {conf_thres}, valid values are between 0.0 and 1.0"
-#     assert 0 <= iou_thres <= 1, f"Invalid IoU {iou_thres}, valid values are between 0.0 and 1.0"
-#     if isinstance(
-#         prediction, (list, tuple)
-#     ):  # YOLOv8 model in validation model, output = (inference_out, loss_out)
-#         prediction = prediction[0]  # select only inference output
-
-#     bs = prediction.shape[0]  # batch size
-#     nc = prediction.shape[1] - 4  # number of classes
-#     nm = prediction.shape[1] - nc - 4  # number of masks
-#     mi = 4 + nc  # mask start index
-#     xc = prediction[:, 4:mi].amax(1) > conf_thres  # candidates
-
-#     prediction = prediction.transpose(-1, -2)  # shape(1,84,6300) to shape(1,6300,84)
-#     if in_place:
-#         prediction[..., :4] = xywh2xyxy(prediction[..., :4])  # xywh to xyxy
-#     else:
-#         prediction = torch.cat(
-#             (xywh2xyxy(prediction[..., :4]), prediction[..., 4:]), dim=-1
-#         )  # xywh to xyxy
-
-#     output = [torch.zeros((0, 6 + nm), device=prediction.device)] * bs
-#     for xi, x in enumerate(prediction):  # image index, image inference
-#         # Apply constraints
-#         # x[((x[:, 2:4] < min_wh) | (x[:, 2:4] > max_wh)).any(1), 4] = 0  # width-height
-#         x = x[xc[xi]]  # confidence
-
-#         # If none remain process next image
-#         if not x.shape[0]:
-#             continue
-
-#         # Detections matrix nx6 (xyxy, conf, cls)
-#         box, cls, mask = x.split((4, nc, nm), 1)
-
-#         if multi_label:
-#             i, j = torch.where(cls > conf_thres)
-#             x = torch.cat((box[i], x[i, 4 + j, None], j[:, None].float(), mask[i]), 1)
-#         else:  # best class only
-#             conf, j = cls.max(1, keepdim=True)
-#             x = torch.cat((box, conf, j.float(), mask), 1)[conf.view(-1) > conf_thres]
-
-#         # Filter by class
-#         if classes is not None:
-#             x = x[(x[:, 5:6] == torch.tensor(classes, device=x.device)).any(1)]
-
-#         # Check shape
-#         n = x.shape[0]  # number of boxes
-#         if not n:  # no boxes
-#             continue
-#         if n > max_nms:  # excess boxes
-#             x = x[
-#                 x[:, 4].argsort(descending=True)[:max_nms]
-#             ]  # sort by confidence and remove excess boxes
-
-#         # Batched NMS
-#         c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
-#         scores = x[:, 4]  # scores
-#         boxes = x[:, :4] + c  # boxes (offset by class)
-#         i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
-#         i = i[:max_det]  # limit detections
-
-#         output[xi] = x[i]
-
-#     return output
+    return output
 
 
 def extract_bboxes(
@@ -905,13 +813,17 @@ def extract_bboxes(
     number_best = 300 if number_best is None else number_best
 
     preds_nms = non_max_suppression(
-        preds, conf_thres=conf_threshold, iou_thres=iou_threshold, max_det=number_best
+        preds,
+        conf_thres=conf_threshold,
+        iou_thres=iou_threshold,
+        max_det=number_best,
+        in_place=False,
     )
 
     boxes_list = [list(map(Box.from_list, preds_nms[i][:, :4].tolist())) for i in range(batch_size)]
-    scores_list = [list(map(float, preds_nms[i][:, 4])) for i in range(batch_size)]
+    confs_list = [list(map(float, preds_nms[i][:, 4])) for i in range(batch_size)]
     classes_list = [list(map(int, preds_nms[i][:, 5])) for i in range(batch_size)]
-    return boxes_list, scores_list, classes_list
+    return boxes_list, confs_list, classes_list
 
 
 def swap_image_b_r(image: Image.Image) -> Image.Image:

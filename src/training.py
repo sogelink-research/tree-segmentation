@@ -101,6 +101,9 @@ class TrainingMetrics:
         if save_paths is None:
             save_paths = [None] * len(intervals)
 
+        if len(save_paths) != len(intervals):
+            raise ValueError("intervals and save_paths should have the same length.")
+
         metrics_index: Dict[str, int] = {}
         categories_index: Dict[str, int] = {}
         for i, (metric_name, metric_dict) in enumerate(self.metrics.items()):
@@ -189,131 +192,6 @@ class TrainingMetrics:
                 display.clear_output(wait=True)
 
 
-def dist2bbox(distance, anchor_points, xywh=True, dim=-1):
-    """Transform distance(ltrb) to box(xywh or xyxy)."""
-    # print(f"100 {distance.shape = }")
-    lt, rb = distance.chunk(2, dim)
-    x1y1 = anchor_points - lt
-    x2y2 = anchor_points + rb
-    if xywh:
-        c_xy = (x1y1 + x2y2) / 2
-        wh = x2y2 - x1y1
-        return torch.cat((c_xy, wh), dim)  # xywh bbox
-    # print(f"101 {torch.cat((x1y1, x2y2), dim).shape = }")
-    return torch.cat((x1y1, x2y2), dim)  # xyxy bbox
-
-
-def bbox2dist(anchor_points, bbox, reg_max):
-    """Transform bbox(xyxy) to dist(ltrb)."""
-    # print(f"010 {bbox.shape = }")
-    x1y1, x2y2 = bbox.chunk(2, -1)
-    # print(f"011 {torch.cat((anchor_points - x1y1, x2y2 - anchor_points), -1).clamp_(0, reg_max - 0.01).shape = }")
-    return torch.cat((anchor_points - x1y1, x2y2 - anchor_points), -1).clamp_(0, reg_max - 0.01)  # dist (lt, rb)
-
-def bbox_decode(anchor_points, pred_dist, use_dfl, proj):
-    """Decode predicted object bounding box coordinates from anchor points and distribution."""
-    if use_dfl:
-        b, a, c = pred_dist.shape  # batch, anchors, channels
-        # print(f"000 {pred_dist.shape = }")
-        # print(f"0000 {proj.shape = }")
-        pred_dist = pred_dist.view(b, a, 4, c // 4).softmax(3).matmul(proj.type(pred_dist.dtype))
-        # print(f"001 {pred_dist.shape = }")
-    return dist2bbox(pred_dist, anchor_points, xywh=False)
-
-def test_bbox_encode(model: AMF_GD_YOLOv8, output: List[torch.Tensor]):
-    feats = output
-    pred_distri, pred_scores = torch.cat(
-        [xi.view(feats[0].shape[0], model.criterion.no, -1) for xi in feats], 2
-    ).split((model.criterion.reg_max * 4, model.criterion.nc), 1)
-    
-    print(f"{pred_distri.shape = }")
-
-    pred_scores = pred_scores.permute(0, 2, 1).contiguous()
-    pred_distri = pred_distri.permute(0, 2, 1).contiguous()
-    
-    print(f"{pred_distri.shape = }")
-    
-    anchor_points, stride_tensor = make_anchors(feats, model.criterion.stride, 0.5)
-    
-    pred_bboxes = bbox_decode(anchor_points, pred_distri, model.criterion.use_dfl, model.criterion.proj)
-    
-    print(f"{pred_bboxes.shape = }")
-    
-    pred_distri_2 = bbox_encode(model, output=output, pred_bboxes=pred_bboxes)
-    
-    print(f"{pred_distri_2.shape = }")
-    
-    
-def bbox_encode(model: AMF_GD_YOLOv8, output: List[torch.Tensor], pred_bboxes: torch.Tensor) -> torch.Tensor:
-    anchor_points, stride_tensor = make_anchors(output, model.criterion.stride, 0.5)
-    # print(f"{pred_bboxes.shape = }")
-    pred_dist = bbox2dist(anchor_points=anchor_points, bbox=pred_bboxes, reg_max=model.criterion.reg_max)
-    # print(f"{pred_dist.shape = }")
-    if model.criterion.use_dfl:
-        rounded_pred_dist = torch.round(pred_dist).long()
-        # print(f"{torch.min(rounded_pred_dist) = }")
-        # print(f"{torch.max(rounded_pred_dist) = }")
-        # clamped_pred_dist = torch.clamp(rounded_pred_dist, 0, model.criterion.reg_max-1)
-        small_value = 1e-4
-        one_hot_pred_dist  = (1-(model.criterion.reg_max-1)*small_value) * nn.functional.one_hot(rounded_pred_dist, num_classes=model.criterion.reg_max).float() + small_value
-        # print(f"{one_hot_pred_dist.shape = }")
-        b, a, _ = pred_dist.shape  # batch, anchors, 4
-        logits = torch.log(one_hot_pred_dist)
-        pred_dist = logits - torch.logsumexp(logits, dim=0)
-        pred_dist = pred_dist.view(b, a, model.criterion.reg_max * 4)
-       
-    # print(f"{pred_dist.shape = }") 
-    return pred_dist
-
-
-def get_perfect_preds(
-    model: AMF_GD_YOLOv8,
-    output: List[torch.Tensor],
-    gt_bboxes: torch.Tensor,
-    gt_classes: torch.Tensor,
-    gt_indices: torch.Tensor,
-    batch_size: int,
-    num_classes: int,
-) -> torch.Tensor:
-    anchor_points, stride_tensor = make_anchors(output, model.criterion.stride, 0.5)
-    # print(f"{anchor_points = }")
-    # print(f"{stride_tensor = }")
-
-    device = gt_bboxes.device
-    extracted_bboxes: List[List[torch.Tensor]] = [[]] * batch_size
-    extracted_classes: List[List[torch.Tensor]] = [[]] * batch_size
-    for bbox_idx, image_idx in enumerate(gt_indices):
-        slice_bboxes = gt_bboxes[bbox_idx]
-        extracted_bboxes[image_idx].append(slice_bboxes)
-        slice_classes = gt_classes[bbox_idx].long()
-        extracted_classes[image_idx].append(slice_classes)
-    extracted_scores = [
-        20 * (nn.functional.one_hot(torch.tensor(cls), num_classes=num_classes).to(device) - 0.5)
-        for cls in extracted_classes
-    ]
-    perfect_preds = [
-        torch.cat((torch.stack(bboxes, dim=0), scores), dim=1).permute((1, 0)).unsqueeze(0)
-        for bboxes, scores in zip(extracted_bboxes, extracted_scores)
-    ]
-    # print(f"{perfect_preds[0].shape = }")
-    perfect_preds = torch.cat(
-        [
-            torch.cat(
-                (
-                    pred,
-                    torch.zeros((pred.shape[0], pred.shape[1], 8400 - pred.shape[2])).to(
-                        pred.device
-                    ),
-                ),
-                dim=2,
-            )
-            for pred in perfect_preds
-        ]
-    )
-    # print(f"{perfect_preds.shape = }")
-    return perfect_preds
-
-
 def print_current_memory():
     if torch.cuda.is_available():
         current_memory_usage_bytes = torch.cuda.memory_allocated()
@@ -379,58 +257,7 @@ def train(
         for key, value in loss_dict.items():
             training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
 
-        with torch.no_grad():
-            test_bbox_encode(model, output)
-            # Try the perfect output
-            perfect_preds = get_perfect_preds(
-                model, output, gt_bboxes, gt_classes, gt_indices, batch_size, len(model.class_names)
-            )
-            
-            perfect_bboxes = perfect_preds[:,:4]
-            perfect_bboxes = perfect_bboxes.permute(0, 2, 1).contiguous()
-            
-            perfect_distri = bbox_encode(model=model, output=output, pred_bboxes=perfect_bboxes)
-            total_loss_perf, loss_dict_perf = model.compute_loss_from_preds(
-                output, perfect_distri, perfect_preds, gt_bboxes, gt_classes, gt_indices
-            )
-            print(f"{total_loss_perf.item() = }")
-
-            # gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
-            #     gt_bboxes=gt_bboxes,
-            #     gt_classes=gt_classes,
-            #     gt_indices=gt_indices,
-            #     image_indices=image_indices,
-            # )
-
-            # print(f"{gt_bboxes_per_image[0] = }")
-            # print(f"{gt_classes_per_image[0] = }")
-
-            # batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
-            # targets = torch.cat(
-            #     (batch["batch_idx"].view(-1, 1), batch["cls"].view(-1, 1), batch["bboxes"]), 1
-            # )
-            # targets = model.criterion.preprocess(
-            #     targets.to(model.criterion.device), batch_size, scale_tensor=None
-            # )
-            # extracted_gt_labels, extracted_gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
-            # extracted_mask_gt = extracted_gt_bboxes.sum(2, keepdim=True).gt_(0)
-            # print(f"{extracted_gt_bboxes[0] = }")
-            # print(f"{extracted_gt_labels[0] = }")
-            # print(f"{extracted_mask_gt[0] = }")
-
-            training_metrics.update(
-                "Perfect predictions",
-                "Total Loss",
-                total_loss_perf.item(),
-                count=batch_size,
-                y_axis="Loss",
-            )
-            for key, value in loss_dict_perf.items():
-                training_metrics.update(
-                    "Perfect predictions", key, value.item(), count=batch_size, y_axis="Loss"
-                )
-
-        # Compute the AP metrics
+       # Compute the AP metrics
         with torch.no_grad():
             preds = model.preds_from_output(output)
             ap_metrics.add_preds(
@@ -442,7 +269,7 @@ def train(
                 image_indices=image_indices,
             )
 
-            if epoch % 5 == 0:
+            if epoch % 20 == 0:
                 dataset_idx = 42
                 if dataset_idx in image_indices.tolist():
                     batch_idx = image_indices.tolist().index(dataset_idx)
@@ -451,7 +278,7 @@ def train(
                         model.predict_from_preds(
                             preds[batch_idx : batch_idx + 1],
                             iou_threshold=0.5,
-                            conf_threshold=0.0,
+                            conf_threshold=0.1,
                             number_best=40,
                         )
                     )
@@ -479,7 +306,7 @@ def train(
                         gt_labels=gt_classes_per_image[batch_idx],
                         labels_int_to_str=model.class_names,
                         colors_dict=DatasetConst.CLASS_COLORS.value,
-                        save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}.png"),
+                        save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}_train.png"),
                     )
 
     _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
@@ -552,7 +379,7 @@ def validate(
 
         # Compute the AP metrics
         with torch.no_grad():
-            if epoch % 5 == 0:
+            if epoch % 20 == 0:
                 dataset_idx = 42
                 if dataset_idx in image_indices.tolist():
                     batch_idx = image_indices.tolist().index(dataset_idx)
@@ -561,7 +388,7 @@ def validate(
                         model.predict_from_preds(
                             preds[batch_idx : batch_idx + 1],
                             iou_threshold=0.5,
-                            conf_threshold=0.0,
+                            conf_threshold=0.1,
                             number_best=40,
                         )
                     )
@@ -589,7 +416,7 @@ def validate(
                         gt_labels=gt_classes_per_image[batch_idx],
                         labels_int_to_str=model.class_names,
                         colors_dict=DatasetConst.CLASS_COLORS.value,
-                        save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}.png"),
+                        save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}_val.png"),
                     )
 
     _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
