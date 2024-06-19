@@ -519,18 +519,6 @@ class AMF_GD_YOLOv8(nn.Module):
         batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
         return self.criterion(output, batch)
 
-    def compute_loss_from_preds(
-        self,
-        output: List[torch.Tensor],
-        distri: torch.Tensor,
-        preds: torch.Tensor,
-        gt_bboxes: torch.Tensor,
-        gt_classes: torch.Tensor,
-        gt_indices: torch.Tensor,
-    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-        batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
-        return self.criterion.loss_from_preds(output, preds, distri, batch)
-
     def save_weights(self, epoch: Optional[int] = None) -> None:
         model_weights_path = self.weights_path(epoch)
         state_dict = self.state_dict()
