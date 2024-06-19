@@ -322,8 +322,10 @@ def train(
                 targets.to(model.criterion.device), batch_size, scale_tensor=None
             )
             extracted_gt_labels, extracted_gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
+            extracted_mask_gt = extracted_gt_bboxes.sum(2, keepdim=True).gt_(0)
             print(f"{extracted_gt_bboxes[0] = }")
             print(f"{extracted_gt_labels[0] = }")
+            print(f"{extracted_mask_gt[0] = }")
 
             training_metrics.update(
                 "Perfect predictions",
