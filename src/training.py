@@ -214,10 +214,10 @@ def bbox_decode(anchor_points, pred_dist, use_dfl, proj):
     """Decode predicted object bounding box coordinates from anchor points and distribution."""
     if use_dfl:
         b, a, c = pred_dist.shape  # batch, anchors, channels
-        print(f"000 {pred_dist.shape = }")
-        print(f"0000 {proj.shape = }")
+        # print(f"000 {pred_dist.shape = }")
+        # print(f"0000 {proj.shape = }")
         pred_dist = pred_dist.view(b, a, 4, c // 4).softmax(3).matmul(proj.type(pred_dist.dtype))
-        print(f"001 {pred_dist.shape = }")
+        # print(f"001 {pred_dist.shape = }")
     return dist2bbox(pred_dist, anchor_points, xywh=False)
 
 def test_bbox_encode(model: AMF_GD_YOLOv8, output: List[torch.Tensor]):
@@ -246,9 +246,9 @@ def test_bbox_encode(model: AMF_GD_YOLOv8, output: List[torch.Tensor]):
     
 def bbox_encode(model: AMF_GD_YOLOv8, output: List[torch.Tensor], pred_bboxes: torch.Tensor) -> torch.Tensor:
     anchor_points, stride_tensor = make_anchors(output, model.criterion.stride, 0.5)
-    print(f"{pred_bboxes.shape = }")
+    # print(f"{pred_bboxes.shape = }")
     pred_dist = bbox2dist(anchor_points=anchor_points, bbox=pred_bboxes, reg_max=model.criterion.reg_max)
-    print(f"{pred_dist.shape = }")
+    # print(f"{pred_dist.shape = }")
     if model.criterion.use_dfl:
         rounded_pred_dist = torch.round(pred_dist).long()
         # print(f"{torch.min(rounded_pred_dist) = }")
@@ -256,13 +256,13 @@ def bbox_encode(model: AMF_GD_YOLOv8, output: List[torch.Tensor], pred_bboxes: t
         # clamped_pred_dist = torch.clamp(rounded_pred_dist, 0, model.criterion.reg_max-1)
         small_value = 1e-4
         one_hot_pred_dist  = (1-(model.criterion.reg_max-1)*small_value) * nn.functional.one_hot(rounded_pred_dist, num_classes=model.criterion.reg_max).float() + small_value
-        print(f"{one_hot_pred_dist.shape = }")
+        # print(f"{one_hot_pred_dist.shape = }")
         b, a, _ = pred_dist.shape  # batch, anchors, 4
         logits = torch.log(one_hot_pred_dist)
         pred_dist = logits - torch.logsumexp(logits, dim=0)
         pred_dist = pred_dist.view(b, a, model.criterion.reg_max * 4)
        
-    print(f"{pred_dist.shape = }") 
+    # print(f"{pred_dist.shape = }") 
     return pred_dist
 
 
@@ -276,8 +276,8 @@ def get_perfect_preds(
     num_classes: int,
 ) -> torch.Tensor:
     anchor_points, stride_tensor = make_anchors(output, model.criterion.stride, 0.5)
-    print(f"{anchor_points = }")
-    print(f"{stride_tensor = }")
+    # print(f"{anchor_points = }")
+    # print(f"{stride_tensor = }")
 
     device = gt_bboxes.device
     extracted_bboxes: List[List[torch.Tensor]] = [[]] * batch_size
@@ -295,7 +295,7 @@ def get_perfect_preds(
         torch.cat((torch.stack(bboxes, dim=0), scores), dim=1).permute((1, 0)).unsqueeze(0)
         for bboxes, scores in zip(extracted_bboxes, extracted_scores)
     ]
-    print(f"{perfect_preds[0].shape = }")
+    # print(f"{perfect_preds[0].shape = }")
     perfect_preds = torch.cat(
         [
             torch.cat(
@@ -310,7 +310,7 @@ def get_perfect_preds(
             for pred in perfect_preds
         ]
     )
-    print(f"{perfect_preds.shape = }")
+    # print(f"{perfect_preds.shape = }")
     return perfect_preds
 
 
@@ -386,8 +386,8 @@ def train(
                 model, output, gt_bboxes, gt_classes, gt_indices, batch_size, len(model.class_names)
             )
             
+            perfect_preds = perfect_preds.permute(0, 2, 1).contiguous()
             perfect_distri = bbox_encode(model=model, output=output, pred_bboxes=perfect_preds)
-            perfect_distri = perfect_distri.permute(0, 2, 1).contiguous()
             total_loss_perf, loss_dict_perf = model.compute_loss_from_preds(
                 output, perfect_distri, perfect_preds, gt_bboxes, gt_classes, gt_indices
             )
