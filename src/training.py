@@ -386,8 +386,10 @@ def train(
                 model, output, gt_bboxes, gt_classes, gt_indices, batch_size, len(model.class_names)
             )
             
-            perfect_preds = perfect_preds.permute(0, 2, 1).contiguous()
-            perfect_distri = bbox_encode(model=model, output=output, pred_bboxes=perfect_preds)
+            perfect_bboxes = perfect_preds[:,:4]
+            perfect_bboxes = perfect_bboxes.permute(0, 2, 1).contiguous()
+            
+            perfect_distri = bbox_encode(model=model, output=output, pred_bboxes=perfect_bboxes)
             total_loss_perf, loss_dict_perf = model.compute_loss_from_preds(
                 output, perfect_distri, perfect_preds, gt_bboxes, gt_classes, gt_indices
             )
