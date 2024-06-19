@@ -523,13 +523,14 @@ class AMF_GD_YOLOv8(nn.Module):
     def compute_loss_from_preds(
         self,
         output: List[torch.Tensor],
+        distri: torch.Tensor,
         preds: torch.Tensor,
         gt_bboxes: torch.Tensor,
         gt_classes: torch.Tensor,
         gt_indices: torch.Tensor,
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
-        return self.criterion.loss_from_preds(output, preds, batch)
+        return self.criterion.loss_from_preds(output, preds, distri, batch)
 
     def save_weights(self, epoch: Optional[int] = None) -> None:
         model_weights_path = self.weights_path(epoch)
@@ -694,19 +695,19 @@ class TrainingLoss(v8DetectionLoss):
         return total_loss, loss_dict
 
     def loss_from_preds(
-        self, output: List[torch.Tensor], preds: torch.Tensor, batch: Dict[str, torch.Tensor]
+        self, output: List[torch.Tensor], preds: torch.Tensor, pred_distri: torch.Tensor, batch: Dict[str, torch.Tensor]
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
         loss = torch.zeros(3, device=self.device)  # box, cls, dfl
         feats = output
-        pred_distri, pred_scores = torch.cat(
-            [xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2
-        ).split((self.reg_max * 4, self.nc), 1)
+        # pred_distri, pred_scores = torch.cat(
+        #     [xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2
+        # ).split((self.reg_max * 4, self.nc), 1)
 
         print(f"{torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).shape = }")
 
-        pred_scores = pred_scores.permute(0, 2, 1).contiguous()
-        pred_distri = pred_distri.permute(0, 2, 1).contiguous()
+        # pred_scores = pred_scores.permute(0, 2, 1).contiguous()
+        # pred_distri = pred_distri.permute(0, 2, 1).contiguous()
 
         ###### Modified ######
         preds = preds.permute(0, 2, 1).contiguous()
