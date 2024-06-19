@@ -433,7 +433,7 @@ class AMF_GD_YOLOv8(nn.Module):
         return output
 
     @torch.no_grad()
-    def preds_from_output(self, output: List[torch.Tensor]):
+    def preds_from_output(self, output: List[torch.Tensor]) -> torch.Tensor:
         return self.detect.preds_from_output(output)
 
     @torch.no_grad()
@@ -565,7 +565,7 @@ class TrainingLoss(v8DetectionLoss):
                 n = matches.sum()
                 if n:
                     out[j, :n] = targets[matches, 1:]
-            # out[..., 1:5] = xywh2xyxy(out[..., 1:5].mul_(scale_tensor)) # Original line
+            out[..., 1:5] = xywh2xyxy(out[..., 1:5].mul_(scale_tensor))  # Original line
         return out
 
     def __call__(

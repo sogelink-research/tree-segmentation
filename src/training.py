@@ -188,7 +188,7 @@ class TrainingMetrics:
                 display.clear_output(wait=True)
 
 
-def perfect_preds(
+def get_perfect_output(
     gt_bboxes: torch.Tensor,
     gt_classes: torch.Tensor,
     gt_indices: torch.Tensor,
@@ -205,25 +205,36 @@ def perfect_preds(
         20 * nn.functional.one_hot(torch.tensor(cls), num_classes=5) - 0.5
         for cls in extracted_classes
     ]
-    prefect_preds = [
+    perfect_output = [
         torch.cat((torch.tensor(bboxes), classes), dim=1).permute((1, 0)).unsqueeze(0)
         for bboxes, classes in zip(extracted_bboxes, scores)
     ]
-    perfect_preds = torch.cat(
-        [
-            torch.cat(
-                (
-                    pred,
-                    torch.zeros((pred.shape[0], pred.shape[1], 8400 - pred.shape[2])).to(
-                        pred.device
-                    ),
-                ),
-                dim=2,
-            )
-            for pred in prefect_preds
-        ]
-    )
-    return perfect_preds
+    # perfect_output = torch.cat(
+    #     [
+    #         torch.cat(
+    #             (
+    #                 pred,
+    #                 torch.zeros((pred.shape[0], pred.shape[1], 8400 - pred.shape[2])).to(
+    #                     pred.device
+    #                 ),
+    #             ),
+    #             dim=2,
+    #         )
+    #         for pred in perfect_output
+    #     ]
+    # )
+    perfect_output = [
+        torch.cat(
+            (
+                pred,
+                torch.zeros((pred.shape[0], pred.shape[1], 8400 - pred.shape[2])).to(pred.device),
+            ),
+            dim=2,
+        )
+        for pred in perfect_output
+    ]
+
+    return perfect_output
 
 
 def print_current_memory():
@@ -271,6 +282,8 @@ def train(
 
         # Compute the model output
         output = model.forward(image_rgb, image_chm)
+        print(f"{len(output) = }")
+        print(f"{output[0].shape = }")
 
         # Compute the loss
         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
@@ -290,6 +303,19 @@ def train(
         )
         for key, value in loss_dict.items():
             training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
+
+        # Try the perfect output
+        perfect_output = get_perfect_output(gt_bboxes, gt_classes, gt_indices, batch_size)
+        total_loss_perf, loss_dict_perf = model.compute_loss(
+            perfect_output, gt_bboxes, gt_classes, gt_indices
+        )
+        training_metrics.update(
+            "Perfect output", "Total Loss", total_loss_perf.item(), count=batch_size, y_axis="Loss"
+        )
+        for key, value in loss_dict_perf.items():
+            training_metrics.update(
+                "Perfect output", key, value.item(), count=batch_size, y_axis="Loss"
+            )
 
         # Compute the AP metrics
         with torch.no_grad():
