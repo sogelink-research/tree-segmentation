@@ -676,10 +676,6 @@ class TrainingLoss(v8DetectionLoss):
         ###### Modified ######
         preds = preds.permute(0, 2, 1).contiguous()
         pred_bboxes, pred_scores = preds.split((4, self.nc), 2)
-        print(f"{pred_bboxes.shape = }")
-        print(f"{pred_scores.shape = }")
-        print(f"{torch.min(pred_bboxes) = }")
-        print(f"{torch.max(pred_bboxes) = }")
         ###### Modified ######
 
         dtype = pred_scores.dtype
@@ -703,11 +699,6 @@ class TrainingLoss(v8DetectionLoss):
         print(f"{stride_tensor.shape = }")
         print(f"{torch.min(stride_tensor) = }")
         print(f"{torch.max(stride_tensor) = }")
-
-        print(f"{torch.min(gt_bboxes) = }")
-        print(f"{torch.max(gt_bboxes) = }")
-        print(f"{torch.min(gt_labels) = }")
-        print(f"{torch.max(gt_labels) = }")
 
         # # Pboxes
         # pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
