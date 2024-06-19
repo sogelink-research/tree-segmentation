@@ -304,18 +304,18 @@ def train(
         for key, value in loss_dict.items():
             training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
 
-        # Try the perfect output
-        perfect_output = get_perfect_output(gt_bboxes, gt_classes, gt_indices, batch_size)
-        total_loss_perf, loss_dict_perf = model.compute_loss(
-            perfect_output, gt_bboxes, gt_classes, gt_indices
-        )
-        training_metrics.update(
-            "Perfect output", "Total Loss", total_loss_perf.item(), count=batch_size, y_axis="Loss"
-        )
-        for key, value in loss_dict_perf.items():
-            training_metrics.update(
-                "Perfect output", key, value.item(), count=batch_size, y_axis="Loss"
-            )
+        # # Try the perfect output
+        # perfect_output = get_perfect_output(gt_bboxes, gt_classes, gt_indices, batch_size)
+        # total_loss_perf, loss_dict_perf = model.compute_loss(
+        #     perfect_output, gt_bboxes, gt_classes, gt_indices
+        # )
+        # training_metrics.update(
+        #     "Perfect output", "Total Loss", total_loss_perf.item(), count=batch_size, y_axis="Loss"
+        # )
+        # for key, value in loss_dict_perf.items():
+        #     training_metrics.update(
+        #         "Perfect output", key, value.item(), count=batch_size, y_axis="Loss"
+        #     )
 
         # Compute the AP metrics
         with torch.no_grad():
