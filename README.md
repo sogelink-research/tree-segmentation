@@ -18,17 +18,12 @@ First, clone the repository with its submodules:
 git clone git@github.com:sogelink-research/tree-segmentation.git --recursive
 ```
 
-Then, move into the repo folder and create the conda environment to run the project with conda (or even better with mamba):
+Then, move into the repo folder and create the conda environment to run the project with conda:
 
 ```bash
 cd tree-segmentation
 
-# With conda
 conda env create -n <env-name> -f environment.yml
-
-# With mamba (much quicker)
-mamba create -n <env-name>
-mamba update -n <env-name> -f environment.yml
 ```
 
 ## Execution
