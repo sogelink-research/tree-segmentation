@@ -605,5 +605,5 @@ def simple_test():
 
 
 if __name__ == "__main__":
-    # main()
-    simple_test()
+    main()
+    # simple_test()
