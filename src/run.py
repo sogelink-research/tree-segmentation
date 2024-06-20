@@ -473,14 +473,14 @@ def main():
 
     # Training session
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # model_session = ModelSession(training_data=training_data, device=device, postfix=postfix)
+    model_session = ModelSession(training_data=training_data, device=device, postfix=postfix)
 
-    # model_session.train()
+    model_session.train()
 
-    model_session = ModelSession.from_name(
-        "trained_model_rgb_cir_multi_chm_1500ep_2", device=device
-    )
-    model_session.compute_metrics()
+    # model_session = ModelSession.from_name(
+    #     "trained_model_rgb_cir_multi_chm_1500ep_2", device=device
+    # )
+    # model_session.compute_metrics()
 
 
 def simple_test():
