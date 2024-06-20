@@ -93,6 +93,10 @@ class TrainingMetrics:
     def get_last(self, category_name: str, metric_name: str):
         return self.metrics_loop[metric_name][category_name]["avg"]
 
+    def save_metrics(self, save_path: str) -> None:
+        with open(save_path, "w") as fp:
+            json.dump(self.metrics, fp, sort_keys=True, indent=4)
+
     def visualize(
         self,
         intervals: List[Tuple[int, int]] = [(0, 0)],
@@ -616,6 +620,12 @@ def train_and_validate(
             best_temp_loss = np.inf
 
         training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
+        training_metrics.save_metrics(
+            os.path.join(
+                model.folder_path,
+                "metrics_values.json",
+            )
+        )
 
         running_accumulation_step = train(
             train_loader,
@@ -651,6 +661,12 @@ def train_and_validate(
 
     # Save the plot showing the evolution of the metrics
     training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
+    training_metrics.save_metrics(
+        os.path.join(
+            model.folder_path,
+            "metrics_values.json",
+        )
+    )
     return best_model
 
 

@@ -46,6 +46,9 @@ dependencies:
   - segment-geospatial # Useless?
   - leafmap # Useless?
 
+  # Profiling visualization
+  - snakeviz
+
   - pip
   - pip:
       # TODO: use the real tqdm package when this PR https://github.com/tqdm/tqdm/pull/1504 will be finally accepted

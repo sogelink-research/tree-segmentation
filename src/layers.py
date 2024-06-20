@@ -402,6 +402,7 @@ class AMF_GD_YOLOv8(nn.Module):
         self.class_names = class_names
         self.class_indices = {value: key for key, value in class_names.items()}
         self.name = name
+        create_folder(self.folder_path)
 
         # AMFNet structure
         self.amfnet = AMFNet(c_input_left, c_input_right, scale, r).to(device)
@@ -583,7 +584,6 @@ class AMF_GD_YOLOv8(nn.Module):
             model_name = AMF_GD_YOLOv8._get_name(index, epochs, postfix)
             model_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
 
-        create_folder(model_path)
         return model_name
 
 

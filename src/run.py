@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import cProfile
 import multiprocessing as mp
 import os
 import pickle
+import pstats
 import warnings
 from itertools import product
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
@@ -531,15 +533,21 @@ def simple_test():
 
     ap_metrics_list = AP_Metrics_List()
 
-    epochs = 100
+    epochs = 10
     for epoch in range(1, epochs + 1):
         thresholds_low = np.power(10, np.linspace(-4, -1, 10))
         thresholds_high = np.linspace(0.1, 1.0, 19)
         conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
         ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
 
-        training_metrics.visualize(
-            intervals=intervals, save_paths=["Simple_Test_training_plot.png"]
+        # training_metrics.visualize(
+        #     intervals=intervals, save_paths=["Simple_Test_training_plot.png"]
+        # )
+        training_metrics.save_metrics(
+            os.path.join(
+                model.folder_path,
+                "Simple_Test_metrics_values.json",
+            )
         )
         output = model.forward(image_rgb, image_chm)
         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
@@ -556,7 +564,7 @@ def simple_test():
                 image_indices=image_indices,
             )
 
-            if epoch % 10 == 0:
+            if epoch % 5 == 0:
                 dataset_idx = 0
                 if dataset_idx in image_indices.tolist():
                     batch_idx = image_indices.tolist().index(dataset_idx)
@@ -611,6 +619,16 @@ def simple_test():
         )
 
         training_metrics.end_loop(epoch)
+
+    # training_metrics.visualize(
+    #     intervals=intervals, save_paths=["Simple_Test_training_plot.png"]
+    # )
+    training_metrics.save_metrics(
+        os.path.join(
+            model.folder_path,
+            "Simple_Test_metrics_values.json",
+        )
+    )
 
     ap_metrics_list.plot_ap_iou(
         save_path="ap_iou.png",
