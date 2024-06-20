@@ -325,11 +325,12 @@ def train(
         for key, value in loss_dict.items():
             training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
 
-    _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
-    training_metrics.update("Training", "Best sortedAP", sorted_ap, y_axis="sortedAP")
-    training_metrics.update(
-        "Training", "Conf thres of sortedAP", conf_threshold, y_axis="Conf threshold"
-    )
+    if compute_ap:
+        _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
+        training_metrics.update("Training", "Best sortedAP", sorted_ap, y_axis="sortedAP")
+        training_metrics.update(
+            "Training", "Conf thres of sortedAP", conf_threshold, y_axis="Conf threshold"
+        )
 
     return running_accumulation_step
 
