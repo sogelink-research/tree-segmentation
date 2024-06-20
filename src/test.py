@@ -103,7 +103,7 @@ def main():
     write_numpy(images_init, numpy_test_file)
     dtypes, shapes = write_memmap(images_init, memmap_test_files)
 
-    iterations = 10
+    iterations = 20
     read_func_list = [read_tif, read_hdf5, read_netCDF4, read_numpy, read_memmap]
     input_paths_list = [
         tif_test_files,
@@ -160,9 +160,10 @@ def main():
             end_time = time.time()
             total_output_time += end_time - start_time
 
-        print(f"Total 'load' time of {read_func.__name__}: {total_load_time:.5f} seconds")
-        print(f"Total 'to tensor' time of {read_func.__name__}: {total_to_tensor_time:.5f} seconds")
-        print(f"Total 'output' time of {read_func.__name__}: {total_output_time:.5f} seconds")
+        print(f"{read_func.__name__}: ")
+        print(f"--- 'load': {total_load_time:2.5f} seconds", end=" ; ")
+        print(f"--- 'to tensor': {total_to_tensor_time:2.5f} seconds", end=" ; ")
+        print(f"--- 'output':    {total_output_time:2.5f} seconds")
 
     for read_func, input_paths, kwargs in zip(read_func_list, input_paths_list, kwargs_list):
         test(
