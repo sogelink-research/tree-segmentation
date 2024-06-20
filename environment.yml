@@ -46,8 +46,10 @@ dependencies:
   - segment-geospatial # Useless?
   - leafmap # Useless?
 
-  # Profiling visualization
+  # Speed test
   - snakeviz
+  - h5py
+  - netCDF4
 
   - pip
   - pip:
