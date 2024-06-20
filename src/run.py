@@ -529,6 +529,8 @@ def simple_test():
     image_chm = image_chm_initial.astype(np.float32)
     image_chm = torch.from_numpy(image_chm).permute((2, 0, 1)).unsqueeze(0).to(device)
 
+    ap_metrics_list = AP_Metrics_List()
+
     epochs = 100
     for epoch in range(1, epochs + 1):
         thresholds_low = np.power(10, np.linspace(-4, -1, 10))
@@ -545,7 +547,6 @@ def simple_test():
 
         with torch.no_grad():
             preds = model.preds_from_output(output)
-            old_preds = preds.detach().clone()
             ap_metrics.add_preds(
                 model=model,
                 preds=preds,
@@ -555,7 +556,7 @@ def simple_test():
                 image_indices=image_indices,
             )
 
-            if epoch % 1 == 0:
+            if epoch % 10 == 0:
                 dataset_idx = 0
                 if dataset_idx in image_indices.tolist():
                     batch_idx = image_indices.tolist().index(dataset_idx)
@@ -588,11 +589,13 @@ def simple_test():
                         colors_dict=DatasetConst.CLASS_COLORS.value,
                         save_path=f"Data_epoch_{epoch}_train.png",
                     )
-        print(f"{(preds - old_preds).abs().sum() = }")
 
         optimizer.step()
         optimizer.zero_grad()
         scheduler.step()
+
+        if epoch % 10 == 0:
+            ap_metrics_list.add_ap_metrics(ap_metrics=ap_metrics, legend=f"{epoch = }")
 
         batch_size = image_rgb.shape[0]
         training_metrics.update(
@@ -601,9 +604,24 @@ def simple_test():
         for key, value in loss_dict.items():
             training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
 
+        _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
+        training_metrics.update("Training", "Best sortedAP", sorted_ap, y_axis="sortedAP")
+        training_metrics.update(
+            "Training", "Conf thres of sortedAP", conf_threshold, y_axis="Conf threshold"
+        )
+
         training_metrics.end_loop(epoch)
+
+    ap_metrics_list.plot_ap_iou(
+        save_path="ap_iou.png",
+        title="Sorted AP curve",
+    )
+    ap_metrics_list.plot_sap_conf(
+        save_path="sap_conf.png",
+        title="Sorted AP w.r.t the confidence threshold",
+    )
 
 
 if __name__ == "__main__":
-    main()
-    # simple_test()
+    # main()
+    simple_test()

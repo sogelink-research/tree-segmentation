@@ -1,11 +1,9 @@
-import itertools
 from typing import List, Optional, Tuple, TypeVar, cast
 
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
 from scipy.optimize import linear_sum_assignment
-from skimage import io
 
 from box_cls import Box, compute_iou
 from dataloaders import convert_ground_truth_from_tensors
@@ -43,10 +41,11 @@ def hungarian_algorithm(
 
     # Extract pairs of indices where matches were found
     matched_pairs = [
-        ((pred, gt), float(cost_matrix[pred, gt]))
+        ((pred, gt), float(1 - cost_matrix[pred, gt]))
         for pred, gt in zip(pred_ind, gt_ind)
         if pred < pred_len and gt < gt_len and cost_matrix[pred, gt] != max_cost
     ]
+    matched_pairs.sort(key=lambda t: t[1])
 
     unmatched_pred = list(
         set(range(pred_len)).difference(set(map(lambda t: t[0][0], matched_pairs)))
@@ -89,7 +88,8 @@ def compute_sorted_ap(
     unmatched_pred: List[int],
     unmatched_gt: List[int],
 ) -> Tuple[List[float], List[float], float]:
-    sorted_ious = sorted(map(lambda t: t[1], matched_pairs))
+    matched_pairs.sort(key=lambda t: t[1])
+    sorted_ious = list(map(lambda t: t[1], matched_pairs))
 
     tp0 = len(matched_pairs)
     fp0 = len(unmatched_pred)
@@ -251,7 +251,7 @@ class AP_Metrics:
             image_indices=image_indices,
         )
 
-        # Compute the matchings
+        # Compute the matchings for each individual image
         iou_threshold = 1e-6
         for bboxes, scores, classes_as_ints, gt_bboxes_list, gt_classes_list in zip(
             bboxes_list,
@@ -277,7 +277,7 @@ class AP_Metrics:
 
         self.sorted_ap_updated = False
 
-    def _compute_sorted_ap(self) -> None:
+    def compute_sorted_ap(self) -> None:
         if not self.sorted_ap_updated:
             self.sorted_ious_list, self.aps_list, self.sorted_ap_list = compute_sorted_ap_confs(
                 self.matched_pairs, self.unmatched_pred, self.unmatched_gt
@@ -302,7 +302,7 @@ class AP_Metrics:
             - conf_threshold_list contains the model confidence thresholds used to compute the
             metrics above.
         """
-        self._compute_sorted_ap()
+        self.compute_sorted_ap()
         return self.sorted_ious_list, self.aps_list, self.sorted_ap_list, self.conf_threshold_list
 
     def get_best_sorted_ap(self) -> Tuple[List[float], List[float], float, float]:
@@ -318,7 +318,7 @@ class AP_Metrics:
             - sorted_ap is the sortedAP metrics (the integral of aps w.r.t. sorted_ious).
             - conf_threshold is the corresponding model confidence threshold.
         """
-        self._compute_sorted_ap()
+        self.compute_sorted_ap()
         best_index = self.sorted_ap_list.index(max(self.sorted_ap_list))
         best_sorted_ious = self.sorted_ious_list[best_index]
         best_aps = self.aps_list[best_index]
@@ -347,6 +347,7 @@ class AP_Metrics_List:
         self.legend_list = [] if legend_list is None else legend_list
 
     def add_ap_metrics(self, ap_metrics: AP_Metrics, legend) -> None:
+        ap_metrics.compute_sorted_ap()
         self.ap_metrics_list.append(ap_metrics)
         self.legend_list.append(legend)
 
@@ -380,6 +381,7 @@ class AP_Metrics_List:
         conf_threshold_lists = []
 
         for ap_metrics in self.ap_metrics_list:
+            ap_metrics.compute_sorted_ap()
             sorted_ap_lists.append(ap_metrics.sorted_ap_list)
             conf_threshold_lists.append(ap_metrics.conf_threshold_list)
 

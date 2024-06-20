@@ -473,9 +473,9 @@ def evaluate_model(
             "At least one of conf_thresholds and output_geojson_save_path should be specified."
         )
 
-    if ap_conf_thresholds is not None:
-        # AP metrics
-        ap_metrics = AP_Metrics(conf_threshold_list=ap_conf_thresholds)
+    ap_conf_thresholds = [] if ap_conf_thresholds is None else ap_conf_thresholds
+    # AP metrics
+    ap_metrics = AP_Metrics(conf_threshold_list=ap_conf_thresholds)
 
     if output_geojson_save_path is not None:
         geojson_outputs: List[geojson.FeatureCollection] = []
