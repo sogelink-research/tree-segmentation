@@ -214,12 +214,19 @@ def train(
     running_accumulation_step: int,
     training_metrics: TrainingMetrics,
     epoch: int,
+    ap_interval: int = 20,
+    image_preds_interval: int = 50,
 ) -> int:
     # AP metrics
-    thresholds_low = np.power(10, np.linspace(-4, -1, 10))
-    thresholds_high = np.linspace(0.1, 1.0, 19)
-    conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
-    ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
+    compute_ap = epoch % ap_interval == 0
+    if compute_ap:
+        thresholds_low = np.power(10, np.linspace(-4, -1, 10))
+        thresholds_high = np.linspace(0.1, 1.0, 19)
+        conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
+        ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
+
+    # Predictions saved as an image
+    compute_image_preds = epoch % image_preds_interval == 0
 
     model.train()
     stream = tqdm(train_loader, leave=False, desc="Training")
@@ -244,18 +251,23 @@ def train(
 
         # Compute the AP metrics
         with torch.no_grad():
-            preds = model.preds_from_output(output)
-            ap_metrics.add_preds(
-                model=model,
-                preds=preds,
-                gt_bboxes=gt_bboxes,
-                gt_classes=gt_classes,
-                gt_indices=gt_indices,
-                image_indices=image_indices,
-            )
+            # Model evaluations:
+            if compute_ap or compute_image_preds:
+                preds = model.preds_from_output(output)
 
-            if epoch % 20 == 0:
-                dataset_idx = 42
+            # Compute the AP metrics
+            if compute_ap:
+                ap_metrics.add_preds(
+                    model=model,
+                    preds=preds,
+                    gt_bboxes=gt_bboxes,
+                    gt_classes=gt_classes,
+                    gt_indices=gt_indices,
+                    image_indices=image_indices,
+                )
+
+            if compute_image_preds:
+                dataset_idx = 0
                 if dataset_idx in image_indices.tolist():
                     batch_idx = image_indices.tolist().index(dataset_idx)
 
@@ -328,12 +340,19 @@ def validate(
     device: torch.device,
     training_metrics: TrainingMetrics,
     epoch: int,
+    ap_interval: int = 20,
+    image_preds_interval: int = 50,
 ) -> float:
     # AP metrics
-    thresholds_low = np.power(10, np.linspace(-4, -1, 10))
-    thresholds_high = np.linspace(0.1, 1.0, 19)
-    conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
-    ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
+    compute_ap = epoch % ap_interval == 0
+    if compute_ap:
+        thresholds_low = np.power(10, np.linspace(-4, -1, 10))
+        thresholds_high = np.linspace(0.1, 1.0, 19)
+        conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
+        ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
+
+    # Predictions saved as an image
+    compute_image_preds = epoch % image_preds_interval == 0
 
     model.eval()
     stream = tqdm(val_loader, leave=False, desc="Validation")
@@ -370,21 +389,24 @@ def validate(
                     "Validation", key, value.item(), count=batch_size, y_axis="Loss"
                 )
 
-            # Compute the AP metrics
-            preds = model.preds_from_output(output)
-            ap_metrics.add_preds(
-                model=model,
-                preds=preds,
-                gt_bboxes=gt_bboxes,
-                gt_classes=gt_classes,
-                gt_indices=gt_indices,
-                image_indices=image_indices,
-            )
+            # Model evaluations:
+            if compute_ap or compute_image_preds:
+                preds = model.preds_from_output(output)
 
-        # Compute the AP metrics
-        with torch.no_grad():
-            if epoch % 20 == 0:
-                dataset_idx = 42
+            # Compute the AP metrics
+            if compute_ap:
+                ap_metrics.add_preds(
+                    model=model,
+                    preds=preds,
+                    gt_bboxes=gt_bboxes,
+                    gt_classes=gt_classes,
+                    gt_indices=gt_indices,
+                    image_indices=image_indices,
+                )
+
+            # Save the predictions in an image
+            if compute_image_preds:
+                dataset_idx = 0
                 if dataset_idx in image_indices.tolist():
                     batch_idx = image_indices.tolist().index(dataset_idx)
 
@@ -422,12 +444,12 @@ def validate(
                         colors_dict=DatasetConst.CLASS_COLORS.value,
                         save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}_val.png"),
                     )
-
-    _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
-    training_metrics.update("Validation", "Best sortedAP", sorted_ap, y_axis="sortedAP")
-    training_metrics.update(
-        "Validation", "Conf thres of sortedAP", conf_threshold, y_axis="Conf threshold"
-    )
+    if compute_ap:
+        _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
+        training_metrics.update("Validation", "Best sortedAP", sorted_ap, y_axis="sortedAP")
+        training_metrics.update(
+            "Validation", "Conf thres of sortedAP", conf_threshold, y_axis="Conf threshold"
+        )
 
     return training_metrics.get_last("Validation", "Total Loss")
 
@@ -505,7 +527,6 @@ def evaluate_model(
             # Compute the model output
             output = model.forward(image_rgb, image_chm)
             preds = model.preds_from_output(output)
-            old_preds = preds.detach().clone()
 
             # Compute the AP metrics
             if ap_conf_thresholds is not None:
@@ -541,8 +562,6 @@ def evaluate_model(
                         scores=scores,
                     )
                     geojson_outputs.append(geojson_features)
-
-            print(f"{(preds - old_preds).abs().sum() = }")
 
     if output_geojson_save_path is not None:
         geojson_outputs_merged = merge_geojson_feature_collections(geojson_outputs)
