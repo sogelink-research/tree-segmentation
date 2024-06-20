@@ -149,7 +149,7 @@ def main():
                     .permute((2, 0, 1))
                     .unsqueeze(0)
                     .to(torch.float32)
-                    .to(device),
+                    .to(device, non_blocking=True),
                     images,
                 )
             )
