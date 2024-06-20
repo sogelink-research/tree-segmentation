@@ -156,3 +156,33 @@ class TreeDataLoader(DataLoader):
             persistent_workers=persistent_workers,
             pin_memory_device=pin_memory_device,
         )
+
+
+def initialize_dataloaders(
+    datasets: Dict[str, TreeDataset],
+    batch_size: int,
+    num_workers: int,
+) -> Tuple[TreeDataLoader, TreeDataLoader, TreeDataLoader]:
+    assert all(key in datasets for key in ["training", "validation", "test"])
+    train_loader = TreeDataLoader(
+        datasets["training"],
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
+    val_loader = TreeDataLoader(
+        datasets["validation"],
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
+    test_loader = TreeDataLoader(
+        datasets["test"],
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
+    return train_loader, val_loader, test_loader

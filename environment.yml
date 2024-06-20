@@ -6,6 +6,7 @@ channels:
 
 dependencies:
   - python>=3.11,<3.12
+
   # Images manipulation
   - gdal
   - shapely
@@ -42,8 +43,8 @@ dependencies:
 
   # Downloading files
   - requests
-  - segment-geospatial
-  - leafmap
+  - segment-geospatial # Useless?
+  - leafmap # Useless?
 
   - pip
   - pip:
@@ -51,7 +52,7 @@ dependencies:
       - vscode-tqdm
 
       - laspy[lazrs,laszip]
-      - pyyaml>=5.3.1
+      - pyyaml>=5.3.1 # Useless?
 
       # Gold-YOLO
       - onnxsim>=0.3.6 # ONNX simplifier

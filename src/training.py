@@ -16,7 +16,11 @@ from IPython import display
 from ipywidgets import Output
 from ultralytics.utils.tal import make_anchors
 
-from dataloaders import TreeDataLoader, convert_ground_truth_from_tensors
+from dataloaders import (
+    TreeDataLoader,
+    convert_ground_truth_from_tensors,
+    initialize_dataloaders,
+)
 from dataset_constants import DatasetConst
 from datasets import TreeDataset
 from geojson_conversions import merge_geojson_feature_collections, save_geojson
@@ -238,26 +242,7 @@ def train(
         # Compute the model output
         output = model.forward(image_rgb, image_chm)
 
-        # Compute the loss
-        total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
-        total_loss.backward()
-
-        # Gradient accumulation
-        if (running_accumulation_step + 1) % accumulation_steps == 0:
-            optimizer.step()
-            optimizer.zero_grad()
-
-        running_accumulation_step += 1
-
-        # Store the loss
-        batch_size = image_rgb.shape[0]
-        training_metrics.update(
-            "Training", "Total Loss", total_loss.item(), count=batch_size, y_axis="Loss"
-        )
-        for key, value in loss_dict.items():
-            training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
-
-       # Compute the AP metrics
+        # Compute the AP metrics
         with torch.no_grad():
             preds = model.preds_from_output(output)
             ap_metrics.add_preds(
@@ -308,6 +293,25 @@ def train(
                         colors_dict=DatasetConst.CLASS_COLORS.value,
                         save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}_train.png"),
                     )
+
+        # Compute the loss
+        total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
+        total_loss.backward()
+
+        # Gradient accumulation
+        if (running_accumulation_step + 1) % accumulation_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+
+        running_accumulation_step += 1
+
+        # Store the loss
+        batch_size = image_rgb.shape[0]
+        training_metrics.update(
+            "Training", "Total Loss", total_loss.item(), count=batch_size, y_axis="Loss"
+        )
+        for key, value in loss_dict.items():
+            training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
 
     _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
     training_metrics.update("Training", "Best sortedAP", sorted_ap, y_axis="sortedAP")
@@ -460,18 +464,18 @@ def evaluate_model(
     device: torch.device,
     use_rgb: bool = True,
     use_chm: bool = True,
-    conf_thresholds: Optional[List[float]] = None,
+    ap_conf_thresholds: Optional[List[float]] = None,
     output_geojson_save_path: Optional[str] = None,
 ) -> AP_Metrics:
 
-    if conf_thresholds is None and output_geojson_save_path is None:
+    if ap_conf_thresholds is None and output_geojson_save_path is None:
         raise ValueError(
             "At least one of conf_thresholds and output_geojson_save_path should be specified."
         )
 
-    if conf_thresholds is not None:
+    if ap_conf_thresholds is not None:
         # AP metrics
-        ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
+        ap_metrics = AP_Metrics(conf_threshold_list=ap_conf_thresholds)
 
     if output_geojson_save_path is not None:
         geojson_outputs: List[geojson.FeatureCollection] = []
@@ -500,10 +504,11 @@ def evaluate_model(
 
             # Compute the model output
             output = model.forward(image_rgb, image_chm)
+            preds = model.preds_from_output(output)
+            old_preds = preds.detach().clone()
 
             # Compute the AP metrics
-            preds = model.preds_from_output(output)
-            if conf_thresholds is not None:
+            if ap_conf_thresholds is not None:
                 ap_metrics.add_preds(
                     model=model,
                     preds=preds,
@@ -534,45 +539,16 @@ def evaluate_model(
                         bboxes=bboxes,
                         labels=classes_as_strs,
                         scores=scores,
-                        # save_path=output_geojson_save_path,
                     )
                     geojson_outputs.append(geojson_features)
+
+            print(f"{(preds - old_preds).abs().sum() = }")
 
     if output_geojson_save_path is not None:
         geojson_outputs_merged = merge_geojson_feature_collections(geojson_outputs)
         save_geojson(geojson_outputs_merged, output_geojson_save_path)
 
     return ap_metrics
-
-
-def initialize_dataloaders(
-    datasets: Dict[str, TreeDataset],
-    batch_size: int,
-    num_workers: int,
-) -> Tuple[TreeDataLoader, TreeDataLoader, TreeDataLoader]:
-    assert all(key in datasets for key in ["training", "validation", "test"])
-    train_loader = TreeDataLoader(
-        datasets["training"],
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
-    val_loader = TreeDataLoader(
-        datasets["validation"],
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
-    test_loader = TreeDataLoader(
-        datasets["test"],
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
-    return train_loader, val_loader, test_loader
 
 
 def train_and_validate(
@@ -615,6 +591,7 @@ def train_and_validate(
 
     for epoch in tqdm(range(1, epochs + 1), desc="Epoch"):
         if epoch % temp_models_interval == 1:
+            best_temp_epoch = -1
             best_temp_model = model
             best_temp_loss = np.inf
 
@@ -643,11 +620,12 @@ def train_and_validate(
 
             # Store and save the best temp model
             if current_loss < best_temp_loss:
+                best_temp_epoch = epoch
                 best_temp_model = model
                 best_temp_loss = current_loss
 
             if epoch % temp_models_interval == 0:
-                best_temp_model.save_weights(epoch=epoch)
+                best_temp_model.save_weights(best=False, epoch=best_temp_epoch)
 
         training_metrics.end_loop(epoch)
 

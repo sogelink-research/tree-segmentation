@@ -519,8 +519,8 @@ class AMF_GD_YOLOv8(nn.Module):
         batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
         return self.criterion(output, batch)
 
-    def save_weights(self, epoch: Optional[int] = None) -> None:
-        model_weights_path = self.weights_path(epoch)
+    def save_weights(self, best: bool = True, epoch: Optional[int] = None) -> None:
+        model_weights_path = self.weights_path(best, epoch)
         state_dict = self.state_dict()
         torch.save(state_dict, model_weights_path)
 
@@ -529,8 +529,10 @@ class AMF_GD_YOLOv8(nn.Module):
         model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(self.name)
         return model_folder_path
 
-    def weights_path(self, epoch: Optional[int] = None) -> str:
-        model_weights_path = AMF_GD_YOLOv8.get_weights_path_from_name(self.name, epoch)
+    def weights_path(self, best: bool = True, epoch: Optional[int] = None) -> str:
+        model_weights_path = AMF_GD_YOLOv8.get_weights_path_from_name(
+            model_name=self.name, best=best, epoch=epoch
+        )
         return model_weights_path
 
     @staticmethod
@@ -548,11 +550,12 @@ class AMF_GD_YOLOv8(nn.Module):
 
     @staticmethod
     def get_weights_path_from_name(
-        model_name: Optional[str] = None, epoch: Optional[int] = None
+        model_name: Optional[str] = None, best: bool = True, epoch: Optional[int] = None
     ) -> str:
         model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
-        epoch_str = "_" if epoch is None else f"_{epoch}ep"
-        model_weights_path = os.path.join(model_folder_path, f"weights{epoch_str}.pt")
+        best_str = "_best" if best else f""
+        epoch_str = "" if epoch is None else f"_{epoch}ep"
+        model_weights_path = os.path.join(model_folder_path, f"weights{best_str}{epoch_str}.pt")
         return model_weights_path
 
     @staticmethod

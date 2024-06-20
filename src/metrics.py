@@ -239,9 +239,11 @@ class AP_Metrics:
         image_indices: torch.Tensor,
     ) -> None:
         lowest_conf_threshold = min(self.conf_threshold_list)
+
         bboxes_list, scores_list, classes_as_ints_list = model.predict_from_preds(
             preds, conf_threshold=lowest_conf_threshold
         )
+
         gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
             gt_bboxes=gt_bboxes,
             gt_classes=gt_classes,
