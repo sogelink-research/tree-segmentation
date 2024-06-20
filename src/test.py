@@ -117,7 +117,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"{(images_init[0].shape[2], images_init[1].shape[2]) = }")
     model = AMF_GD_YOLOv8(
-        images_init[0].shape[2], images_init[1].shape[2], {}, device=device, name="Test"
+        images_init[0].shape[2], images_init[1].shape[2], {0: "test"}, device=device, name="Test"
     )
 
     def test(
