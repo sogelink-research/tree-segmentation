@@ -7,8 +7,7 @@ import numpy as np
 import tifffile
 import torch
 
-
-# from layers import AMF_GD_YOLOv8
+from layers import AMF_GD_YOLOv8
 
 
 def write_hdf5(images: List[np.ndarray], save_path: str) -> None:
@@ -117,15 +116,15 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"{(images_init[0].shape[2], images_init[1].shape[2]) = }")
-    # model = AMF_GD_YOLOv8(
-    #     images_init[0].shape[2], images_init[1].shape[2], {}, device=device, name="Test"
-    # )
+    model = AMF_GD_YOLOv8(
+        images_init[0].shape[2], images_init[1].shape[2], {}, device=device, name="Test"
+    )
 
     def test(
         read_func: Callable,
         images_init: List[np.ndarray],
         tensors_init: List[torch.Tensor],
-        # model: AMF_GD_YOLOv8,
+        model: AMF_GD_YOLOv8,
         device: torch.device,
         input_paths: str | List[str],
         iterations: int = 5,
@@ -149,7 +148,7 @@ def main():
                 )
             )
             print(f"{images_tensors[0].shape = }")
-            # output = model.forward(images_tensors[0], images_tensors[1])
+            output = model.forward(images_tensors[0], images_tensors[1])
         end_time = time.time()
         print(f"Test time of {read_func.__name__}: {end_time - start_time:.5f} seconds")
 
@@ -158,7 +157,7 @@ def main():
             read_func=read_func,
             images_init=images_init,
             tensors_init=tensors_init,
-            # model=model,
+            model=model,
             device=device,
             input_paths=input_paths,
             iterations=iterations,
