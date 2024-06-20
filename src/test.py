@@ -157,8 +157,7 @@ def main():
             total_to_tensor_time += end_time - start_time
             start_time = time.time()
             output = model.forward(images_tensors[0], images_tensors[1])
-            print(output[0].shape)
-            assert output[0].shape == torch.Size((1, 64, 80, 80))
+            assert output[0].shape == torch.Size((1, 64 + len(model.class_indices), 80, 80))
             end_time = time.time()
             total_output_time += end_time - start_time
 
