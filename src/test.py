@@ -1,4 +1,5 @@
 import time
+from random import shuffle
 from typing import Callable, List, Tuple
 
 import h5py
@@ -103,7 +104,7 @@ def main():
     write_numpy(images_init, numpy_test_file)
     dtypes, shapes = write_memmap(images_init, memmap_test_files)
 
-    iterations = 20
+    iterations = 50
     read_func_list = [read_tif, read_hdf5, read_netCDF4, read_numpy, read_memmap]
     input_paths_list = [
         tif_test_files,
@@ -161,11 +162,13 @@ def main():
             total_output_time += end_time - start_time
 
         print(f"{read_func.__name__}: ")
-        print(f"--- 'load': {total_load_time:2.5f} seconds", end=" ; ")
-        print(f"--- 'to tensor': {total_to_tensor_time:2.5f} seconds", end=" ; ")
-        print(f"--- 'output':    {total_output_time:2.5f} seconds")
+        print(f"'load': {total_load_time/iterations:.5f} seconds", end=" ; ")
+        print(f"'to tensor': {total_to_tensor_time/iterations:.5f} seconds", end=" ; ")
+        print(f"'output':    {total_output_time/iterations:.5f} seconds")
 
-    for read_func, input_paths, kwargs in zip(read_func_list, input_paths_list, kwargs_list):
+    zipped = list(zip(read_func_list, input_paths_list, kwargs_list))
+    shuffle(zipped)
+    for read_func, input_paths, kwargs in zipped:
         test(
             read_func=read_func,
             images_init=images_init,
@@ -176,51 +179,6 @@ def main():
             iterations=iterations,
             kwargs=kwargs,
         )
-
-    # start_cpu = time.time()
-    # for _ in range(iterations):
-    #     images = read_tif(tif_test_files)
-    #     images_tensors = list(map(torch.from_numpy, images))
-    #     # print(images_tensors[0].shape)
-    #     # print(f"{all([np.all(images_init[i] == images[i]) for i in range(len(images))])}")
-    # end_cpu = time.time()
-    # print(f"CPU time taken: {end_cpu - start_cpu:.5f} seconds")
-
-    # start_cpu = time.time()
-    # for _ in range(iterations):
-    #     images = read_hdf5(hdf5_test_file)
-    #     images_tensors = list(map(torch.from_numpy, images))
-    #     # print(images_tensors[0].shape)
-    #     # print(f"{all([np.all(images_init[i] == images[i]) for i in range(len(images))])}")
-    # end_cpu = time.time()
-    # print(f"CPU time taken: {end_cpu - start_cpu:.5f} seconds")
-
-    # start_cpu = time.time()
-    # for _ in range(iterations):
-    #     images = read_netCDF4(nc_test_file)
-    #     images_tensors = list(map(torch.from_numpy, images))
-    #     # print(images_tensors[0].shape)
-    #     # print(f"{all([np.all(images_init[i] == images[i]) for i in range(len(images))])}")
-    # end_cpu = time.time()
-    # print(f"CPU time taken: {end_cpu - start_cpu:.5f} seconds")
-
-    # start_cpu = time.time()
-    # for _ in range(iterations):
-    #     images = read_numpy(numpy_test_file)
-    #     images_tensors = list(map(torch.from_numpy, images))
-    #     # print(images_tensors[0].shape)
-    #     # print(f"{all([np.all(images_init[i] == images[i]) for i in range(len(images))])}")
-    # end_cpu = time.time()
-    # print(f"CPU time taken: {end_cpu - start_cpu:.5f} seconds")
-
-    # start_cpu = time.time()
-    # for _ in range(iterations):
-    #     images = read_memmap(memmap_test_files, dtypes, shapes)
-    #     images_tensors = list(map(torch.from_numpy, images))
-    #     # print(images_tensors[0].shape)
-    #     # print(f"{all([np.all(images_init[i] == images[i]) for i in range(len(images))])}")
-    # end_cpu = time.time()
-    # print(f"CPU time taken: {end_cpu - start_cpu:.5f} seconds")
 
 
 if __name__ == "__main__":
