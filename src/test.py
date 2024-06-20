@@ -103,7 +103,7 @@ def main():
     write_numpy(images_init, numpy_test_file)
     dtypes, shapes = write_memmap(images_init, memmap_test_files)
 
-    iterations = 5
+    iterations = 10
     read_func_list = [read_tif, read_hdf5, read_netCDF4, read_numpy, read_memmap]
     input_paths_list = [
         tif_test_files,
@@ -134,9 +134,15 @@ def main():
         images_tensors = list(map(torch.from_numpy, images))
         assert all([np.all(images[i] == images_init[i]) for i in range(len(images))])
         assert all([torch.all(images_tensors[i] == tensors_init[i]) for i in range(len(images))])
-        start_time = time.time()
+        total_load_time = 0.0
+        total_to_tensor_time = 0.0
+        total_output_time = 0.0
         for _ in range(iterations):
+            start_time = time.time()
             images = read_func(input_paths, **kwargs.get("kwargs", {}))
+            end_time = time.time()
+            total_load_time += end_time - start_time
+            start_time = time.time()
             images_tensors = list(
                 map(
                     lambda arr: torch.from_numpy(arr)
@@ -147,10 +153,16 @@ def main():
                     images,
                 )
             )
-            print(f"{images_tensors[0].shape = }")
+            end_time = time.time()
+            total_to_tensor_time += end_time - start_time
+            start_time = time.time()
             output = model.forward(images_tensors[0], images_tensors[1])
-        end_time = time.time()
-        print(f"Test time of {read_func.__name__}: {end_time - start_time:.5f} seconds")
+            end_time = time.time()
+            total_output_time += end_time - start_time
+
+        print(f"Total 'load' time of {read_func.__name__}: {total_load_time:.5f} seconds")
+        print(f"Total 'to tensor' time of {read_func.__name__}: {total_to_tensor_time:.5f} seconds")
+        print(f"Total 'output' time of {read_func.__name__}: {total_output_time:.5f} seconds")
 
     for read_func, input_paths, kwargs in zip(read_func_list, input_paths_list, kwargs_list):
         test(
