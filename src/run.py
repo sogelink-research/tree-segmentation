@@ -456,7 +456,7 @@ def main():
     lr = 1e-2
     epochs = 5
     batch_size = 10
-    num_workers = 8
+    num_workers = 0
     accumulate = 10
 
     proba_drop_rgb = 1 / 3
