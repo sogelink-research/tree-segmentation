@@ -120,13 +120,13 @@ class DatasetParams:
             Folders.CROPPED_ANNOTS.value, self.image_data.base_name
         )
         self.rgb_cir_folder_path = os.path.join(
-            Folders.IMAGES.value, "merged_npy", "cropped", self.image_data.base_name
+            Folders.IMAGES.value, "merged_memmap", "cropped", self.image_data.base_name
         )
         self.chm_folder_path = os.path.join(
             Folders.CHM.value,
             f"{round(RESOLUTION*100)}cm",
             "filtered",
-            "merged_npy",
+            "merged_memmap",
             "cropped",
             self.image_data.coord_name,
         )
@@ -298,6 +298,7 @@ class ModelSession:
         datasets = load_tree_datasets_from_split(
             self.training_data.data_split_file_path,
             labels_to_index=self.training_data.dataset_params.class_indices,
+            device=self.device,
             mean_rgb=self.training_data.mean_rgb,
             std_rgb=self.training_data.std_rgb,
             mean_chm=self.training_data.mean_chm,

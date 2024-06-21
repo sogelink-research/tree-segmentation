@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import time
 from collections import defaultdict
 from math import ceil
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -235,6 +236,7 @@ def train(
     model.train()
     stream = tqdm(train_loader, leave=False, desc="Training")
     for data in stream:
+        start_time = time.process_time()
         # Get the data
         image_rgb: torch.Tensor = data["image_rgb"]
         image_chm: torch.Tensor = data["image_chm"]
@@ -243,6 +245,10 @@ def train(
         gt_indices: torch.Tensor = data["indices"]
         image_indices: torch.Tensor = data["image_indices"]
 
+        end_time = time.process_time()
+        print(f"Load time: {end_time - start_time:.6f} seconds")
+        start_time = time.process_time()
+
         image_rgb = image_rgb.to(device, non_blocking=True)
         image_chm = image_chm.to(device, non_blocking=True)
         gt_bboxes = gt_bboxes.to(device, non_blocking=True)
@@ -250,8 +256,16 @@ def train(
         gt_indices = gt_indices.to(device, non_blocking=True)
         image_indices = image_indices.to(device, non_blocking=True)
 
+        end_time = time.process_time()
+        print(f"Seng GPU time: {end_time - start_time:.6f} seconds")
+        start_time = time.process_time()
+
         # Compute the model output
         output = model.forward(image_rgb, image_chm)
+
+        end_time = time.process_time()
+        print(f"Forward time: {end_time - start_time:.6f} seconds")
+        start_time = time.process_time()
 
         # Compute the AP metrics
         with torch.no_grad():
@@ -310,14 +324,30 @@ def train(
                         save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}_train.png"),
                     )
 
+        end_time = time.process_time()
+        print(f"Metrics time: {end_time - start_time:.6f} seconds")
+        start_time = time.process_time()
+
         # Compute the loss
         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
+
+        end_time = time.process_time()
+        print(f"Loss time: {end_time - start_time:.6f} seconds")
+        start_time = time.process_time()
+
         total_loss.backward()
+
+        end_time = time.process_time()
+        print(f"Backward time: {end_time - start_time:.6f} seconds")
+        start_time = time.process_time()
 
         # Gradient accumulation
         if (running_accumulation_step + 1) % accumulation_steps == 0:
             optimizer.step()
             optimizer.zero_grad()
+
+        end_time = time.process_time()
+        print(f"Optimizer time: {end_time - start_time:.6f} seconds")
 
         running_accumulation_step += 1
 
@@ -779,6 +809,7 @@ def create_and_save_splitted_datasets(
 def load_tree_datasets_from_split(
     data_split_file_path: str,
     labels_to_index: Dict[str, int],
+    device: torch.device,
     mean_rgb: torch.Tensor,
     std_rgb: torch.Tensor,
     mean_chm: torch.Tensor,
@@ -800,6 +831,7 @@ def load_tree_datasets_from_split(
     tree_datasets["training"] = TreeDataset(
         data_split["training"],
         labels_to_index=labels_to_index,
+        device=device,
         mean_rgb=mean_rgb,
         std_rgb=std_rgb,
         mean_chm=mean_chm,
@@ -818,6 +850,7 @@ def load_tree_datasets_from_split(
     tree_datasets["validation"] = TreeDataset(
         data_split["validation"],
         labels_to_index=labels_to_index,
+        device=device,
         mean_rgb=mean_rgb,
         std_rgb=std_rgb,
         mean_chm=mean_chm,
@@ -841,6 +874,7 @@ def load_tree_datasets_from_split(
     tree_datasets["test"] = TreeDataset(
         test_data,
         labels_to_index=labels_to_index,
+        device=device,
         mean_rgb=mean_rgb,
         std_rgb=std_rgb,
         mean_chm=mean_chm,

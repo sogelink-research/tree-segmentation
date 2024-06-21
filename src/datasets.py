@@ -258,6 +258,7 @@ class TreeDataset(Dataset):
         self,
         files_paths_list: List[Dict[str, str]],
         labels_to_index: Dict[str, int],
+        device: torch.device,
         mean_rgb: torch.Tensor,
         std_rgb: torch.Tensor,
         mean_chm: torch.Tensor,
@@ -279,6 +280,7 @@ class TreeDataset(Dataset):
             files_paths_list (List[Dict[str, str]]): list of dictionaries containing the paths to
             RGB, CHM and annotations.
             labels_to_index (Dict[str, int]): dictionary associating a label name with an index.
+            device (torch.device): the device to put the data on.
             mean_rgb (torch.Tensor): mean used to normalize RGB images.
             std_rgb (torch.Tensor): standard deviation used to normalize RGB images.
             mean_chm (torch.Tensor): mean used to normalize CHM images.
@@ -331,6 +333,8 @@ class TreeDataset(Dataset):
 
         self.labels_to_index = labels_to_index
         self.labels_to_str = {value: key for key, value in self.labels_to_index.items()}
+
+        self.device = device
 
         self.proba_drop_rgb = proba_drop_rgb
         self.labels_transformation_drop_rgb = labels_transformation_drop_rgb
@@ -502,10 +506,10 @@ class TreeDataset(Dataset):
         to_tensor = Atorch.ToTensorV2()
 
         sample = {
-            "image_rgb": to_tensor(image=image_rgb)["image"].to(torch.float32),
-            "image_chm": to_tensor(image=image_chm)["image"].to(torch.float32),
-            "bboxes": torch.tensor(bboxes),
-            "labels": torch.tensor(labels),
+            "image_rgb": to_tensor(image=image_rgb)["image"].to(torch.float32).to(self.device),
+            "image_chm": to_tensor(image=image_chm)["image"].to(torch.float32).to(self.device),
+            "bboxes": torch.tensor(bboxes).to(self.device),
+            "labels": torch.tensor(labels).to(self.device),
             "image_index": idx,
         }
         return sample

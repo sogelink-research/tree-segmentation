@@ -190,20 +190,20 @@ def initialize_dataloaders(
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        pin_memory=False,
+        pin_memory=True,
     )
     val_loader = TreeDataLoader(
         datasets["validation"],
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=False,
+        pin_memory=True,
     )
     test_loader = TreeDataLoader(
         datasets["test"],
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=False,
+        pin_memory=True,
     )
     return train_loader, val_loader, test_loader
