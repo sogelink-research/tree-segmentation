@@ -208,8 +208,8 @@ def normalize(
             )
         return tensor.view(-1, 1, 1)
 
-    mean = reshape(mean, "mean").to(image.dtype)
-    std = reshape(std, "std").to(image.dtype)
+    mean = reshape(mean, "mean").to(dtype=image.dtype, device=image.device)
+    std = reshape(std, "std").to(dtype=image.dtype, device=image.device)
 
     return (image - mean) / std
 
