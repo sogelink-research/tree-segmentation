@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import re
 import time
 from collections import defaultdict
 from math import ceil
@@ -785,15 +786,10 @@ def create_and_save_splitted_datasets(
             )
 
             # Handle tif, mmap and npy
-            annotations_file = rgb_file.replace(rgb_folder_path, annotations_folder_path).replace(
-                ".tif", ".json"
-            )
-            annotations_file = rgb_file.replace(rgb_folder_path, annotations_folder_path).replace(
-                ".mmap", ".json"
-            )
-            annotations_file = rgb_file.replace(rgb_folder_path, annotations_folder_path).replace(
-                ".npy", ".json"
-            )
+            extensions = [".tif", ".mmap", ".npy"]
+            annotations_file = rgb_file.replace(rgb_folder_path, annotations_folder_path)
+            for extension in extensions:
+                annotations_file.replace(extension, ".json")
 
             new_dict = {
                 "rgb": rgb_file,
