@@ -120,18 +120,18 @@ class DatasetParams:
             Folders.CROPPED_ANNOTS.value, self.image_data.base_name
         )
         self.rgb_cir_folder_path = os.path.join(
-            Folders.IMAGES.value, "merged", "cropped", self.image_data.base_name
+            Folders.IMAGES.value, "merged_memmap", "cropped", self.image_data.base_name
         )
         self.chm_folder_path = os.path.join(
             Folders.CHM.value,
             f"{round(RESOLUTION*100)}cm",
             "filtered",
-            "merged",
+            "merged_memmap",
             "cropped",
             self.image_data.coord_name,
         )
-        self.channels_rgb = get_channels_count(self.rgb_cir_folder_path)
-        self.channels_chm = get_channels_count(self.chm_folder_path)
+        self.channels_rgb = get_channels_count(self.rgb_cir_folder_path, chm=False)
+        self.channels_chm = get_channels_count(self.chm_folder_path, chm=True)
 
 
 class TrainingParams:
@@ -218,7 +218,10 @@ class TrainingData:
         # Compute RGB mean and std if an of them is missing
         if mean_rgb is None or std_rgb is None:
             self.mean_rgb, self.std_rgb = compute_mean_and_std(
-                self.dataset_params.rgb_cir_folder_path, per_channel=True, replace_no_data=False
+                self.dataset_params.rgb_cir_folder_path,
+                per_channel=True,
+                chm=False,
+                replace_no_data=False,
             )
         else:
             self.mean_rgb, self.std_rgb = mean_rgb, std_rgb
@@ -229,6 +232,7 @@ class TrainingData:
                 self.dataset_params.chm_folder_path,
                 per_channel=True,
                 replace_no_data=True,
+                chm=True,
                 no_data_new_value=self.dataset_params.no_data_new_value,
             )
         else:
@@ -450,7 +454,7 @@ def main():
     # Training parameters
 
     lr = 1e-2
-    epochs = 1500
+    epochs = 5
     batch_size = 10
     num_workers = 0
     accumulate = 10

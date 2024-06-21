@@ -11,7 +11,9 @@ from albumentations import pytorch as Atorch
 from PIL import Image
 from torch.utils.data import Dataset
 
+from dataset_constants import DatasetConst
 from plot import get_bounding_boxes
+from speed_test import read_memmap
 from utils import get_coordinates_from_full_image_file_name, get_file_base_name
 
 
@@ -44,7 +46,7 @@ def _compute_channels_mean_std_tensor(
     image: torch.Tensor,
     per_channel: bool,
     replace_no_data: bool,
-    no_data_new_value: float = 0,
+    no_data_new_value: float = 0.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Computes the mean and the standard deviation along every channel of the image given as input.
 
@@ -53,7 +55,8 @@ def _compute_channels_mean_std_tensor(
         per_channel (bool): whether to compute one value for each channel or one for the whole images.
         replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
         before computations.
-        no_data_new_value (float): the value replacing NO_DATA (-9999) before computations.
+        no_data_new_value (float, optional): the value replacing NO_DATA (-9999) before computations.
+        Defaults to 0.0.
 
     Returns:
         Tuple[torch.Tensor, torch.Tensor]: (mean, std), two tensors of shape (c,) if per_channel is
@@ -75,7 +78,8 @@ def _compute_channels_mean_and_std_file(
     file_path: str,
     per_channel: bool,
     replace_no_data: bool,
-    no_data_new_value: float = 0,
+    chm: bool,
+    no_data_new_value: float = 0.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Computes the mean and the standard deviation along every channel of the image given as input.
 
@@ -84,7 +88,9 @@ def _compute_channels_mean_and_std_file(
         per_channel (bool): whether to compute one value for each channel or one for the whole images.
         replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
         before computations.
-        no_data_new_value (float): the value replacing NO_DATA (-9999) before computations.
+        chm (bool): whether the image is CHM or RGB.
+        no_data_new_value (float, optional): the value replacing NO_DATA (-9999) before computations.
+        Defaults to 0.0.
 
     Raises:
         InvalidPathException: if the input path is not a file.
@@ -96,17 +102,23 @@ def _compute_channels_mean_and_std_file(
     if not os.path.isfile(file_path):
         raise InvalidPathException(file_path, "file")
     if is_tif_file(file_path):
-        image = torch.from_numpy(tifffile.imread(file_path))
+        image = tifffile.imread(file_path)
+    elif is_memmap_file(file_path):
+        dtype_type = DatasetConst.CHM_DATA_TYPE.value if chm else DatasetConst.RGB_DATA_TYPE.value
+        image = read_memmap([file_path], [dtype_type])[0]
     else:
-        image = torch.from_numpy(np.array(Image.open(file_path)))
-    return _compute_channels_mean_std_tensor(image, per_channel, replace_no_data, no_data_new_value)
+        image = np.array(Image.open(file_path))
+    return _compute_channels_mean_std_tensor(
+        torch.from_numpy(image), per_channel, replace_no_data, no_data_new_value
+    )
 
 
 def compute_mean_and_std(
     file_or_folder_path: str,
     per_channel: bool,
     replace_no_data: bool,
-    no_data_new_value: float = 0,
+    chm: bool,
+    no_data_new_value: float = 0.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Computes the mean and the standard deviation along every channel of the image(s) given as input
     (either as one file or a directory containing multiple files).
@@ -116,7 +128,9 @@ def compute_mean_and_std(
         per_channel (bool): whether to compute one value for each channel or one for the whole images.
         replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
         before computations.
-        no_data_new_value (float): the value replacing NO_DATA (-9999) before computations.
+        chm (bool): whether the image(s) are CHM or RGB.
+        no_data_new_value (float, optional): the value replacing NO_DATA (-9999) before computations.
+        Defaults to 0.0.
 
     Raises:
         InvalidPathException: if the input path is neither a file, nor a directory.
@@ -128,7 +142,7 @@ def compute_mean_and_std(
     if os.path.isfile(file_or_folder_path):
         file_path = file_or_folder_path
         return _compute_channels_mean_and_std_file(
-            file_path, per_channel, replace_no_data, no_data_new_value
+            file_path, per_channel, replace_no_data, chm, no_data_new_value
         )
 
     elif os.path.isdir(file_or_folder_path):
@@ -138,7 +152,7 @@ def compute_mean_and_std(
         for file_name in os.listdir(folder_path):
             file_path = os.path.join(folder_path, file_name)
             mean, std = _compute_channels_mean_and_std_file(
-                file_path, per_channel, replace_no_data, no_data_new_value
+                file_path, per_channel, replace_no_data, chm, no_data_new_value
             )
             means.append(mean)
             stds.append(std)
@@ -155,7 +169,7 @@ def normalize(
     mean: torch.Tensor,
     std: torch.Tensor,
     replace_no_data: bool,
-    no_data_new_value: float = 0,
+    no_data_new_value: float = 0.0,
 ) -> torch.Tensor:
     """Normalizes the CHM image given as input.
 
@@ -165,7 +179,8 @@ def normalize(
         std (torch.Tensor): the standard deviation to normalize with. Must be of shape [], [1] or [c].
         replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
         before normalization.
-        no_data_new_value (float): the value replacing NO_DATA (-9999) before normalization.
+        no_data_new_value (float, optional): the value replacing NO_DATA (-9999) before computations.
+        Defaults to 0.0.
 
     Returns:
         torch.Tensor: the normalized image.
@@ -224,6 +239,10 @@ def denormalize(image: torch.Tensor, mean: torch.Tensor, std: torch.Tensor) -> t
 
 def is_tif_file(file_path: str) -> bool:
     return file_path.lower().endswith((".tif", ".tiff"))
+
+
+def is_memmap_file(file_path: str) -> bool:
+    return file_path.lower().endswith(".mmap")
 
 
 class TreeDataset(Dataset):
@@ -344,6 +363,8 @@ class TreeDataset(Dataset):
     def _read_rgb_image(self, image_path: str) -> np.ndarray:
         if is_tif_file(image_path):
             image = tifffile.imread(image_path)
+        elif is_memmap_file(image_path):
+            image = read_memmap([image_path], [DatasetConst.RGB_DATA_TYPE.value])[0]
         else:
             image = np.array(Image.open(image_path))
         if len(image.shape) == 2:
@@ -353,6 +374,8 @@ class TreeDataset(Dataset):
     def _read_chm_image(self, image_path: str) -> np.ndarray:
         if is_tif_file(image_path):
             image = tifffile.imread(image_path)
+        elif is_memmap_file(image_path):
+            image = read_memmap([image_path], [DatasetConst.CHM_DATA_TYPE.value])[0]
         else:
             image = np.array(Image.open(image_path))
         if len(image.shape) == 2:

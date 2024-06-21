@@ -1,5 +1,7 @@
 from enum import Enum
 
+import numpy as np
+
 
 class DatasetConst(Enum):
     CLASS_NAMES = {
@@ -31,3 +33,6 @@ class DatasetConst(Enum):
     }
 
     NO_DATA_NEW_VALUE = -5
+
+    RGB_DATA_TYPE = np.uint8
+    CHM_DATA_TYPE = np.float32

@@ -754,8 +754,12 @@ def create_and_save_splitted_datasets(
                 image_data.base_name, image_data.coord_name
             )
 
+            # Handle tif and mmap
             annotations_file = rgb_file.replace(rgb_folder_path, annotations_folder_path).replace(
                 ".tif", ".json"
+            )
+            annotations_file = rgb_file.replace(rgb_folder_path, annotations_folder_path).replace(
+                ".mmap", ".json"
             )
 
             new_dict = {

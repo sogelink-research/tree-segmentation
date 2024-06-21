@@ -20,7 +20,9 @@ from box_cls import (
     box_pixels_to_coordinates,
     intersection_ratio,
 )
+from dataset_constants import DatasetConst
 from geojson_conversions import get_bbox_polygon
+from speed_test import crop_dtype_type_precision_image, read_memmap, write_memmap
 from utils import (
     Folders,
     ImageData,
@@ -564,8 +566,14 @@ def merge_tif(cropped_images_folders_paths: List[str]):
         "merged",
         os.path.sep.join(folder_path_list[-2:]),
     )
+    output_memmap_folder_path = os.path.join(
+        os.path.sep.join(folder_path_list[:-3]),
+        "merged_memmap",
+        os.path.sep.join(folder_path_list[-2:]),
+    )
 
     create_folder(output_folder_path)
+    create_folder(output_memmap_folder_path)
 
     for image_name in tqdm(
         os.listdir(cropped_images_folders_paths[0]), desc="Merging TIFs", leave=False
@@ -606,12 +614,26 @@ def merge_tif(cropped_images_folders_paths: List[str]):
             for i in range(multi_channel_image.shape[2]):
                 dst.write(multi_channel_image[:, :, i], i + 1)
 
-def get_channels_count(chm_folder_path: str) -> int:
-    for file in os.listdir(chm_folder_path):
-        image_path = os.path.join(chm_folder_path, file)
-        image = tifffile.imread(image_path)
+        # Save the memmap
+        output_memmap_path = os.path.join(
+            output_memmap_folder_path, image_name.replace(".tif", ".mmap")
+        )
+        multi_channel_image = crop_dtype_type_precision_image(multi_channel_image)
+        write_memmap([multi_channel_image], [output_memmap_path])
+
+
+def get_channels_count(folder_path: str, chm: bool) -> int:
+    data_type = DatasetConst.CHM_DATA_TYPE.value if chm else DatasetConst.RGB_DATA_TYPE.value
+    for file in os.listdir(folder_path):
+        image_path = os.path.join(folder_path, file)
+        if os.path.splitext(file)[1] == ".tif":
+            image = tifffile.imread(image_path)
+        elif os.path.splitext(file)[1] == ".mmap":
+            image = read_memmap([image_path], [data_type])[0]
+        else:
+            raise Exception(f"Unsupported image format: {os.path.splitext(file)[1]}")
         if len(image.shape) == 2:
             return 1
         else:
             return image.shape[2]
-    raise ValueError(f"There is no file in {chm_folder_path}.")
+    raise ValueError(f"There is no file in {folder_path}.")
