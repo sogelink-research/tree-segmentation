@@ -789,7 +789,7 @@ def create_and_save_splitted_datasets(
             extensions = [".tif", ".mmap", ".npy"]
             annotations_file = rgb_file.replace(rgb_folder_path, annotations_folder_path)
             for extension in extensions:
-                annotations_file.replace(extension, ".json")
+                annotations_file = annotations_file.replace(extension, ".json")
 
             new_dict = {
                 "rgb": rgb_file,
