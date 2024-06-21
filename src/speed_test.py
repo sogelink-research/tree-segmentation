@@ -1,4 +1,5 @@
 import time
+import timeit
 from itertools import combinations, product
 from random import shuffle
 from typing import Callable, List, Optional, Sequence, Tuple, Union
@@ -12,6 +13,10 @@ import seaborn as sns
 import tifffile
 import torch
 
+from utils import import_tqdm
+
+
+tqdm = import_tqdm()
 
 # from layers import AMF_GD_YOLOv8
 
@@ -144,6 +149,164 @@ def read_memmap(
     return images
 
 
+def test(
+    read_func: Callable,
+    images_init: List[np.ndarray],
+    tensors_init: List[torch.Tensor],
+    # model: AMF_GD_YOLOv8,
+    device: torch.device,
+    input_paths: str | List[str],
+    iterations: int = 5,
+    **kwargs,
+):
+    images = read_func(input_paths, **kwargs.get("kwargs", {}))
+    images_tensors = list(map(torch.from_numpy, images))
+    assert all([np.all(images[i] == images_init[i]) for i in range(len(images))])
+    assert all([torch.all(images_tensors[i] == tensors_init[i]) for i in range(len(images))])
+    reshaped_tensors_init = list(
+        map(
+            lambda arr: arr.permute((2, 0, 1))
+            .unsqueeze(0)
+            .to(torch.float32)
+            .to(device, non_blocking=True),
+            images_tensors,
+        )
+    )
+    total_load_times = []
+    total_to_tensor_times = []
+    total_output_times = []
+    total_load_process_times = []
+    total_to_tensor_process_times = []
+    total_output_process_times = []
+    entire_start_process_time = time.process_time_ns()
+    for _ in range(iterations):
+        start_process_time = time.process_time_ns()
+        start_time = time.time_ns()
+
+        images = read_func(input_paths, **kwargs.get("kwargs", {}))
+
+        end_process_time = time.process_time_ns()
+        end_time = time.time_ns()
+        total_load_process_times.append((end_process_time - start_process_time) / 1e9)
+        total_load_times.append((end_time - start_time) / 1e9)
+        start_process_time = time.process_time_ns()
+        start_time = time.time_ns()
+
+        images_tensors = list(
+            map(
+                lambda arr: torch.from_numpy(arr)
+                .permute((2, 0, 1))
+                .unsqueeze(0)
+                .to(torch.float32)
+                .to(device, non_blocking=True),
+                images,
+            )
+        )
+
+        end_process_time = time.process_time_ns()
+        end_time = time.time_ns()
+        total_to_tensor_process_times.append((end_process_time - start_process_time) / 1e9)
+        total_to_tensor_times.append((end_time - start_time) / 1e9)
+        start_process_time = time.process_time_ns()
+        start_time = time.time_ns()
+
+        # output = model.forward(images_tensors[0], images_tensors[1])
+        # assert output[0].shape == torch.Size((1, 64 + len(model.class_indices), 80, 80))
+        assert all(
+            [torch.all(images_tensors[i] == reshaped_tensors_init[i]) for i in range(len(images))]
+        )
+
+        end_process_time = time.process_time_ns()
+        end_time = time.time_ns()
+        total_output_process_times.append((end_process_time - start_process_time) / 1e9)
+        total_output_times.append((end_time - start_time) / 1e9)
+
+    entire_end_process_time = time.process_time_ns()
+    entire_process_time = (entire_end_process_time - entire_start_process_time) / 1e9
+
+    print(f"{read_func.__name__}: ")
+    print("Process time:   ")
+    print(
+        f"'load':      mean={np.mean(total_load_process_times):.5f} seconds, std={np.std(total_load_process_times):.5f}"
+    )
+    # print(
+    #     f"'to tensor': mean={np.mean(total_to_tensor_process_times):.5f} seconds, std={np.std(total_to_tensor_process_times):.5f}"
+    # )
+    # print(
+    #     f"'output':    mean={np.mean(total_output_process_times):.5f} seconds, std={np.std(total_output_process_times):.5f}"
+    # )
+    print(f"Entire time per iteration: {entire_process_time:.5f}")
+    print("Execution time: ")
+    print(
+        f"'load':      mean={np.mean(total_load_times):.5f} seconds, std={np.std(total_load_times):.5f}"
+    )
+    # print(
+    #     f"'to tensor': mean={np.mean(total_to_tensor_times):.5f} seconds, std={np.std(total_to_tensor_times):.5f}"
+    # )
+    # print(
+    #     f"'output':    mean={np.mean(total_output_times):.5f} seconds, std={np.std(total_output_times):.5f}"
+    # )
+
+    return (
+        [
+            t1 + t2 + t3
+            for (t1, t2, t3) in zip(
+                total_load_process_times,
+                total_to_tensor_process_times,
+                total_output_process_times,
+            )
+        ],
+    )
+
+
+def normalize(
+    image: torch.Tensor,
+    mean: torch.Tensor,
+    std: torch.Tensor,
+    replace_no_data: bool,
+    no_data_new_value: float = 0.0,
+) -> torch.Tensor:
+    """Normalizes the CHM image given as input.
+
+    Args:
+        image (torch.Tensor): the image to normalize with c channels. Must be of shape [w, h] or [c, w, h].
+        mean (torch.Tensor): the mean to normalize with. Must be of shape [], [1] or [c].
+        std (torch.Tensor): the standard deviation to normalize with. Must be of shape [], [1] or [c].
+        replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
+        before normalization.
+        no_data_new_value (float, optional): the value replacing NO_DATA (-9999) before computations.
+        Defaults to 0.0.
+
+    Returns:
+        torch.Tensor: the normalized image.
+    """
+    if replace_no_data:
+        image = torch.where(image == -9999, no_data_new_value, image)
+
+    if len(image.shape) == 2:
+        image = image.unsqueeze(0)
+
+    channels = image.shape[0]
+
+    def reshape(tensor: torch.Tensor, name: str) -> torch.Tensor:
+        if len(tensor.shape) == 0:
+            tensor = torch.full((channels,), tensor.item())
+        elif len(tensor.shape) == 1 and tensor.shape[0] == 1:
+            tensor = torch.full((channels,), tensor[0].item())
+        elif len(tensor.shape) == 1 and tensor.shape[0] == channels:
+            pass
+        else:
+            raise ValueError(
+                f"Unsupported shape for `{name}`. It should be a tensor or shape [], [1] or [{channels}]"
+            )
+        return tensor.view(-1, 1, 1)
+
+    mean = reshape(mean, "mean").to(image.dtype)
+    std = reshape(std, "std").to(image.dtype)
+
+    return (image - mean) / std
+
+
 def main():
     initial_tif_files = ["Test_image_1.tif", "Test_image_2.tif"]
 
@@ -173,124 +336,12 @@ def main():
         numpy_test_file,
         memmap_test_files,
     ]
-    kwargs_list = [{}, {}, {}, {}, {"dtypes": dtypes, "shapes": shapes}]
+    kwargs_list = [{}, {}, {}, {}, {"dtype_types": dtypes, "shapes": shapes}]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # model = AMF_GD_YOLOv8(
     #     images_init[0].shape[2], images_init[1].shape[2], {0: "test"}, device=device, name="Test"
     # )
-
-    def test(
-        read_func: Callable,
-        images_init: List[np.ndarray],
-        tensors_init: List[torch.Tensor],
-        # model: AMF_GD_YOLOv8,
-        device: torch.device,
-        input_paths: str | List[str],
-        iterations: int = 5,
-        **kwargs,
-    ):
-        images = read_func(input_paths, **kwargs.get("kwargs", {}))
-        images_tensors = list(map(torch.from_numpy, images))
-        assert all([np.all(images[i] == images_init[i]) for i in range(len(images))])
-        assert all([torch.all(images_tensors[i] == tensors_init[i]) for i in range(len(images))])
-        reshaped_tensors_init = list(
-            map(
-                lambda arr: arr.permute((2, 0, 1))
-                .unsqueeze(0)
-                .to(torch.float32)
-                .to(device, non_blocking=True),
-                images_tensors,
-            )
-        )
-        total_load_times = []
-        total_to_tensor_times = []
-        total_output_times = []
-        total_load_process_times = []
-        total_to_tensor_process_times = []
-        total_output_process_times = []
-        entire_start_process_time = time.process_time_ns()
-        for _ in range(iterations):
-            start_process_time = time.process_time_ns()
-            start_time = time.time_ns()
-
-            images = read_func(input_paths, **kwargs.get("kwargs", {}))
-
-            end_process_time = time.process_time_ns()
-            end_time = time.time_ns()
-            total_load_process_times.append((end_process_time - start_process_time) / 1e9)
-            total_load_times.append((end_time - start_time) / 1e9)
-            start_process_time = time.process_time_ns()
-            start_time = time.time_ns()
-
-            images_tensors = list(
-                map(
-                    lambda arr: torch.from_numpy(arr)
-                    .permute((2, 0, 1))
-                    .unsqueeze(0)
-                    .to(torch.float32)
-                    .to(device, non_blocking=True),
-                    images,
-                )
-            )
-
-            end_process_time = time.process_time_ns()
-            end_time = time.time_ns()
-            total_to_tensor_process_times.append((end_process_time - start_process_time) / 1e9)
-            total_to_tensor_times.append((end_time - start_time) / 1e9)
-            start_process_time = time.process_time_ns()
-            start_time = time.time_ns()
-
-            # output = model.forward(images_tensors[0], images_tensors[1])
-            # assert output[0].shape == torch.Size((1, 64 + len(model.class_indices), 80, 80))
-            assert all(
-                [
-                    torch.all(images_tensors[i] == reshaped_tensors_init[i])
-                    for i in range(len(images))
-                ]
-            )
-
-            end_process_time = time.process_time_ns()
-            end_time = time.time_ns()
-            total_output_process_times.append((end_process_time - start_process_time) / 1e9)
-            total_output_times.append((end_time - start_time) / 1e9)
-
-        entire_end_process_time = time.process_time_ns()
-        entire_process_time = (entire_end_process_time - entire_start_process_time) / 1e9
-
-        print(f"{read_func.__name__}: ")
-        print("Process time:   ")
-        print(
-            f"'load':      mean={np.mean(total_load_process_times):.5f} seconds, std={np.std(total_load_process_times):.5f}"
-        )
-        # print(
-        #     f"'to tensor': mean={np.mean(total_to_tensor_process_times):.5f} seconds, std={np.std(total_to_tensor_process_times):.5f}"
-        # )
-        # print(
-        #     f"'output':    mean={np.mean(total_output_process_times):.5f} seconds, std={np.std(total_output_process_times):.5f}"
-        # )
-        print(f"Entire time per iteration: {entire_process_time:.5f}")
-        print("Execution time: ")
-        print(
-            f"'load':      mean={np.mean(total_load_times):.5f} seconds, std={np.std(total_load_times):.5f}"
-        )
-        # print(
-        #     f"'to tensor': mean={np.mean(total_to_tensor_times):.5f} seconds, std={np.std(total_to_tensor_times):.5f}"
-        # )
-        # print(
-        #     f"'output':    mean={np.mean(total_output_times):.5f} seconds, std={np.std(total_output_times):.5f}"
-        # )
-
-        return (
-            [
-                t1 + t2 + t3
-                for (t1, t2, t3) in zip(
-                    total_load_process_times,
-                    total_to_tensor_process_times,
-                    total_output_process_times,
-                )
-            ],
-        )
 
     zipped = list(zip(read_func_list, input_paths_list, kwargs_list))
     shuffle(zipped)
@@ -354,7 +405,26 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+
+    tensors = [torch.randn((8, 640, 640), dtype=torch.float64) for _ in range(10)]
+
+    def quick_stack(tensor_list: List[torch.Tensor]):
+        new_tensor = torch.empty((len(tensor_list), *tensor_list[0].shape))
+        for i, tensor in enumerate(tensor_list):
+            new_tensor[i] = tensor
+        return new_tensor
+
+    iterations = 50
+    custom_time = timeit.timeit(lambda: quick_stack(tensors), number=iterations)
+    stack_time = timeit.timeit(lambda: torch.stack(tensors, dim=0), number=iterations)
+    cat_time = timeit.timeit(
+        lambda: torch.cat([t.unsqueeze(0) for t in tensors]), number=iterations
+    )
+
+    print(f"custom function time: {custom_time:.6f} seconds")
+    print(f"torch.stack time: {stack_time:.6f} seconds")
+    print(f"torch.cat with unsqueeze time: {cat_time:.6f} seconds")
 
     # types = [
     #     np.float16,

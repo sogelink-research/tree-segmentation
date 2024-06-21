@@ -613,7 +613,7 @@ class TrainingLoss(v8DetectionLoss):
         self, output: List[torch.Tensor], batch: Dict[str, torch.Tensor]
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
-        loss = torch.zeros(3, device=self.device)  # box, cls, dfl
+        loss = torch.empty(3, device=self.device)  # box, cls, dfl
         feats = output
         pred_distri, pred_scores = torch.cat(
             [xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2

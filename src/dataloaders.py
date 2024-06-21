@@ -1,3 +1,4 @@
+import time
 from typing import Callable, Dict, Iterable, List, Tuple
 
 import torch
@@ -5,6 +6,13 @@ from torch.utils.data import DataLoader, Sampler
 
 from box_cls import Box
 from datasets import TreeDataset
+
+
+def quick_stack(tensor_list: List[torch.Tensor]):
+    new_tensor = torch.empty((len(tensor_list), *tensor_list[0].shape))
+    for i, tensor in enumerate(tensor_list):
+        new_tensor[i] = tensor
+    return new_tensor
 
 
 def tree_dataset_collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
@@ -17,8 +25,8 @@ def tree_dataset_collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, t
         Dict[str, torch.Tensor]: The final batch returned by the DataLoader.
     """
     # Initialize lists to hold the extracted components
-    rgb_images = []
-    chm_images = []
+    rgb_images_list = []
+    chm_images_list = []
     bboxes = []
     labels = []
     indices = []
@@ -34,16 +42,29 @@ def tree_dataset_collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, t
         image_index = item["image_index"]
 
         # Append the extracted components to the lists
-        rgb_images.append(rgb_image)
-        chm_images.append(chm_image)
+        rgb_images_list.append(rgb_image)
+        chm_images_list.append(chm_image)
         bboxes.append(bbox)
         labels.append(label)
         indices.extend([i] * bbox.shape[0])
         image_indices.append(image_index)
 
+    start_time = time.process_time()
+
+    rgb_images = quick_stack(rgb_images_list)
+    chm_images = quick_stack(chm_images_list)
+
+    end_time = time.process_time()
+    print(f"Custom Stack time: {end_time - start_time:.6f} seconds")
+    start_time = time.process_time()
+
     # Convert the lists to tensors and stack them
-    rgb_images = torch.stack(rgb_images, dim=0)
-    chm_images = torch.stack(chm_images, dim=0)
+    rgb_images = torch.stack(rgb_images_list)
+    chm_images = torch.stack(chm_images_list)
+
+    end_time = time.process_time()
+    print(f"Torch Stack time:  {end_time - start_time:.6f} seconds")
+
     bboxes = torch.cat(bboxes).to(torch.float32)
     labels = torch.cat(labels)
     indices = torch.tensor(indices)
