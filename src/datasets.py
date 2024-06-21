@@ -13,7 +13,7 @@ from torch.utils.data import Dataset
 
 from dataset_constants import DatasetConst
 from plot import get_bounding_boxes
-from speed_test import read_memmap
+from speed_test import read_memmap, read_numpy
 from utils import get_coordinates_from_full_image_file_name, get_file_base_name
 
 
@@ -106,6 +106,8 @@ def _compute_channels_mean_and_std_file(
     elif is_memmap_file(file_path):
         dtype_type = DatasetConst.CHM_DATA_TYPE.value if chm else DatasetConst.RGB_DATA_TYPE.value
         image = read_memmap([file_path], [dtype_type])[0]
+    elif is_npy_file(file_path):
+        image = read_numpy(file_path)[0]
     else:
         image = np.array(Image.open(file_path))
     return _compute_channels_mean_std_tensor(
@@ -245,6 +247,10 @@ def is_memmap_file(file_path: str) -> bool:
     return file_path.lower().endswith(".mmap")
 
 
+def is_npy_file(file_path: str) -> bool:
+    return file_path.lower().endswith(".npy")
+
+
 class TreeDataset(Dataset):
     """Tree dataset."""
 
@@ -365,6 +371,8 @@ class TreeDataset(Dataset):
             image = tifffile.imread(image_path)
         elif is_memmap_file(image_path):
             image = read_memmap([image_path], [DatasetConst.RGB_DATA_TYPE.value])[0]
+        elif is_npy_file(image_path):
+            image = read_numpy(image_path)[0]
         else:
             image = np.array(Image.open(image_path))
         if len(image.shape) == 2:
@@ -376,6 +384,8 @@ class TreeDataset(Dataset):
             image = tifffile.imread(image_path)
         elif is_memmap_file(image_path):
             image = read_memmap([image_path], [DatasetConst.CHM_DATA_TYPE.value])[0]
+        elif is_npy_file(image_path):
+            image = read_numpy(image_path)[0]
         else:
             image = np.array(Image.open(image_path))
         if len(image.shape) == 2:

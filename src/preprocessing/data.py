@@ -22,7 +22,13 @@ from box_cls import (
 )
 from dataset_constants import DatasetConst
 from geojson_conversions import get_bbox_polygon
-from speed_test import crop_dtype_type_precision_image, read_memmap, write_memmap
+from speed_test import (
+    crop_dtype_type_precision_image,
+    read_memmap,
+    read_numpy,
+    write_memmap,
+    write_numpy,
+)
 from utils import (
     Folders,
     ImageData,
@@ -571,9 +577,15 @@ def merge_tif(cropped_images_folders_paths: List[str]):
         "merged_memmap",
         os.path.sep.join(folder_path_list[-2:]),
     )
+    output_npy_folder_path = os.path.join(
+        os.path.sep.join(folder_path_list[:-3]),
+        "merged_npy",
+        os.path.sep.join(folder_path_list[-2:]),
+    )
 
     create_folder(output_folder_path)
     create_folder(output_memmap_folder_path)
+    create_folder(output_npy_folder_path)
 
     for image_name in tqdm(
         os.listdir(cropped_images_folders_paths[0]), desc="Merging TIFs", leave=False
@@ -621,6 +633,11 @@ def merge_tif(cropped_images_folders_paths: List[str]):
         multi_channel_image = crop_dtype_type_precision_image(multi_channel_image)
         write_memmap([multi_channel_image], [output_memmap_path])
 
+        # Save the npy
+        output_npy_path = os.path.join(output_npy_folder_path, image_name.replace(".tif", ".npy"))
+        multi_channel_image = crop_dtype_type_precision_image(multi_channel_image)
+        write_numpy([multi_channel_image], output_npy_path)
+
 
 def get_channels_count(folder_path: str, chm: bool) -> int:
     data_type = DatasetConst.CHM_DATA_TYPE.value if chm else DatasetConst.RGB_DATA_TYPE.value
@@ -630,6 +647,8 @@ def get_channels_count(folder_path: str, chm: bool) -> int:
             image = tifffile.imread(image_path)
         elif os.path.splitext(file)[1] == ".mmap":
             image = read_memmap([image_path], [data_type])[0]
+        elif os.path.splitext(file)[1] == ".npy":
+            image = read_numpy(image_path)[0]
         else:
             raise Exception(f"Unsupported image format: {os.path.splitext(file)[1]}")
         if len(image.shape) == 2:

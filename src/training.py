@@ -619,7 +619,7 @@ def train_and_validate(
             best_temp_model = model
             best_temp_loss = np.inf
 
-        training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
+        # training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
         training_metrics.save_metrics(
             os.path.join(
                 model.folder_path,
@@ -754,12 +754,15 @@ def create_and_save_splitted_datasets(
                 image_data.base_name, image_data.coord_name
             )
 
-            # Handle tif and mmap
+            # Handle tif, mmap and npy
             annotations_file = rgb_file.replace(rgb_folder_path, annotations_folder_path).replace(
                 ".tif", ".json"
             )
             annotations_file = rgb_file.replace(rgb_folder_path, annotations_folder_path).replace(
                 ".mmap", ".json"
+            )
+            annotations_file = rgb_file.replace(rgb_folder_path, annotations_folder_path).replace(
+                ".npy", ".json"
             )
 
             new_dict = {

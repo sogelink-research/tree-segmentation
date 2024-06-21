@@ -120,13 +120,13 @@ class DatasetParams:
             Folders.CROPPED_ANNOTS.value, self.image_data.base_name
         )
         self.rgb_cir_folder_path = os.path.join(
-            Folders.IMAGES.value, "merged_memmap", "cropped", self.image_data.base_name
+            Folders.IMAGES.value, "merged_npy", "cropped", self.image_data.base_name
         )
         self.chm_folder_path = os.path.join(
             Folders.CHM.value,
             f"{round(RESOLUTION*100)}cm",
             "filtered",
-            "merged_memmap",
+            "merged_npy",
             "cropped",
             self.image_data.coord_name,
         )
