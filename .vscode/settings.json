@@ -57,6 +57,7 @@
         "getdata",
         "getextrema",
         "httpx",
+        "hyperparameters",
         "imread",
         "imsave",
         "imshow",
