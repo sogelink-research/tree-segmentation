@@ -407,7 +407,12 @@ def main():
 if __name__ == "__main__":
     # main()
 
-    tensors = [torch.randn((8, 640, 640), dtype=torch.float64) for _ in range(10)]
+    rng = np.random.default_rng()
+    arrays = [rng.standard_normal((8, 640, 640)).astype(np.float32) for _ in range(10)]
+    tensors = [torch.randn((8, 640, 640), dtype=torch.float32) for _ in range(10)]
+
+    print(f"{arrays[0].dtype = }")
+    print(f"{tensors[0].dtype = }")
 
     def quick_stack(tensor_list: List[torch.Tensor]):
         new_tensor = torch.empty((len(tensor_list), *tensor_list[0].shape))
@@ -416,14 +421,18 @@ if __name__ == "__main__":
         return new_tensor
 
     iterations = 50
+    numpy_stack_time = timeit.timeit(lambda: np.stack(arrays), number=iterations)
+    numpy_vstack_time = timeit.timeit(lambda: np.vstack(arrays), number=iterations)
     custom_time = timeit.timeit(lambda: quick_stack(tensors), number=iterations)
-    stack_time = timeit.timeit(lambda: torch.stack(tensors, dim=0), number=iterations)
+    stack_time = timeit.timeit(lambda: torch.stack(tensors), number=iterations)
     cat_time = timeit.timeit(
         lambda: torch.cat([t.unsqueeze(0) for t in tensors]), number=iterations
     )
 
-    print(f"custom function time: {custom_time:.6f} seconds")
-    print(f"torch.stack time: {stack_time:.6f} seconds")
+    print(f"np.stack time:                 {numpy_stack_time:.6f} seconds")
+    print(f"np.cstack time:                {numpy_vstack_time:.6f} seconds")
+    print(f"custom function time:          {custom_time:.6f} seconds")
+    print(f"torch.stack time:              {stack_time:.6f} seconds")
     print(f"torch.cat with unsqueeze time: {cat_time:.6f} seconds")
 
     # types = [

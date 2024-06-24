@@ -65,7 +65,7 @@ def tree_dataset_collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, t
     end_time = time.process_time()
     print(f"Torch Stack time:  {end_time - start_time:.6f} seconds")
 
-    bboxes = torch.cat(bboxes).to(torch.float32)
+    bboxes = torch.cat(bboxes)
     labels = torch.cat(labels)
     indices = torch.tensor(indices)
     image_indices = torch.tensor(image_indices)

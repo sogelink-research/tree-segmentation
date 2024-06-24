@@ -298,7 +298,6 @@ class ModelSession:
         datasets = load_tree_datasets_from_split(
             self.training_data.data_split_file_path,
             labels_to_index=self.training_data.dataset_params.class_indices,
-            device=self.device,
             mean_rgb=self.training_data.mean_rgb,
             std_rgb=self.training_data.std_rgb,
             mean_chm=self.training_data.mean_chm,

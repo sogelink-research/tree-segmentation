@@ -805,7 +805,6 @@ def create_and_save_splitted_datasets(
 def load_tree_datasets_from_split(
     data_split_file_path: str,
     labels_to_index: Dict[str, int],
-    device: torch.device,
     mean_rgb: torch.Tensor,
     std_rgb: torch.Tensor,
     mean_chm: torch.Tensor,
@@ -827,7 +826,6 @@ def load_tree_datasets_from_split(
     tree_datasets["training"] = TreeDataset(
         data_split["training"],
         labels_to_index=labels_to_index,
-        device=device,
         mean_rgb=mean_rgb,
         std_rgb=std_rgb,
         mean_chm=mean_chm,
@@ -846,7 +844,6 @@ def load_tree_datasets_from_split(
     tree_datasets["validation"] = TreeDataset(
         data_split["validation"],
         labels_to_index=labels_to_index,
-        device=device,
         mean_rgb=mean_rgb,
         std_rgb=std_rgb,
         mean_chm=mean_chm,
@@ -870,7 +867,6 @@ def load_tree_datasets_from_split(
     tree_datasets["test"] = TreeDataset(
         test_data,
         labels_to_index=labels_to_index,
-        device=device,
         mean_rgb=mean_rgb,
         std_rgb=std_rgb,
         mean_chm=mean_chm,
