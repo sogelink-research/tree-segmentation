@@ -236,8 +236,8 @@ def train(
 
     model.train()
     stream = tqdm(train_loader, leave=False, desc="Training")
+    start_time = time.process_time()
     for data in stream:
-        start_time = time.process_time()
         # Get the data
         image_rgb: torch.Tensor = data["image_rgb"]
         image_chm: torch.Tensor = data["image_chm"]
@@ -247,7 +247,7 @@ def train(
         image_indices: torch.Tensor = data["image_indices"]
 
         end_time = time.process_time()
-        print(f"Load time: {end_time - start_time:.6f} seconds")
+        print(f"{'Load time':<20}: {end_time - start_time:.6f} seconds")
         start_time = time.process_time()
 
         image_rgb = image_rgb.to(device, non_blocking=True)
@@ -258,14 +258,14 @@ def train(
         image_indices = image_indices.to(device, non_blocking=True)
 
         end_time = time.process_time()
-        print(f"Seng GPU time: {end_time - start_time:.6f} seconds")
+        print(f"{'Send GPU time':<20}: {end_time - start_time:.6f} seconds")
         start_time = time.process_time()
 
         # Compute the model output
         output = model.forward(image_rgb, image_chm)
 
         end_time = time.process_time()
-        print(f"Forward time: {end_time - start_time:.6f} seconds")
+        print(f"{'Forward time':<20}: {end_time - start_time:.6f} seconds")
         start_time = time.process_time()
 
         # Compute the AP metrics
@@ -326,20 +326,20 @@ def train(
                     )
 
         end_time = time.process_time()
-        print(f"Metrics time: {end_time - start_time:.6f} seconds")
+        print(f"{'Metrics time':<20}: {end_time - start_time:.6f} seconds")
         start_time = time.process_time()
 
         # Compute the loss
         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
 
         end_time = time.process_time()
-        print(f"Loss time: {end_time - start_time:.6f} seconds")
+        print(f"{'Loss time':<20}: {end_time - start_time:.6f} seconds")
         start_time = time.process_time()
 
         total_loss.backward()
 
         end_time = time.process_time()
-        print(f"Backward time: {end_time - start_time:.6f} seconds")
+        print(f"{'Backward time':<20}: {end_time - start_time:.6f} seconds")
         start_time = time.process_time()
 
         # Gradient accumulation
@@ -348,7 +348,8 @@ def train(
             optimizer.zero_grad()
 
         end_time = time.process_time()
-        print(f"Optimizer time: {end_time - start_time:.6f} seconds")
+        print(f"{'Optimizer time':<20}: {end_time - start_time:.6f} seconds")
+        start_time = time.process_time()
 
         running_accumulation_step += 1
 
@@ -359,6 +360,10 @@ def train(
         )
         for key, value in loss_dict.items():
             training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
+
+        end_time = time.process_time()
+        print(f"{'Store loss time':<20}: {end_time - start_time:.6f} seconds")
+        start_time = time.process_time()
 
     if compute_ap:
         _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
