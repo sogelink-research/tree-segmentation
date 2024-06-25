@@ -183,7 +183,7 @@ def _get_rgb_name_from_box(box: Box) -> str:
     return f"2023_{round(box.x_min)}_{round(box.y_max)}_RGB_hrl.tif"
 
 
-def get_rgb_images_fine_names_from_polygon(polygon: geojson.Polygon) -> List[str]:
+def get_rgb_images_file_names_from_polygon(polygon: geojson.Polygon) -> List[str]:
     """Returns the file names corresponding to the given GeoJSON Polygon.
 
     Args:
@@ -214,7 +214,7 @@ def get_rgb_images_paths_from_polygon(polygon: geojson.Polygon) -> List[str]:
     Returns:
         List[str]: the paths to the images.
     """
-    images_file_names = get_rgb_images_fine_names_from_polygon(polygon)
+    images_file_names = get_rgb_images_file_names_from_polygon(polygon)
     images_paths: List[str] = list(map(get_rgb_image_path_from_file_name, images_file_names))
     return images_paths
 
@@ -229,7 +229,7 @@ def download_rgb_image_from_polygon(polygon: geojson.Polygon, verbose: bool = Tr
     Returns:
         List[str]: the paths to the images.
     """
-    images_file_names = get_rgb_images_fine_names_from_polygon(polygon)
+    images_file_names = get_rgb_images_file_names_from_polygon(polygon)
     images_paths: List[str] = []
     for file_name in images_file_names:
         images_paths.append(download_rgb_image_from_file_name(file_name, verbose))

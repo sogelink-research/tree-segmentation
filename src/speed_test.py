@@ -62,7 +62,11 @@ def crop_dtype_type_precision_image(image: np.ndarray):
 
 def write_tif(images: List[np.ndarray], save_paths: List[str]) -> None:
     for image, save_path in zip(images, save_paths):
-        tifffile.imwrite(save_path, image)
+        memmap_image = tifffile.memmap(save_path, shape=image.shape, dtype=image.dtype)
+        memmap_image[:] = image[:]
+        memmap_image.flush()
+        del memmap_image
+        # tifffile.imwrite(save_path, image)
 
 
 def write_hdf5(images: List[np.ndarray], save_path: str) -> None:
@@ -90,9 +94,18 @@ def write_netCDF4(images: List[np.ndarray], save_path: str) -> None:
             image_var[:] = image
 
 
-def write_numpy(images: List[np.ndarray], save_path: str) -> None:
-    images_dict = {f"image{i}": image for i, image in enumerate(images)}
-    np.save(save_path, images_dict)
+def write_npz(images: List[np.ndarray], save_paths: List[str]) -> None:
+    for image, save_path in zip(images, save_paths):
+        np.savez(save_path, image=image)
+
+
+def write_numpy(images: List[np.ndarray], save_paths: List[str]) -> None:
+    for image, save_path in zip(images, save_paths):
+        mmapped_array = np.lib.format.open_memmap(
+            save_path, mode="w+", shape=image.shape, dtype=image.dtype
+        )
+        mmapped_array[:] = image[:]
+        mmapped_array.flush()
 
 
 def write_memmap(images: List[np.ndarray], save_paths: List[str]):
@@ -108,7 +121,7 @@ def write_memmap(images: List[np.ndarray], save_paths: List[str]):
 
 
 def read_tif(file_paths: List[str]) -> List[np.ndarray]:
-    images = list(map(tifffile.imread, file_paths))
+    images = list(map(np.array, (map(tifffile.memmap, file_paths))))
     return images
 
 
@@ -128,9 +141,20 @@ def read_netCDF4(file_path: str) -> List[np.ndarray]:
     return images
 
 
-def read_numpy(file_path: str) -> List[np.ndarray]:
-    data = np.load(file_path, allow_pickle=True).item()
-    return list(data.values())
+def read_npz(file_paths: List[str]) -> List[np.ndarray]:
+    images = []
+    for file_path in file_paths:
+        with np.load(file_path) as data:
+            images.append(data["image"])
+    return images
+
+
+def read_numpy(file_paths: List[str]) -> List[np.ndarray]:
+    images = []
+    for file_path in file_paths:
+        mmapped_array = np.lib.format.open_memmap(file_path, mode="r+")
+        images.append(mmapped_array)
+    return images
 
 
 def read_memmap(
@@ -141,7 +165,7 @@ def read_memmap(
     images: List[np.ndarray] = []
     shapes = [None] * len(file_paths) if shapes is None else shapes
     for file_path, dtype_type, shape in zip(file_paths, dtype_types, shapes):
-        mmapped_array = np.memmap(file_path, dtype=dtype_type, mode="c", shape=shape).__array__()
+        mmapped_array = np.memmap(file_path, dtype=dtype_type, mode="r+", shape=shape).__array__()
         if shape is None:
             real_shape = (640, 640, mmapped_array.size // (640 * 640))
             mmapped_array = mmapped_array.reshape(real_shape)
@@ -163,6 +187,8 @@ def test(
     images_tensors = list(map(torch.from_numpy, images))
     assert all([np.all(images[i] == images_init[i]) for i in range(len(images))])
     assert all([torch.all(images_tensors[i] == tensors_init[i]) for i in range(len(images))])
+    for image in images:
+        del image
     reshaped_tensors_init = list(
         map(
             lambda arr: arr.permute((2, 0, 1))
@@ -202,6 +228,8 @@ def test(
                 images,
             )
         )
+        for image in images:
+            del image
 
         end_process_time = time.process_time_ns()
         end_time = time.time_ns()
@@ -313,7 +341,8 @@ def main():
     tif_test_files = ["Test_image_1_reduced.tif", "Test_image_2_reduced.tif"]
     hdf5_test_file = "Test_image_reduced.h5"
     nc_test_file = "Test_image_reduced.nc"
-    numpy_test_file = "Test_image_reduced.npy"
+    numpy_test_files = ["Test_image_reduced_1.npy", "Test_image_reduced_2.npy"]
+    npz_test_files = list(map(lambda s: s.replace(".tif", ".npz"), tif_test_files))
     memmap_test_files = list(map(lambda s: s.replace(".tif", ".mmap"), tif_test_files))
 
     images_init = list(
@@ -324,19 +353,21 @@ def main():
     write_tif(images_init, tif_test_files)
     write_hdf5(images_init, hdf5_test_file)
     write_netCDF4(images_init, nc_test_file)
-    write_numpy(images_init, numpy_test_file)
+    write_numpy(images_init, numpy_test_files)
+    write_npz(images_init, npz_test_files)
     dtypes, shapes = write_memmap(images_init, memmap_test_files)
 
     iterations = 100
-    read_func_list = [read_tif, read_hdf5, read_netCDF4, read_numpy, read_memmap]
+    read_func_list = [read_tif, read_hdf5, read_netCDF4, read_numpy, read_npz, read_memmap]
     input_paths_list = [
         tif_test_files,
         hdf5_test_file,
         nc_test_file,
-        numpy_test_file,
+        numpy_test_files,
+        npz_test_files,
         memmap_test_files,
     ]
-    kwargs_list = [{}, {}, {}, {}, {"dtype_types": dtypes, "shapes": shapes}]
+    kwargs_list = [{}, {}, {}, {}, {}, {"dtype_types": dtypes, "shapes": shapes}]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # model = AMF_GD_YOLOv8(
@@ -405,35 +436,35 @@ def main():
 
 
 if __name__ == "__main__":
-    # main()
+    main()
 
-    rng = np.random.default_rng()
-    arrays = [rng.standard_normal((8, 640, 640)).astype(np.float32) for _ in range(10)]
-    tensors = [torch.randn((8, 640, 640), dtype=torch.float32) for _ in range(10)]
+    # rng = np.random.default_rng()
+    # arrays = [rng.standard_normal((8, 640, 640)).astype(np.float32) for _ in range(10)]
+    # tensors = [torch.randn((8, 640, 640), dtype=torch.float32) for _ in range(10)]
 
-    print(f"{arrays[0].dtype = }")
-    print(f"{tensors[0].dtype = }")
+    # print(f"{arrays[0].dtype = }")
+    # print(f"{tensors[0].dtype = }")
 
-    def quick_stack(tensor_list: List[torch.Tensor]):
-        new_tensor = torch.empty((len(tensor_list), *tensor_list[0].shape))
-        for i, tensor in enumerate(tensor_list):
-            new_tensor[i] = tensor
-        return new_tensor
+    # def quick_stack(tensor_list: List[torch.Tensor]):
+    #     new_tensor = torch.empty((len(tensor_list), *tensor_list[0].shape))
+    #     for i, tensor in enumerate(tensor_list):
+    #         new_tensor[i] = tensor
+    #     return new_tensor
 
-    iterations = 50
-    numpy_stack_time = timeit.timeit(lambda: np.stack(arrays), number=iterations)
-    numpy_vstack_time = timeit.timeit(lambda: np.vstack(arrays), number=iterations)
-    custom_time = timeit.timeit(lambda: quick_stack(tensors), number=iterations)
-    stack_time = timeit.timeit(lambda: torch.stack(tensors), number=iterations)
-    cat_time = timeit.timeit(
-        lambda: torch.cat([t.unsqueeze(0) for t in tensors]), number=iterations
-    )
+    # iterations = 50
+    # numpy_stack_time = timeit.timeit(lambda: np.stack(arrays), number=iterations)
+    # numpy_vstack_time = timeit.timeit(lambda: np.vstack(arrays), number=iterations)
+    # custom_time = timeit.timeit(lambda: quick_stack(tensors), number=iterations)
+    # stack_time = timeit.timeit(lambda: torch.stack(tensors), number=iterations)
+    # cat_time = timeit.timeit(
+    #     lambda: torch.cat([t.unsqueeze(0) for t in tensors]), number=iterations
+    # )
 
-    print(f"np.stack time:                 {numpy_stack_time:.6f} seconds")
-    print(f"np.cstack time:                {numpy_vstack_time:.6f} seconds")
-    print(f"custom function time:          {custom_time:.6f} seconds")
-    print(f"torch.stack time:              {stack_time:.6f} seconds")
-    print(f"torch.cat with unsqueeze time: {cat_time:.6f} seconds")
+    # print(f"np.stack time:                 {numpy_stack_time:.6f} seconds")
+    # print(f"np.cstack time:                {numpy_vstack_time:.6f} seconds")
+    # print(f"custom function time:          {custom_time:.6f} seconds")
+    # print(f"torch.stack time:              {stack_time:.6f} seconds")
+    # print(f"torch.cat with unsqueeze time: {cat_time:.6f} seconds")
 
     # types = [
     #     np.float16,

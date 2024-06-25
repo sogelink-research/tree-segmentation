@@ -7,26 +7,18 @@ from typing import Dict, List, Sequence, Tuple
 import laspy
 import numpy as np
 import pdal
-import rasterio
-import tifffile
 from osgeo import gdal
 
-from utils import Folders, create_folder, measure_execution_time, remove_folder
+from utils import (
+    Folders,
+    ImageData,
+    create_random_temp_folder,
+    measure_execution_time,
+    remove_folder,
+)
 
 
 gdal.UseExceptions()
-
-
-def create_temp_folder() -> str:
-    temp_folder_index = 0
-    temp_folder = os.path.join(Folders.DATA.value, "temp", str(temp_folder_index))
-    while os.path.isdir(temp_folder):
-        temp_folder_index += 1
-        temp_folder = os.path.join(Folders.DATA.value, "temp", str(temp_folder_index))
-
-    create_folder(temp_folder)
-
-    return temp_folder
 
 
 def compute_laz_to_las(laz_file_name: str, verbose: bool = False):
@@ -295,7 +287,7 @@ def compute_full_dtm(
         print("Computing Terrain Model... ", end="", flush=True)
 
     # Create temporary folder
-    temp_folder = create_temp_folder()
+    temp_folder = create_random_temp_folder()
 
     output_tif_name_temp = os.path.join(temp_folder, "dtm.tif")
 
@@ -383,7 +375,7 @@ def slow_compute_slices_chm(
 ) -> None:
 
     # Create temporary folder
-    temp_folder = create_temp_folder()
+    temp_folder = create_random_temp_folder()
 
     try:
         slices_pipelines_paths = []
@@ -483,7 +475,7 @@ def compute_slices_chm(
         return
 
     # Create temporary folder
-    temp_folder = create_temp_folder()
+    temp_folder = create_random_temp_folder()
 
     try:
         full_dtm_path = os.path.join(temp_folder, "dtm.tif")
@@ -512,3 +504,18 @@ def compute_slices_chm(
         raise e
     finally:
         remove_folder(temp_folder)
+
+
+def get_full_chm_slice_path(
+    image_data: ImageData, resolution: float, filtered: bool, z_limits: Tuple[float, float]
+):
+    filtering_str = "filtered" if filtered else "unfiltered"
+    full_chm_slice_path = os.path.join(
+        Folders.CHM.value,
+        f"{round(resolution*100)}cm",
+        filtering_str,
+        f"{round(z_limits[0], 1)}_{round(z_limits[1], 1)}",
+        "full",
+        f"{image_data.coord_name}.tif",
+    )
+    return full_chm_slice_path

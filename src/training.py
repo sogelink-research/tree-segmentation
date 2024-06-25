@@ -714,7 +714,7 @@ def get_all_files_iteratively(folder_path: str) -> List[str]:
     for dirpath, dirnames, filenames in os.walk(folder_path):
         for filename in filenames:
             all_files.append(os.path.join(dirpath, filename))
-    return all_files
+    return sorted(all_files, key=lambda file: os.path.basename(file))
 
 
 def split_files_into_lists(
@@ -766,7 +766,7 @@ def create_and_save_splitted_datasets(
     random_seed: int | None = None,
 ) -> None:
     files_dict = split_files_into_lists(
-        folder_path=rgb_folder_path,
+        folder_path=annotations_folder_path,
         sets_ratios=sets_ratios,
         sets_names=sets_names,
         random_seed=random_seed,
@@ -774,22 +774,11 @@ def create_and_save_splitted_datasets(
     all_files_dict = {}
     for set_name, set_files in files_dict.items():
         all_files_dict[set_name] = []
-        for rgb_file in set_files:
-            full_image = os.path.join(
-                Folders.FULL_RGB_IMAGES.value,
-                f"{os.path.basename(os.path.dirname(rgb_file))}.tif",
+        for annotations_file in set_files:
+            rgb_file = annotations_file.replace(annotations_folder_path, rgb_folder_path).replace(
+                ".json", ".npy"
             )
-            image_data = ImageData(full_image)
-
-            chm_file = rgb_file.replace(rgb_folder_path, chm_folder_path).replace(
-                image_data.base_name, image_data.coord_name
-            )
-
-            # Handle tif, mmap and npy
-            extensions = [".tif", ".mmap", ".npy"]
-            annotations_file = rgb_file.replace(rgb_folder_path, annotations_folder_path)
-            for extension in extensions:
-                annotations_file = annotations_file.replace(extension, ".json")
+            chm_file = rgb_file.replace(rgb_folder_path, chm_folder_path)
 
             new_dict = {
                 "rgb": rgb_file,
@@ -805,10 +794,6 @@ def create_and_save_splitted_datasets(
 def load_tree_datasets_from_split(
     data_split_file_path: str,
     labels_to_index: Dict[str, int],
-    mean_rgb: torch.Tensor,
-    std_rgb: torch.Tensor,
-    mean_chm: torch.Tensor,
-    std_chm: torch.Tensor,
     transform_spatial_training: A.Compose | None,
     transform_pixel_rgb_training: A.Compose | None,
     transform_pixel_chm_training: A.Compose | None,
@@ -826,10 +811,6 @@ def load_tree_datasets_from_split(
     tree_datasets["training"] = TreeDataset(
         data_split["training"],
         labels_to_index=labels_to_index,
-        mean_rgb=mean_rgb,
-        std_rgb=std_rgb,
-        mean_chm=mean_chm,
-        std_chm=std_chm,
         proba_drop_rgb=proba_drop_rgb,
         labels_transformation_drop_rgb=labels_transformation_drop_rgb,
         proba_drop_chm=proba_drop_chm,
@@ -844,10 +825,6 @@ def load_tree_datasets_from_split(
     tree_datasets["validation"] = TreeDataset(
         data_split["validation"],
         labels_to_index=labels_to_index,
-        mean_rgb=mean_rgb,
-        std_rgb=std_rgb,
-        mean_chm=mean_chm,
-        std_chm=std_chm,
         proba_drop_rgb=0.0,
         labels_transformation_drop_rgb=None,
         proba_drop_chm=0.0,
@@ -867,10 +844,6 @@ def load_tree_datasets_from_split(
     tree_datasets["test"] = TreeDataset(
         test_data,
         labels_to_index=labels_to_index,
-        mean_rgb=mean_rgb,
-        std_rgb=std_rgb,
-        mean_chm=mean_chm,
-        std_chm=std_chm,
         proba_drop_rgb=0.0,
         labels_transformation_drop_rgb=None,
         proba_drop_chm=0.0,

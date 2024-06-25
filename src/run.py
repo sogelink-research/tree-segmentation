@@ -7,10 +7,12 @@ import os
 import pickle
 import pstats
 import warnings
+from collections import defaultdict
 from itertools import product
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import albumentations as A
+import geojson
 import numpy as np
 import tifffile
 import torch
@@ -23,13 +25,36 @@ from augmentations import (
 from box_cls import Box
 from dataloaders import convert_ground_truth_from_tensors, initialize_dataloaders
 from dataset_constants import DatasetConst
-from datasets import compute_mean_and_std
+from datasets import compute_mean_and_std, normalize, normalize_file
 from geojson_conversions import open_geojson_feature_collection
 from layers import AMF_GD_YOLOv8
 from metrics import AP_Metrics, AP_Metrics_List
 from plot import create_bboxes_training_image
-from preprocessing.data import get_channels_count
-from preprocessing.rgb_cir import get_rgb_images_paths_from_polygon
+from preprocessing.chm import compute_slices_chm, get_full_chm_slice_path
+from preprocessing.data import (
+    annots_coordinates_to_local,
+    crop_all_images_from_annotations_folder,
+    crop_annots_into_limits,
+    crop_image,
+    crop_image_array,
+    find_annots_repartition,
+    get_channels_count,
+    get_cropping_limits,
+    merge_tif,
+    save_annots_per_image,
+)
+from preprocessing.lidar import (
+    create_full_lidar,
+    download_and_remove_overlap_geotiles,
+    download_lidar_names_shapefile,
+    filter_full_lidar,
+    get_lidar_files_from_image,
+)
+from preprocessing.rgb_cir import (
+    download_cir,
+    download_rgb_image_from_polygon,
+    get_rgb_images_paths_from_polygon,
+)
 from training import (
     TrainingMetrics,
     TreeDataset,
@@ -40,13 +65,17 @@ from training import (
     rgb_chm_usage_postfix,
     train_and_validate,
 )
-from utils import Folders, ImageData, import_tqdm
+from utils import (
+    Folders,
+    ImageData,
+    create_folder,
+    create_random_temp_folder,
+    import_tqdm,
+    remove_folder,
+)
 
 
 tqdm = import_tqdm()
-
-
-RESOLUTION = 0.08
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -94,44 +123,234 @@ class DatasetParams:
         use_cir: bool,
         use_chm: bool,
         chm_z_layers: Sequence[Tuple[float, float]],
+        resolution: float = 0.08,
+        tile_size: int = 640,
+        tile_overlap: int = 0,
         class_names: Dict[int, str] = DatasetConst.CLASS_NAMES.value,
         split_random_seed: int = 0,
         no_data_new_value: float = DatasetConst.NO_DATA_NEW_VALUE.value,
+        filter_lidar: bool = True,
+        mean_rgb_cir: torch.Tensor | None = None,
+        std_rgb_cir: torch.Tensor | None = None,
+        mean_chm: torch.Tensor | None = None,
+        std_chm: torch.Tensor | None = None,
     ) -> None:
         self.annotations_file_name = annotations_file_name
         self.use_rgb = use_rgb
         self.use_cir = use_cir
         self.use_chm = use_chm
         self.chm_z_layers = chm_z_layers
+        self.resolution = resolution
+        self.tile_size = tile_size
+        self.tile_overlap = tile_overlap
         self.class_names = class_names
         self.split_random_seed = split_random_seed
         self.no_data_new_value = no_data_new_value
+        self.filter_lidar = filter_lidar
+        self.mean_rgb_cir = mean_rgb_cir
+        self.std_rgb_cir = std_rgb_cir
+        self.mean_chm = mean_chm
+        self.std_chm = std_chm
 
         self.class_indices = {value: key for key, value in self.class_names.items()}
 
-        self._init_data_paths()
+        full_images_paths, annotations = self._download_data()
+        self._merge_and_crop_data(full_images_paths, annotations)
 
-    def _init_data_paths(self):
+        self.channels_rgb = get_channels_count(self.cropped_rgb_cir_folder_path, chm=False)
+        self.channels_chm = get_channels_count(self.cropped_chm_folder_path, chm=True)
+
+    def _download_data(self):
+        # Download the data if necessary
+        # Pre-process the data if necessary
+        # Initialize the required CHM layers if they don't exist
+        # Merge the layers into normalized memmaps
+
+        # Initialize the list of full images paths
+        full_images_paths: Dict[str, List[str]] = defaultdict(lambda: [])
+
+        # Get the annotations
         annotations_path = os.path.join(Folders.FULL_ANNOTS.value, self.annotations_file_name)
         annotations = open_geojson_feature_collection(annotations_path)
-        full_image_path_tif = get_rgb_images_paths_from_polygon(annotations["bbox"])[0]
-        self.image_data = ImageData(full_image_path_tif)
-        self.annotations_folder_path = os.path.join(
-            Folders.CROPPED_ANNOTS.value, self.image_data.base_name
+
+        # Get full image data
+        self.full_image_path_tif = download_rgb_image_from_polygon(annotations["bbox"])[0]
+        self.image_data = ImageData(self.full_image_path_tif)
+
+        if self.use_rgb:
+            # Store the folder paths
+            full_images_paths["rgb_cir"].append(self.full_image_path_tif)
+
+        if self.use_chm:
+            # Download and pre-process LiDAR
+            shapefile_path = download_lidar_names_shapefile()
+            intersection_file_names = get_lidar_files_from_image(
+                self.image_data, shapefile_path, DatasetConst.GEOTILES_OVERLAP.value
+            )
+            intersection_file_paths = download_and_remove_overlap_geotiles(
+                intersection_file_names, DatasetConst.GEOTILES_OVERLAP.value
+            )
+
+            # Create full LiDAR files and filter if necessary
+            full_lidar_path = create_full_lidar(intersection_file_paths, self.image_data)
+            if self.filter_lidar:
+                full_lidar_path = filter_full_lidar(self.image_data)
+
+            # Compute the CHM slices
+            full_chm_slices_paths = [
+                get_full_chm_slice_path(
+                    self.image_data, self.resolution, self.filter_lidar, z_limits
+                )
+                for z_limits in self.chm_z_layers
+            ]
+            full_chm_slices_folders_paths = list(map(os.path.dirname, full_chm_slices_paths))
+            for full_slice_folder_path in full_chm_slices_folders_paths:
+                create_folder(full_slice_folder_path)
+            compute_slices_chm(
+                laz_file_name=full_lidar_path,
+                output_tif_paths=full_chm_slices_paths,
+                resolution=self.resolution,
+                z_limits_list=self.chm_z_layers,
+                skip_if_file_exists=True,
+            )
+
+            # Store the folder paths
+            full_images_paths["chm"].extend(full_chm_slices_paths)
+
+        if self.use_cir:
+            # Download CIR images
+            cir_full_image_path = os.path.join(
+                Folders.FULL_CIR_IMAGES.value, f"{self.image_data.base_name}.tif"
+            )
+            download_cir(
+                image_coords_box=self.image_data.coord_box,
+                resolution=self.resolution,
+                skip_if_file_exists=True,
+                save_path=cir_full_image_path,
+            )
+
+            # Store the folder path
+            full_images_paths["rgb_cir"].append(cir_full_image_path)
+
+        return full_images_paths, annotations
+
+    def _init_mean_std(
+        self,
+        image_file_path_or_tensor: str | torch.Tensor,
+        mean: torch.Tensor | None,
+        std: torch.Tensor | None,
+        chm: bool,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if type(mean) != type(std):
+            raise ValueError(
+                f"You should either specify mean and std or none of them. Here we have type(mean)={type(mean)} and type(std)={type(std)}."
+            )
+
+        per_channel = not chm
+        replace_no_data = chm
+
+        # Compute mean and std if they are missing
+        if mean is None or std is None:
+            mean, std = compute_mean_and_std(
+                image_file_path_or_tensor,
+                per_channel=per_channel,
+                chm=chm,
+                replace_no_data=replace_no_data,
+            )
+        return mean, std
+
+    def _merge_and_crop_data(
+        self, full_images_paths: Dict[str, List[str]], annotations: geojson.FeatureCollection
+    ):
+        # Merge full images
+        full_merged_rgb_cir_shape, full_merged_rgb_cir = merge_tif(
+            full_images_paths["rgb_cir"], output_path=None, chm=False
         )
-        self.rgb_cir_folder_path = os.path.join(
-            Folders.IMAGES.value, "merged_memmap", "cropped", self.image_data.base_name
+        print(f"{full_merged_rgb_cir_shape = }")
+        full_merged_chm_shape, full_merged_chm = merge_tif(
+            full_images_paths["chm"], output_path=None, chm=True
         )
-        self.chm_folder_path = os.path.join(
-            Folders.CHM.value,
-            f"{round(RESOLUTION*100)}cm",
-            "filtered",
-            "merged_memmap",
-            "cropped",
-            self.image_data.coord_name,
+        print(f"{full_merged_chm_shape = }")
+
+        # Normalize the full images
+        full_merged_rgb_cir_tensor = torch.from_numpy(full_merged_rgb_cir).permute((2, 0, 1))
+        full_merged_chm_tensor = torch.from_numpy(full_merged_chm).permute((2, 0, 1))
+        self.mean_rgb_cir, self.std_rgb_cir = self._init_mean_std(
+            full_merged_rgb_cir_tensor, self.mean_rgb_cir, self.std_rgb_cir, chm=False
         )
-        self.channels_rgb = get_channels_count(self.rgb_cir_folder_path, chm=False)
-        self.channels_chm = get_channels_count(self.chm_folder_path, chm=True)
+        self.mean_chm, self.std_chm = self._init_mean_std(
+            full_merged_chm_tensor, self.mean_chm, self.std_chm, chm=True
+        )
+        full_merged_rgb_cir_tensor = normalize(
+            full_merged_rgb_cir_tensor,
+            mean=self.mean_rgb_cir,
+            std=self.std_rgb_cir,
+            replace_no_data=False,
+        )
+        full_merged_rgb_cir = full_merged_rgb_cir_tensor.permute((1, 2, 0)).cpu().numpy()
+        full_merged_chm_tensor = normalize(
+            full_merged_chm_tensor,
+            mean=self.mean_chm,
+            std=self.std_chm,
+            replace_no_data=True,
+            no_data_new_value=self.no_data_new_value,
+        )
+        full_merged_chm = full_merged_chm_tensor.permute((1, 2, 0)).cpu().numpy()
+
+        # Create the cropped data folder path
+        self.cropped_data_folder_path = create_random_temp_folder()
+
+        # Get tiles
+        cropping_limits_x, cropping_limits_y = get_cropping_limits(
+            self.full_image_path_tif, self.tile_size, self.tile_overlap
+        )
+
+        # Crop annotations into tiles
+        visibility_threshold = 0.2
+        annots_repartition = find_annots_repartition(
+            cropping_limits_x, cropping_limits_y, annotations, self.image_data, visibility_threshold
+        )
+        crop_annots_into_limits(annots_repartition)
+        annots_coordinates_to_local(annots_repartition)
+
+        # Save cropped annotations
+        output_image_prefix = self.image_data.base_name
+        self.cropped_annotations_folder_path = os.path.join(
+            self.cropped_data_folder_path, "annotations", output_image_prefix
+        )
+        save_annots_per_image(
+            annots_repartition,
+            self.cropped_annotations_folder_path,
+            self.full_image_path_tif,
+            clear_if_not_empty=True,
+        )
+
+        # Crop RGB/CIR images
+        self.cropped_rgb_cir_folder_path = os.path.join(
+            self.cropped_data_folder_path, "rgb_cir", output_image_prefix
+        )
+        crop_image_array(
+            self.cropped_annotations_folder_path,
+            full_merged_rgb_cir,
+            self.cropped_rgb_cir_folder_path,
+            clear_if_not_empty=False,
+            remove_unused=True,
+        )
+
+        # Crop CHM images
+        self.cropped_chm_folder_path = os.path.join(
+            self.cropped_data_folder_path, "chm", output_image_prefix
+        )
+        crop_image_array(
+            self.cropped_annotations_folder_path,
+            full_merged_chm,
+            self.cropped_chm_folder_path,
+            clear_if_not_empty=False,
+            remove_unused=True,
+        )
+
+    def close(self):
+        remove_folder(self.cropped_data_folder_path)
 
 
 class TrainingParams:
@@ -147,10 +366,6 @@ class TrainingParams:
         transform_spatial_training: A.Compose | None = None,
         transform_pixel_rgb_training: A.Compose | None = None,
         transform_pixel_chm_training: A.Compose | None = None,
-        mean_rgb: torch.Tensor | None = None,
-        std_rgb: torch.Tensor | None = None,
-        mean_chm: torch.Tensor | None = None,
-        std_chm: torch.Tensor | None = None,
     ) -> None:
         self.lr = lr
         self.epochs = epochs
@@ -162,10 +377,6 @@ class TrainingParams:
         self.transform_spatial_training = transform_spatial_training
         self.transform_pixel_rgb_training = transform_pixel_rgb_training
         self.transform_pixel_chm_training = transform_pixel_chm_training
-        self.mean_rgb = mean_rgb
-        self.std_rgb = std_rgb
-        self.mean_chm = mean_chm
-        self.std_chm = std_chm
 
 
 class TrainingData:
@@ -175,69 +386,23 @@ class TrainingData:
         self.training_params = training_params
 
         self._split_data(self.dataset_params.split_random_seed)
-        self._init_mean_std(
-            training_params.mean_rgb,
-            training_params.std_rgb,
-            training_params.mean_chm,
-            training_params.std_chm,
-        )
         self._init_transforms()
 
     def _split_data(self, split_random_seed: int):
         SETS_RATIOS = [3, 1, 1]
         SETS_NAMES = ["training", "validation", "test"]
         self.data_split_file_path = os.path.join(
-            Folders.OTHERS_DIR.value, f"data_split_{split_random_seed}.json"
+            self.dataset_params.cropped_data_folder_path, f"data_split_{split_random_seed}.json"
         )
         create_and_save_splitted_datasets(
-            self.dataset_params.rgb_cir_folder_path,
-            self.dataset_params.chm_folder_path,
-            self.dataset_params.annotations_folder_path,
+            self.dataset_params.cropped_rgb_cir_folder_path,
+            self.dataset_params.cropped_chm_folder_path,
+            self.dataset_params.cropped_annotations_folder_path,
             SETS_RATIOS,
             SETS_NAMES,
             self.data_split_file_path,
             random_seed=split_random_seed,
         )
-
-    def _init_mean_std(
-        self,
-        mean_rgb: torch.Tensor | None,
-        std_rgb: torch.Tensor | None,
-        mean_chm: torch.Tensor | None,
-        std_chm: torch.Tensor | None,
-    ):
-        if type(mean_rgb) != type(std_rgb):
-            raise ValueError(
-                f"You should either specify mean_rgb and std_rgb or none of them. Here we have mean_rgb={mean_rgb} and std_rgb={std_rgb}"
-            )
-        if type(mean_chm) != type(std_chm):
-            raise ValueError(
-                f"You should either specify mean_chm and std_chm or none of them. Here we have mean_chm={mean_chm} and std_chm={std_chm}"
-            )
-
-        # Compute RGB mean and std if an of them is missing
-        if mean_rgb is None or std_rgb is None:
-            self.mean_rgb, self.std_rgb = compute_mean_and_std(
-                self.dataset_params.rgb_cir_folder_path,
-                per_channel=True,
-                chm=False,
-                replace_no_data=False,
-            )
-        else:
-            self.mean_rgb, self.std_rgb = mean_rgb, std_rgb
-
-        # Compute CHM mean and std if an of them is missing
-        if mean_chm is None or std_chm is None:
-            self.mean_chm, self.std_chm = compute_mean_and_std(
-                self.dataset_params.chm_folder_path,
-                per_channel=True,
-                replace_no_data=True,
-                chm=True,
-                no_data_new_value=self.dataset_params.no_data_new_value,
-            )
-        else:
-            self.mean_chm = mean_chm
-            self.std_chm = std_chm
 
     def _init_transforms(self):
         self.transform_spatial_training = (
@@ -298,10 +463,6 @@ class ModelSession:
         datasets = load_tree_datasets_from_split(
             self.training_data.data_split_file_path,
             labels_to_index=self.training_data.dataset_params.class_indices,
-            mean_rgb=self.training_data.mean_rgb,
-            std_rgb=self.training_data.std_rgb,
-            mean_chm=self.training_data.mean_chm,
-            std_chm=self.training_data.std_chm,
             proba_drop_rgb=self.training_data.training_params.proba_drop_rgb,
             labels_transformation_drop_rgb=DatasetConst.LABELS_TRANSFORMATION_DROP_RGB.value,
             proba_drop_chm=self.training_data.training_params.proba_drop_chm,
@@ -436,6 +597,9 @@ class ModelSession:
         file_path = ModelSession._pickle_path(model_name)
         return ModelSession.from_pickle(file_path, device)
 
+    def close(self):
+        self.training_data.dataset_params.close()
+
 
 def main():
     # Data parameters
@@ -482,6 +646,8 @@ def main():
     model_session = ModelSession(training_data=training_data, device=device, postfix=postfix)
 
     model_session.train()
+
+    model_session.close()
 
     # model_session = ModelSession.from_name(
     #     "trained_model_rgb_cir_multi_chm_1500ep_2", device=device

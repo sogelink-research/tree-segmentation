@@ -1,15 +1,22 @@
 import json
 import os
+import random
 import shutil
+import string
 import sys
 import time
+from collections.abc import Sequence
 from enum import Enum
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
+import tifffile
 from osgeo import gdal
+from PIL import Image
 from requests import get
 
 from box_cls import Box
+from dataset_constants import DatasetConst
 
 
 gdal.UseExceptions()
@@ -21,6 +28,8 @@ def _absolute_path(relative_path: str) -> str:
 
 class Folders(Enum):
     DATA = _absolute_path("../data/")
+
+    TEMP = _absolute_path("../data/temp/")
 
     ANNOTS = _absolute_path("../data/annotations/")
     FULL_ANNOTS = _absolute_path("../data/annotations/full/")
@@ -235,3 +244,149 @@ def import_tqdm():
     else:
         from tqdm import tqdm
     return tqdm
+
+
+def generate_random_name(length: int = 8):
+    characters = string.ascii_letters + string.digits
+    return "".join(random.choice(characters) for _ in range(length))
+
+
+def create_random_temp_folder(length: int = 8) -> str:
+    def get_folder_name(random_name: str) -> str:
+        return os.path.join(Folders.TEMP.value, random_name)
+
+    temp_folder_path = get_folder_name(generate_random_name(length))
+    while os.path.isdir(temp_folder_path):
+        temp_folder_path = get_folder_name(generate_random_name(length))
+
+    create_folder(temp_folder_path)
+
+    return temp_folder_path
+
+
+def is_tif_file(file_path: str) -> bool:
+    return file_path.lower().endswith((".tif", ".tiff"))
+
+
+def is_memmap_file(file_path: str) -> bool:
+    return file_path.lower().endswith(".mmap")
+
+
+def is_npy_file(file_path: str) -> bool:
+    return file_path.lower().endswith(".npy")
+
+
+def write_numpy(image: np.ndarray, save_path: str) -> None:
+    mmapped_array = np.lib.format.open_memmap(
+        save_path, mode="w+", shape=image.shape, dtype=image.dtype
+    )
+    mmapped_array[:] = image[:]
+    mmapped_array.flush()
+
+
+def write_memmap(image: np.ndarray, save_path: str) -> None:
+    mmapped_array = np.memmap(save_path, dtype=image.dtype, mode="w+", shape=image.shape)
+    mmapped_array[:] = image[:]
+    mmapped_array.flush()
+
+
+def write_image(image: np.ndarray, save_path: str) -> None:
+    if is_tif_file(save_path):
+        tifffile.imwrite(save_path, image)
+    elif is_memmap_file(save_path):
+        write_memmap(image, save_path)
+    elif is_npy_file(save_path):
+        write_numpy(image, save_path)
+    else:
+        im = Image.fromarray(image)
+        im.save(save_path)
+
+
+def read_numpy(file_path: str, mode: str) -> np.ndarray:
+    mmapped_array = np.lib.format.open_memmap(file_path, mode=mode)
+    return mmapped_array
+
+
+def read_memmap(
+    file_path: str,
+    dtype_type: type,
+    shape: Optional[Tuple[int, ...]] = None,
+) -> np.ndarray:
+    mmapped_array = np.memmap(file_path, dtype=dtype_type, mode="c", shape=None).__array__()
+    if shape is None:
+        shape = (DatasetConst.CROPPED_SIZE.value, DatasetConst.CROPPED_SIZE.value, -1)
+
+    # shape_size = int(np.prod(shape))
+    # if shape_size != mmapped_array.size:
+    #     if -1 not in shape:
+    #         raise Exception(f"The image cannot be open with the shape {shape}.")
+    #     if mmapped_array.size % shape_size != 0:
+    #         raise Exception(
+    #             f"The image cannot be open with the shape {shape}, even by adding multiple channels."
+    #         )
+    #     index = shape.index(-1)
+    #     real_shape = list(shape)
+    #     real_shape[index] = mmapped_array.size // (-shape_size)
+    #     real_shape = tuple(real_shape)
+    # else:
+    #     real_shape = shape
+    mmapped_array = mmapped_array.reshape(shape)
+    return mmapped_array
+
+
+def read_image(
+    image_path: str, chm: bool, mode: str, shape: Optional[Tuple[int, ...]] = None
+) -> np.ndarray:
+    dtype_type = DatasetConst.CHM_DATA_TYPE.value if chm else DatasetConst.RGB_DATA_TYPE.value
+
+    if is_tif_file(image_path):
+        image = tifffile.imread(image_path)
+    elif is_memmap_file(image_path):
+        image = read_memmap(image_path, dtype_type, shape=shape)
+    elif is_npy_file(image_path):
+        image = read_numpy(image_path, mode)
+    else:
+        image = np.array(Image.open(image_path))
+    if len(image.shape) == 2:
+        image = image[..., np.newaxis]
+
+    return image.astype(dtype_type)
+
+
+def get_sup_dtype_type(dtype_type: type):
+    handled_dtype_types = [np.floating, np.unsignedinteger, np.signedinteger]
+    for handled_dtype_type in handled_dtype_types:
+        if np.issubdtype(dtype_type, handled_dtype_type):
+            return handled_dtype_type
+    raise TypeError(f"Type {dtype_type} is not handled.")
+
+
+def are_same_numpy_dtype_type_nature(dtype_type1: type, dtype_type2: type):
+    if get_sup_dtype_type(dtype_type1) == get_sup_dtype_type(dtype_type2):
+        return True
+    else:
+        return False
+
+
+def smallest_numpy_dtype_type(dtype_type1: type, dtype_type2: type) -> type:
+    if not are_same_numpy_dtype_type_nature(dtype_type1, dtype_type2):
+        raise TypeError(f"{dtype_type1} and {dtype_type2} are not the same kind of dtype.")
+    if dtype_type1(0).itemsize > dtype_type2(0).itemsize:
+        return dtype_type2
+    else:
+        return dtype_type1
+
+
+def crop_dtype_type_precision(array: np.ndarray, dtype_type: type):
+    smallest_dtype_type = smallest_numpy_dtype_type(array.dtype.type, dtype_type)
+    return array.astype(smallest_dtype_type)
+
+
+def crop_dtype_type_precision_image(image: np.ndarray):
+    if get_sup_dtype_type(image.dtype.type) == np.floating:
+        return crop_dtype_type_precision(image, np.float32)
+    if get_sup_dtype_type(image.dtype.type) == np.unsignedinteger:
+        return crop_dtype_type_precision(image, np.uint8)
+    if get_sup_dtype_type(image.dtype.type) == np.signedinteger:
+        return crop_dtype_type_precision(image, np.int16)
+    raise TypeError(f"Type {image.dtype} is not handled.")

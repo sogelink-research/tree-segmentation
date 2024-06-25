@@ -195,17 +195,16 @@ def download_and_remove_overlap_geotiles(lidar_file_names: List[str], overlap: i
     return lidar_file_paths
 
 
-def create_full_lidar(lidar_file_paths: List[str], image_data: ImageData) -> Tuple[str, str]:
+def create_full_lidar(lidar_file_paths: List[str], image_data: ImageData) -> str:
     """Merges and crops the given LiDAR files to the area of the given image.
 
     Args:
-        lidar_file_paths (List[str]): The list of LiDAR files to cover the whole area of the image.
+        lidar_file_paths (List[str]): the list of LiDAR files to cover the whole area of the image.
         These point clouds should have no overlap.
-        image_data (ImageData): The data of the image.
+        image_data (ImageData): the data of the image.
 
     Returns:
-        Tuple[str, str]: The paths to the new LiDAR point clouds corresponding to the image, with the
-        unfiltered one first and the filtered one second.
+        str: the path to the new LiDAR point cloud corresponding to the image.
     """
     # Crop the point clouds into the area of the full image
     full_lidar_path = os.path.join(
@@ -213,11 +212,25 @@ def create_full_lidar(lidar_file_paths: List[str], image_data: ImageData) -> Tup
     )
     if not os.path.exists(full_lidar_path):
         merge_crop_las(lidar_file_paths, full_lidar_path, image_data.coord_box)
+    return full_lidar_path
 
+
+def filter_full_lidar(image_data: ImageData):
+    """Filters the full LiDAR file to remove buildings.
+
+    Args:
+        image_data (ImageData): the data of the image.
+
+    Returns:
+        str: the path to the new filtered LiDAR point cloud corresponding to the image.
+    """
+    full_lidar_path = os.path.join(
+        Folders.UNFILTERED_FULL_LIDAR.value, f"{image_data.coord_name}.laz"
+    )
     # Filter the full point cloud to remove buildings
     full_lidar_filtered_path = os.path.join(
         Folders.FILTERED_FULL_LIDAR.value, f"{image_data.coord_name}.laz"
     )
     if not os.path.exists(full_lidar_filtered_path):
         filter_classification_las(full_lidar_path, full_lidar_filtered_path)
-    return full_lidar_path, full_lidar_filtered_path
+    return full_lidar_filtered_path

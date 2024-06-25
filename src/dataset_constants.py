@@ -36,3 +36,7 @@ class DatasetConst(Enum):
 
     RGB_DATA_TYPE = np.uint8
     CHM_DATA_TYPE = np.float32
+
+    GEOTILES_OVERLAP = 20
+
+    CROPPED_SIZE = 640

@@ -16,7 +16,9 @@
 ## Speed
 
 - Implement memmaps and normalization in a function before the initialization of the dataset
-- Try to make `tree_dataset_collate_fn` quicker by filling the torch tensors instead of using stack --> didn't work
+- Try to make `tree_dataset_collate_fn` quicker:
+    - Filling the torch tensors instead of using stack didn't work
+    - Initialize the batches before when we have `shuffle=False`?
 
 ## Others
 

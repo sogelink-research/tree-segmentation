@@ -1,7 +1,8 @@
 import json
 import os
+import time
 from copy import deepcopy
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import geojson
 import numpy as np
@@ -14,6 +15,7 @@ from PIL import Image
 
 from box_cls import (
     Box,
+    BoxInt,
     box_coordinates_to_pixels,
     box_crop_in_box,
     box_pixels_full_to_cropped,
@@ -22,24 +24,22 @@ from box_cls import (
 )
 from dataset_constants import DatasetConst
 from geojson_conversions import get_bbox_polygon
-from speed_test import (
-    crop_dtype_type_precision_image,
-    read_memmap,
-    read_numpy,
-    write_memmap,
-    write_numpy,
-)
 from utils import (
     Folders,
     ImageData,
     create_folder,
+    crop_dtype_type_precision_image,
     get_coordinates_from_full_image_file_name,
     get_file_base_name,
     get_files_in_folders,
     import_tqdm,
     open_json,
+    read_image,
+    read_numpy,
     remove_all_files_but,
     remove_folder,
+    write_image,
+    write_numpy,
 )
 
 
@@ -380,7 +380,7 @@ def save_annots_per_image(
             json.dump(annots_dict, outfile)
 
 
-def get_image_box_from_cropped_annotations(cropped_annotations: Dict[Any, Any]) -> Box:
+def get_image_box_from_cropped_annotations(cropped_annotations: Dict[Any, Any]) -> BoxInt:
     """Returns the Box representing the boundaries of the image linked to the
     cropped annotations.
 
@@ -391,11 +391,11 @@ def get_image_box_from_cropped_annotations(cropped_annotations: Dict[Any, Any]) 
         Box: boundaries of the image.
     """
     coords = cropped_annotations["full_image"]["coordinates_of_cropped_image"]
-    return Box(
-        x_min=coords["x_min"],
-        y_min=coords["y_min"],
-        x_max=coords["x_max"],
-        y_max=coords["y_max"],
+    return BoxInt(
+        x_min=round(coords["x_min"]),
+        y_min=round(coords["y_min"]),
+        x_max=round(coords["x_max"]),
+        y_max=round(coords["y_max"]),
     )
 
 
@@ -405,20 +405,34 @@ def get_full_image_path_from_cropped_annotations(
     return cropped_annotations["full_image"]["path"]
 
 
-def crop_image_from_box(image_path: str, crop_box: Box, output_path: str) -> None:
-    window = (
-        crop_box.x_min,
-        crop_box.y_min,
-        crop_box.x_max - crop_box.x_min,
-        crop_box.y_max - crop_box.y_min,
-    )
-
-    gdal.Translate(output_path, image_path, srcWin=window)
+def crop_image_array_from_box(tensor: np.ndarray, crop_box: BoxInt, output_path: str) -> None:
+    cropped_image = tensor[crop_box.y_min : crop_box.y_max, crop_box.x_min : crop_box.x_max]
+    write_numpy(cropped_image, output_path)
 
 
-def _get_cropped_image_name(cropped_annotations: Dict[Any, Any]) -> str:
+def crop_image_from_box(image_path: str, crop_box: BoxInt, output_path: str) -> None:
+    image = read_numpy(file_path=image_path, mode="c")
+    cropped_image = image[crop_box.y_min : crop_box.y_max, crop_box.x_min : crop_box.x_max]
+    write_numpy(cropped_image, output_path)
+    # window = (
+    #     crop_box.x_min,
+    #     crop_box.y_min,
+    #     crop_box.x_max - crop_box.x_min,
+    #     crop_box.y_max - crop_box.y_min,
+    # )
+
+    # gdal.Translate(output_path, image_path, srcWin=window)
+
+
+def _get_cropped_image_name(cropped_annotations: Dict[Any, Any], extension: str) -> str:
+    extension = extension if extension.startswith(".") else "." + extension
+    supported_extensions = [".tif", ".npy"]
+    if extension not in supported_extensions:
+        raise Exception(
+            f"The extension {extension} is not supported. Only these extensions are supported: {supported_extensions}"
+        )
     image_box = get_image_box_from_cropped_annotations(cropped_annotations)
-    cropped_image_file = f"{image_box.short_name()}.tif"
+    cropped_image_file = f"{image_box.short_name()}{extension}"
     return cropped_image_file
 
 
@@ -484,7 +498,7 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
         if os.path.splitext(annotations_file_path)[1] == ".json":
             # Get the annotations
             cropped_annotations = open_json(annotations_file_path)
-            output_file = _get_cropped_image_name(cropped_annotations)
+            output_file = _get_cropped_image_name(cropped_annotations, extension=".tif")
             image_box = get_image_box_from_cropped_annotations(cropped_annotations)
             files_to_keep.append(output_file)
 
@@ -514,21 +528,17 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
 def crop_all_images_from_annotations_folder(
     annotations_folder_path: str,
     full_images_folders_paths: List[str],
+    output_cropped_images_folders_paths: List[str],
     clear_if_not_empty: bool,
     remove_unused: bool,
-) -> List[str]:
+) -> None:
     full_images_paths = get_files_in_folders(full_images_folders_paths)
 
-    cropped_images_folders_paths = [
-        os.path.splitext(full_image_path.replace("full", "cropped"))[0]
-        for full_image_path in full_images_paths
-    ]
-
     if clear_if_not_empty:
-        for folder_path in cropped_images_folders_paths:
+        for folder_path in output_cropped_images_folders_paths:
             remove_folder(folder_path)
 
-    for folder_path in cropped_images_folders_paths:
+    for folder_path in output_cropped_images_folders_paths:
         create_folder(folder_path)
 
     files_to_keep: List[str] = []
@@ -543,114 +553,166 @@ def crop_all_images_from_annotations_folder(
         if os.path.splitext(annotations_file_path)[1] == ".json":
             # Get the annotations
             cropped_annotations = open_json(annotations_file_path)
-            output_file = _get_cropped_image_name(cropped_annotations)
+            output_file = _get_cropped_image_name(cropped_annotations, extension=".npy")
             image_box = get_image_box_from_cropped_annotations(cropped_annotations)
             files_to_keep.append(output_file)
 
             # Create the cropped images
             for full_image_path, cropped_folder_path in zip(
-                full_images_paths, cropped_images_folders_paths
+                full_images_paths, output_cropped_images_folders_paths
             ):
                 output_path = os.path.join(cropped_folder_path, output_file)
                 if not os.path.exists(output_path):
                     crop_image_from_box(full_image_path, image_box, output_path)
 
     if remove_unused:
-        for cropped_folder_path in cropped_images_folders_paths:
+        for cropped_folder_path in output_cropped_images_folders_paths:
             remove_all_files_but(cropped_folder_path, files_to_keep)
 
-    return cropped_images_folders_paths
 
+def crop_image(
+    cropped_annotations_folder_path: str,
+    full_image_path: str,
+    output_folder_path: str,
+    clear_if_not_empty: bool,
+    remove_unused: bool,
+):
 
-def merge_tif(cropped_images_folders_paths: List[str]):
-    if len(cropped_images_folders_paths) == 0:
-        raise ValueError("cropped_images_folders_paths is empty.")
-
-    folder_path_list = cropped_images_folders_paths[0].split(os.path.sep)
-    output_folder_path = os.path.join(
-        os.path.sep.join(folder_path_list[:-3]),
-        "merged",
-        os.path.sep.join(folder_path_list[-2:]),
-    )
-    output_memmap_folder_path = os.path.join(
-        os.path.sep.join(folder_path_list[:-3]),
-        "merged_memmap",
-        os.path.sep.join(folder_path_list[-2:]),
-    )
-    output_npy_folder_path = os.path.join(
-        os.path.sep.join(folder_path_list[:-3]),
-        "merged_npy",
-        os.path.sep.join(folder_path_list[-2:]),
-    )
+    if clear_if_not_empty:
+        remove_folder(output_folder_path)
 
     create_folder(output_folder_path)
-    create_folder(output_memmap_folder_path)
-    create_folder(output_npy_folder_path)
 
-    for image_name in tqdm(
-        os.listdir(cropped_images_folders_paths[0]), desc="Merging TIFs", leave=False
+    files_to_keep: List[str] = []
+
+    # Iterate over the cropped annotations
+    for file_name in tqdm(
+        os.listdir(cropped_annotations_folder_path),
+        leave=True,
+        desc="Cropping images: Cropped annotations",
     ):
-        all_images_paths = [
-            os.path.join(folder_path, image_name) for folder_path in cropped_images_folders_paths
-        ]
-        output_path = os.path.join(output_folder_path, image_name)
+        annotations_file_path = os.path.join(cropped_annotations_folder_path, file_name)
+        if os.path.splitext(annotations_file_path)[1] == ".json":
+            # Get the annotations
+            cropped_annotations = open_json(annotations_file_path)
+            output_file = _get_cropped_image_name(cropped_annotations, extension=".npy")
+            image_box = get_image_box_from_cropped_annotations(cropped_annotations)
+            files_to_keep.append(output_file)
 
-        # Load images as NumPy arrays
-        with rasterio.open(all_images_paths[0]) as img:
-            crs = img.crs
-            transform = img.transform
+            # Create the cropped image
+            output_path = os.path.join(output_folder_path, output_file)
+            if not os.path.exists(output_path):
+                crop_image_from_box(full_image_path, image_box, output_path)
 
-        # tifffile is quicker to just open the files
-        images: List[np.ndarray] = []
-        for image_path in all_images_paths:
-            image = tifffile.imread(image_path)
-            if len(image.shape) == 2:
-                image = image[..., np.newaxis]
-            images.append(image)
+    if remove_unused:
+        remove_all_files_but(output_folder_path, files_to_keep)
 
-        # Stack images along a new axis to create a multi-channel image
-        multi_channel_image = np.concatenate(images, axis=2)
 
-        # Save the result
-        with rasterio.open(
-            output_path,
-            "w",
-            driver="GTiff",
-            height=multi_channel_image.shape[0],
-            width=multi_channel_image.shape[1],
-            count=multi_channel_image.shape[2],
-            dtype=multi_channel_image.dtype,
-            crs=crs,
-            transform=transform,
-        ) as dst:
-            for i in range(multi_channel_image.shape[2]):
-                dst.write(multi_channel_image[:, :, i], i + 1)
+def crop_image_array(
+    cropped_annotations_folder_path: str,
+    full_image_array: np.ndarray,
+    output_folder_path: str,
+    clear_if_not_empty: bool,
+    remove_unused: bool,
+):
 
-        # Save the memmap
-        output_memmap_path = os.path.join(
-            output_memmap_folder_path, image_name.replace(".tif", ".mmap")
-        )
-        multi_channel_image = crop_dtype_type_precision_image(multi_channel_image)
-        write_memmap([multi_channel_image], [output_memmap_path])
+    if clear_if_not_empty:
+        remove_folder(output_folder_path)
 
-        # Save the npy
-        output_npy_path = os.path.join(output_npy_folder_path, image_name.replace(".tif", ".npy"))
-        multi_channel_image = crop_dtype_type_precision_image(multi_channel_image)
-        write_numpy([multi_channel_image], output_npy_path)
+    create_folder(output_folder_path)
+
+    files_to_keep: List[str] = []
+
+    # Iterate over the cropped annotations
+    for file_name in tqdm(
+        os.listdir(cropped_annotations_folder_path),
+        leave=True,
+        desc="Cropping images: Cropped annotations",
+    ):
+        annotations_file_path = os.path.join(cropped_annotations_folder_path, file_name)
+        if os.path.splitext(annotations_file_path)[1] == ".json":
+            # Get the annotations
+            cropped_annotations = open_json(annotations_file_path)
+            output_file = _get_cropped_image_name(cropped_annotations, extension=".npy")
+            image_box = get_image_box_from_cropped_annotations(cropped_annotations)
+            files_to_keep.append(output_file)
+
+            # Create the cropped image
+            output_path = os.path.join(output_folder_path, output_file)
+            if not os.path.exists(output_path):
+                crop_image_array_from_box(full_image_array, image_box, output_path)
+
+    if remove_unused:
+        remove_all_files_but(output_folder_path, files_to_keep)
+
+
+def merge_tif(
+    images_paths: List[str],
+    chm: bool,
+    output_path: Optional[str] = None,
+) -> Tuple[Tuple[int, ...], np.ndarray]:
+    if len(images_paths) == 0:
+        raise ValueError("images_paths is empty.")
+
+    available_output_types = [".mmap", ".tif", ".npy", None]
+    output_type = None if output_path is None else os.path.splitext(output_path)[1]
+    if output_type not in available_output_types:
+        raise ValueError(f"Only these output types are supported: {available_output_types}")
+
+    start_time = time.time_ns()
+
+    # tifffile is quicker to just open the files
+    images: List[np.ndarray] = []
+    for image_path in images_paths:
+        image = read_image(image_path, mode="c", chm=chm)
+        images.append(image)
+
+    end_time = time.time_ns()
+    print(f"Loading time: {(end_time - start_time)}")
+    start_time = time.time_ns()
+
+    # Stack images along a new axis to create a multi-channel image
+    multi_channel_image = np.concatenate(images, axis=2)
+
+    end_time = time.time_ns()
+    print(f"Concat time: {(end_time - start_time)}")
+    start_time = time.time_ns()
+
+    if output_path is not None:
+        if output_type in [".mmap", ".npy"]:
+            # Save the memmap
+            multi_channel_image = crop_dtype_type_precision_image(multi_channel_image)
+            write_image(multi_channel_image, output_path)
+        elif output_type == ".tif":
+            # Save the TIF
+            with rasterio.open(images_paths[0]) as img:
+                crs = img.crs
+                transform = img.transform
+
+            with rasterio.open(
+                output_path,
+                "w",
+                driver="GTiff",
+                height=multi_channel_image.shape[0],
+                width=multi_channel_image.shape[1],
+                count=multi_channel_image.shape[2],
+                dtype=multi_channel_image.dtype,
+                crs=crs,
+                transform=transform,
+            ) as dst:
+                for i in range(multi_channel_image.shape[2]):
+                    dst.write(multi_channel_image[:, :, i], i + 1)
+
+    end_time = time.time_ns()
+    print(f"Write time: {(end_time - start_time)}")
+
+    return multi_channel_image.shape, multi_channel_image
 
 
 def get_channels_count(folder_path: str, chm: bool) -> int:
-    data_type = DatasetConst.CHM_DATA_TYPE.value if chm else DatasetConst.RGB_DATA_TYPE.value
     for file in os.listdir(folder_path):
         image_path = os.path.join(folder_path, file)
-        if os.path.splitext(file)[1] == ".tif":
-            image = tifffile.imread(image_path)
-        elif os.path.splitext(file)[1] == ".mmap":
-            image = read_memmap([image_path], [data_type])[0]
-        elif os.path.splitext(file)[1] == ".npy":
-            image = read_numpy(image_path)[0]
-        else:
-            raise Exception(f"Unsupported image format: {os.path.splitext(file)[1]}")
+        image = read_image(image_path, mode="c", chm=chm)
         if len(image.shape) == 2:
             return 1
         else:
