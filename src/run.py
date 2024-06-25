@@ -50,7 +50,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_session = ModelSession(training_data=training_data, device=device, postfix=postfix)
 
-    model_session.train()
+    # model_session.train()
 
     model_session.close()
 

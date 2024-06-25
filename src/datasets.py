@@ -49,15 +49,15 @@ class InvalidPathException(Exception):
 
 
 def _compute_channels_mean_std_tensor(
-    image: torch.Tensor,
+    image: np.ndarray,
     per_channel: bool,
     replace_no_data: bool,
     no_data_new_value: float = 0.0,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> Tuple[np.ndarray, np.ndarray]:
     """Computes the mean and the standard deviation along every channel of the image given as input.
 
     Args:
-        image (torch.Tensor): image tensor of shape [w, h] or [c, w, h].
+        image (np.ndarray): image array of shape (w, h) or (w, h, c).
         per_channel (bool): whether to compute one value for each channel or one for the whole images.
         replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
         before computations.
@@ -65,18 +65,18 @@ def _compute_channels_mean_std_tensor(
         Defaults to 0.0.
 
     Returns:
-        Tuple[torch.Tensor, torch.Tensor]: (mean, std), two tensors of shape (c,) if per_channel is
+        Tuple[np.ndarray, np.ndarray]: (mean, std), two arrays of shape (c,) if per_channel is
         True and (1,) otherwise. They contain respectively the mean value and the standard deviation.
     """
     if replace_no_data:
-        NO_DATA = -9999
-        image[image == NO_DATA] = no_data_new_value
+        image = np.where(image == -9999, no_data_new_value, image)
     if len(image.shape) == 2:
-        image = image.unsqueeze(0)
-    dims = (1, 2) if per_channel else (0, 1, 2)
-    dtype = image.dtype if torch.is_floating_point(image) else torch.float32
-    mean = torch.mean(image.to(dtype), dim=dims).reshape(-1)
-    std = torch.std(image.to(dtype), dim=dims).reshape(-1)
+        image = image[..., np.newaxis]
+
+    axis = (0, 1) if per_channel else (0, 1, 2)
+    dtype = image.dtype if np.issubdtype(image.dtype, np.floating) else np.float32
+    mean = np.mean(image.astype(dtype), axis=axis).reshape(-1)
+    std = np.std(image.astype(dtype), axis=axis).reshape(-1)
     return mean, std
 
 
@@ -85,7 +85,7 @@ def _compute_channels_mean_and_std_file(
     per_channel: bool,
     replace_no_data: bool,
     no_data_new_value: float = 0.0,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> Tuple[np.ndarray, np.ndarray]:
     """Computes the mean and the standard deviation along every channel of the image given as input.
 
     Args:
@@ -100,7 +100,7 @@ def _compute_channels_mean_and_std_file(
         InvalidPathException: if the input path is not a file.
 
     Returns:
-        Tuple[torch.Tensor, torch.Tensor]: (mean, std), two tensors of shape (c,) if per_channel is
+        Tuple[np.ndarray, np.ndarray]: (mean, std), two arrays of shape (c,) if per_channel is
         True and (1,) otherwise. They contain respectively the mean value and the standard deviation.
     """
     if not os.path.isfile(file_path):
@@ -111,22 +111,20 @@ def _compute_channels_mean_and_std_file(
         image = read_numpy(file_path, mode="r+")
     else:
         image = np.array(Image.open(file_path))
-    return _compute_channels_mean_std_tensor(
-        torch.from_numpy(image).permute((2, 0, 1)), per_channel, replace_no_data, no_data_new_value
-    )
+    return _compute_channels_mean_std_tensor(image, per_channel, replace_no_data, no_data_new_value)
 
 
 def compute_mean_and_std(
-    tensor_or_file_or_folder_path: str | torch.Tensor,
+    array_or_file_or_folder_path: str | np.ndarray,
     per_channel: bool,
     replace_no_data: bool,
     no_data_new_value: float = 0.0,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> Tuple[np.ndarray, np.ndarray]:
     """Computes the mean and the standard deviation along every channel of the image(s) given as input
     (either as one file or a directory containing multiple files).
 
     Args:
-        tensor_or_file_or_folder_path (str | torch.Tensor): path to the image or the folder of images or
+        array_or_file_or_folder_path (str | np.ndarray): path to the image or the folder of images or
         Torch tensor.
         per_channel (bool): whether to compute one value for each channel or one for the whole images.
         replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
@@ -138,25 +136,25 @@ def compute_mean_and_std(
         InvalidPathException: if the input path is neither a file, nor a directory.
 
     Returns:
-        Tuple[torch.Tensor, torch.Tensor]: (mean, std), two tensors of shape (c,) if per_channel is
+        Tuple[np.ndarray, np.ndarray]: (mean, std), two arrays of shape (c,) if per_channel is
         True and (1,) otherwise. They contain respectively the mean value and the standard deviation.
     """
-    if isinstance(tensor_or_file_or_folder_path, torch.Tensor):
-        tensor = tensor_or_file_or_folder_path
+    if isinstance(array_or_file_or_folder_path, np.ndarray):
+        array = array_or_file_or_folder_path
         return _compute_channels_mean_std_tensor(
-            tensor, per_channel, replace_no_data, no_data_new_value
+            array, per_channel, replace_no_data, no_data_new_value
         )
 
-    if os.path.isfile(tensor_or_file_or_folder_path):
-        file_path = tensor_or_file_or_folder_path
+    if os.path.isfile(array_or_file_or_folder_path):
+        file_path = array_or_file_or_folder_path
         return _compute_channels_mean_and_std_file(
             file_path, per_channel, replace_no_data, no_data_new_value
         )
 
-    if os.path.isdir(tensor_or_file_or_folder_path):
+    if os.path.isdir(array_or_file_or_folder_path):
         means = []
         stds = []
-        folder_path = tensor_or_file_or_folder_path
+        folder_path = array_or_file_or_folder_path
         for file_name in os.listdir(folder_path):
             file_path = os.path.join(folder_path, file_name)
             mean, std = _compute_channels_mean_and_std_file(
@@ -166,73 +164,38 @@ def compute_mean_and_std(
             stds.append(std)
         mean_mean = np.mean(means, axis=0)
         mean_std = np.mean(stds, axis=0)
-        return torch.from_numpy(mean_mean), torch.from_numpy(mean_std)
+        return mean_mean, mean_std
 
-    raise Exception("The first argument should be a torch.Tensor or a path to a file or a folder.")
+    raise Exception("The first argument should be a np.ndarray or a path to a file or a folder.")
 
 
 def normalize(
-    image: torch.Tensor,
-    mean: torch.Tensor,
-    std: torch.Tensor,
+    image: np.ndarray,
+    mean: np.ndarray,
+    std: np.ndarray,
     replace_no_data: bool,
     no_data_new_value: float = 0.0,
-) -> torch.Tensor:
+) -> np.ndarray:
     """Normalizes the image given as input.
 
     Args:
-        image (torch.Tensor): the image to normalize with c channels. Must be of shape [w, h] or [c, w, h].
-        mean (torch.Tensor): the mean to normalize with. Must be of shape [], [1] or [c].
-        std (torch.Tensor): the standard deviation to normalize with. Must be of shape [], [1] or [c].
+        image (np.ndarray): the image to normalize with c channels. Must be of shape (w, h) or (c, w, h).
+        mean (np.ndarray): the mean to normalize with. Must be of shape (), (1) or (c).
+        std (np.ndarray): the standard deviation to normalize with. Must be of shape (), (1) or (c).
         replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
         before normalization.
         no_data_new_value (float, optional): the value replacing NO_DATA (-9999) before computations.
         Defaults to 0.0.
 
     Returns:
-        torch.Tensor: the normalized image.
+        np.ndarray: the normalized image.
     """
     if replace_no_data:
-        image = torch.where(image == -9999, no_data_new_value, image)
-
-    if len(image.shape) == 2:
-        image = image.unsqueeze(0)
-
-    channels = image.shape[0]
-
-    def reshape(tensor: torch.Tensor, name: str) -> torch.Tensor:
-        if len(tensor.shape) == 0:
-            tensor = torch.full((channels,), tensor.item())
-        elif len(tensor.shape) == 1 and tensor.shape[0] == 1:
-            tensor = torch.full((channels,), tensor[0].item())
-        elif len(tensor.shape) == 1 and tensor.shape[0] == channels:
-            pass
-        else:
-            raise ValueError(
-                f"Unsupported shape for `{name}`. It should be a tensor or shape [], [1] or [{channels}]"
-            )
-        return tensor.view(-1, 1, 1)
-
-    mean = reshape(mean, "mean").to(dtype=image.dtype, device=image.device)
-    std = reshape(std, "std").to(dtype=image.dtype, device=image.device)
-
-    return (image - mean) / std
-
-
-def normalize_numpy(
-    image: np.ndarray,
-    mean: np.ndarray,
-    std: np.ndarray,
-    replace_no_data: bool,
-    no_data_new_value: float = 0.0,
-):
-    if replace_no_data:
         image = np.where(image == -9999, no_data_new_value, image)
-
     if len(image.shape) == 2:
         image = image[..., np.newaxis]
 
-    channels = image.shape[0]
+    channels = image.shape[2]
 
     def reshape(array: np.ndarray, name: str) -> np.ndarray:
         if len(array.shape) == 0:
@@ -245,7 +208,7 @@ def normalize_numpy(
             raise ValueError(
                 f"Unsupported shape for `{name}`. It should be an array or shape [], [1] or [{channels}]"
             )
-        return array.reshape(-1, 1, 1)
+        return array.reshape(1, 1, -1)
 
     mean = reshape(mean, "mean").astype(dtype=image.dtype)
     std = reshape(std, "std").astype(dtype=image.dtype)
@@ -256,21 +219,21 @@ def normalize_numpy(
 def normalize_file(
     image_path: str,
     output_path: str,
-    mean: torch.Tensor,
-    std: torch.Tensor,
+    mean: np.ndarray,
+    std: np.ndarray,
     chm: bool,
     no_data_new_value: float = 0.0,
 ) -> None:
     image = read_image(image_path, chm, mode="c")
     replace_no_data = chm
     normalized_image = normalize(
-        torch.from_numpy(image).permute((2, 0, 1)),
+        image,
         mean=mean,
         std=std,
         replace_no_data=replace_no_data,
         no_data_new_value=no_data_new_value,
     )
-    write_image(normalized_image.permute((1, 2, 0)).cpu().numpy(), chm=chm, save_path=output_path)
+    write_image(normalized_image, chm=chm, save_path=output_path)
 
 
 def denormalize(image: torch.Tensor, mean: torch.Tensor, std: torch.Tensor) -> torch.Tensor:

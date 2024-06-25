@@ -5,12 +5,14 @@ import shutil
 import string
 import sys
 import time
+import warnings
 from collections.abc import Sequence
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import tifffile
+import urllib3
 from osgeo import gdal
 from PIL import Image
 from requests import get
@@ -20,6 +22,8 @@ from dataset_constants import DatasetConst
 
 
 gdal.UseExceptions()
+warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+warnings.filterwarnings("ignore", category=urllib3.exceptions.InsecureRequestWarning)
 
 
 def _absolute_path(relative_path: str) -> str:
@@ -281,35 +285,67 @@ def write_numpy(image: np.ndarray, save_path: str) -> None:
 
 
 def write_image(image: np.ndarray, chm: bool, save_path: str) -> None:
-    dtype_type = DatasetConst.CHM_DATA_TYPE.value if chm else DatasetConst.RGB_DATA_TYPE.value
-    image = image.astype(dtype_type)
     if is_tif_file(save_path):
+        dtype_type = DatasetConst.CHM_DATA_TYPE.value if chm else DatasetConst.RGB_DATA_TYPE.value
+        if image.dtype != dtype_type:
+            image = image.astype(dtype_type)
         tifffile.imwrite(save_path, image)
     elif is_npy_file(save_path):
+        dtype_type = np.float32
+        if image.dtype != dtype_type:
+            image = image.astype(dtype_type)
         write_numpy(image, save_path)
     else:
         im = Image.fromarray(image)
         im.save(save_path)
 
 
+def convert_tif_to_memmappable(image_path, output_path):
+    with tifffile.TiffFile(image_path) as tif:
+        image = tif.asarray()
+        tifffile.imwrite(output_path, image, dtype=image.dtype)
+
+
+def read_tif(file_path: str, mode: str) -> np.ndarray:
+    try:
+        image = tifffile.memmap(file_path)
+    except ValueError as e:
+        if str(e) == "image data are not memory-mappable":
+            mmaped_path = file_path.replace(".tif", "_memmap.tif")
+            if not os.path.isfile(mmaped_path):
+                print(f"Warning: {e}. Converting the image to a memory-mappable format.")
+                convert_tif_to_memmappable(file_path, mmaped_path)
+            image = tifffile.memmap(mmaped_path, mode=mode)  # type: ignore
+        else:
+            raise
+    return image
+
+
 def read_numpy(file_path: str, mode: str) -> np.ndarray:
-    mmapped_array = np.lib.format.open_memmap(file_path, mode=mode)
-    return mmapped_array
+    return np.lib.format.open_memmap(file_path, mode=mode)
 
 
 def read_image(image_path: str, chm: bool, mode: str) -> np.ndarray:
     dtype_type = DatasetConst.CHM_DATA_TYPE.value if chm else DatasetConst.RGB_DATA_TYPE.value
 
     if is_tif_file(image_path):
-        image = tifffile.imread(image_path)
+        # image = tifffile.imread(image_path)
+        image = read_tif(image_path, mode)
+        dtype_type = DatasetConst.CHM_DATA_TYPE.value if chm else DatasetConst.RGB_DATA_TYPE.value
+        if image.dtype != dtype_type:
+            image = image.astype(dtype_type)
     elif is_npy_file(image_path):
         image = read_numpy(image_path, mode)
+        dtype_type = np.float32
+        if image.dtype != dtype_type:
+            image = image.astype(dtype_type)
     else:
         image = np.array(Image.open(image_path))
+
     if len(image.shape) == 2:
         image = image[..., np.newaxis]
 
-    return image.astype(dtype_type)
+    return image
 
 
 def get_sup_dtype_type(dtype_type: type):

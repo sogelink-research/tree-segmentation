@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import pickle
+import time
 import warnings
 from collections import defaultdict
 from itertools import product
@@ -58,6 +59,7 @@ from training import (
 from utils import (
     Folders,
     ImageData,
+    create_all_folders,
     create_folder,
     create_random_temp_folder,
     import_tqdm,
@@ -120,10 +122,10 @@ class DatasetParams:
         split_random_seed: int = 0,
         no_data_new_value: float = DatasetConst.NO_DATA_NEW_VALUE.value,
         filter_lidar: bool = True,
-        mean_rgb_cir: torch.Tensor | None = None,
-        std_rgb_cir: torch.Tensor | None = None,
-        mean_chm: torch.Tensor | None = None,
-        std_chm: torch.Tensor | None = None,
+        mean_rgb_cir: np.ndarray | None = None,
+        std_rgb_cir: np.ndarray | None = None,
+        mean_chm: np.ndarray | None = None,
+        std_chm: np.ndarray | None = None,
     ) -> None:
         self.annotations_file_name = annotations_file_name
         self.use_rgb = use_rgb
@@ -151,10 +153,7 @@ class DatasetParams:
         self.channels_chm = get_channels_count(self.cropped_chm_folder_path, chm=True)
 
     def _download_data(self):
-        # Download the data if necessary
-        # Pre-process the data if necessary
-        # Initialize the required CHM layers if they don't exist
-        # Merge the layers into normalized memmaps
+        create_all_folders()
 
         # Initialize the list of full images paths
         full_images_paths: Dict[str, List[str]] = defaultdict(lambda: [])
@@ -226,11 +225,11 @@ class DatasetParams:
 
     def _init_mean_std(
         self,
-        image_file_path_or_tensor: str | torch.Tensor,
-        mean: torch.Tensor | None,
-        std: torch.Tensor | None,
+        image_file_path_or_tensor: str | np.ndarray,
+        mean: np.ndarray | None,
+        std: np.ndarray | None,
         chm: bool,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         if type(mean) != type(std):
             raise ValueError(
                 f"You should either specify mean and std or none of them. Here we have type(mean)={type(mean)} and type(std)={type(std)}."
@@ -251,34 +250,61 @@ class DatasetParams:
     def _merge_and_crop_data(
         self, full_images_paths: Dict[str, List[str]], annotations: geojson.FeatureCollection
     ):
+        start_p_time = time.process_time()
+        start_time = time.time()
         # Merge full images
-        full_merged_rgb_cir = merge_tif(full_images_paths["rgb_cir"], output_path=None, chm=False)
-        full_merged_chm = merge_tif(full_images_paths["chm"], output_path=None, chm=True)
+        temp_folder = create_random_temp_folder()
+        temp_path = os.path.join(temp_folder, "rgb_cir.npy")
+        full_merged_rgb_cir = merge_tif(
+            full_images_paths["rgb_cir"], temp_path=temp_path, output_path=None, chm=False
+        )
+        temp_path = os.path.join(temp_folder, "chm.npy")
+        full_merged_chm = merge_tif(
+            full_images_paths["chm"], temp_path=temp_path, output_path=None, chm=True
+        )
+
+        end_p_time = time.process_time()
+        print(f"{'Merge P time':<20}: {end_p_time - start_p_time:.6f} seconds")
+        start_p_time = time.process_time()
+        end_time = time.time()
+        print(f"{'Merge time':<20}: {end_time - start_time:.6f} seconds")
+        start_time = time.time()
 
         # Normalize the full images
-        full_merged_rgb_cir_tensor = torch.from_numpy(full_merged_rgb_cir).permute((2, 0, 1))
-        full_merged_chm_tensor = torch.from_numpy(full_merged_chm).permute((2, 0, 1))
         self.mean_rgb_cir, self.std_rgb_cir = self._init_mean_std(
-            full_merged_rgb_cir_tensor, self.mean_rgb_cir, self.std_rgb_cir, chm=False
+            full_merged_rgb_cir, self.mean_rgb_cir, self.std_rgb_cir, chm=False
         )
         self.mean_chm, self.std_chm = self._init_mean_std(
-            full_merged_chm_tensor, self.mean_chm, self.std_chm, chm=True
+            full_merged_chm, self.mean_chm, self.std_chm, chm=True
         )
-        full_merged_rgb_cir_tensor = normalize(
-            full_merged_rgb_cir_tensor,
+
+        end_p_time = time.process_time()
+        print(f"{'Mean and std P time':<20}: {end_p_time - start_p_time:.6f} seconds")
+        start_p_time = time.process_time()
+        end_time = time.time()
+        print(f"{'Mean and std time':<20}: {end_time - start_time:.6f} seconds")
+        start_time = time.time()
+
+        full_merged_rgb_cir = normalize(
+            full_merged_rgb_cir,
             mean=self.mean_rgb_cir,
             std=self.std_rgb_cir,
             replace_no_data=False,
         )
-        full_merged_rgb_cir = full_merged_rgb_cir_tensor.permute((1, 2, 0)).cpu().numpy()
-        full_merged_chm_tensor = normalize(
-            full_merged_chm_tensor,
+        full_merged_chm = normalize(
+            full_merged_chm,
             mean=self.mean_chm,
             std=self.std_chm,
             replace_no_data=True,
             no_data_new_value=self.no_data_new_value,
         )
-        full_merged_chm = full_merged_chm_tensor.permute((1, 2, 0)).cpu().numpy()
+
+        end_p_time = time.process_time()
+        print(f"{'Normalize P time':<20}: {end_p_time - start_p_time:.6f} seconds")
+        start_p_time = time.process_time()
+        end_time = time.time()
+        print(f"{'Normalize time':<20}: {end_time - start_time:.6f} seconds")
+        start_time = time.time()
 
         # Create the cropped data folder path
         self.cropped_data_folder_path = create_random_temp_folder()
@@ -308,6 +334,13 @@ class DatasetParams:
             clear_if_not_empty=True,
         )
 
+        end_p_time = time.process_time()
+        print(f"{'Crop annots P time':<20}: {end_p_time - start_p_time:.6f} seconds")
+        start_p_time = time.process_time()
+        end_time = time.time()
+        print(f"{'Crop annots time':<20}: {end_time - start_time:.6f} seconds")
+        start_time = time.time()
+
         # Crop RGB/CIR images
         self.cropped_rgb_cir_folder_path = os.path.join(
             self.cropped_data_folder_path, "rgb_cir", output_image_prefix
@@ -315,7 +348,8 @@ class DatasetParams:
         crop_image_array(
             self.cropped_annotations_folder_path,
             full_merged_rgb_cir,
-            self.cropped_rgb_cir_folder_path,
+            chm=False,
+            output_folder_path=self.cropped_rgb_cir_folder_path,
             clear_if_not_empty=False,
             remove_unused=True,
         )
@@ -327,10 +361,20 @@ class DatasetParams:
         crop_image_array(
             self.cropped_annotations_folder_path,
             full_merged_chm,
-            self.cropped_chm_folder_path,
+            chm=True,
+            output_folder_path=self.cropped_chm_folder_path,
             clear_if_not_empty=False,
             remove_unused=True,
         )
+
+        end_p_time = time.process_time()
+        print(f"{'Crop images P time':<20}: {end_p_time - start_p_time:.6f} seconds")
+        start_p_time = time.process_time()
+        end_time = time.time()
+        print(f"{'Crop images time':<20}: {end_time - start_time:.6f} seconds")
+        start_time = time.time()
+
+        remove_folder(temp_folder)
 
     def close(self):
         remove_folder(self.cropped_data_folder_path)

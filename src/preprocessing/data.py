@@ -403,23 +403,16 @@ def get_full_image_path_from_cropped_annotations(
     return cropped_annotations["full_image"]["path"]
 
 
-def crop_image_array_from_box(tensor: np.ndarray, crop_box: BoxInt, output_path: str) -> None:
-    cropped_image = tensor[crop_box.y_min : crop_box.y_max, crop_box.x_min : crop_box.x_max]
-    write_numpy(cropped_image, output_path)
+def crop_image_array_from_box(
+    array: np.ndarray, chm: bool, crop_box: BoxInt, output_path: str
+) -> None:
+    cropped_image = array[crop_box.y_min : crop_box.y_max, crop_box.x_min : crop_box.x_max]
+    write_image(cropped_image, chm=chm, save_path=output_path)
 
 
-def crop_image_from_box(image_path: str, crop_box: BoxInt, output_path: str) -> None:
-    image = read_numpy(file_path=image_path, mode="c")
-    cropped_image = image[crop_box.y_min : crop_box.y_max, crop_box.x_min : crop_box.x_max]
-    write_numpy(cropped_image, output_path)
-    # window = (
-    #     crop_box.x_min,
-    #     crop_box.y_min,
-    #     crop_box.x_max - crop_box.x_min,
-    #     crop_box.y_max - crop_box.y_min,
-    # )
-
-    # gdal.Translate(output_path, image_path, srcWin=window)
+def crop_image_from_box(image_path: str, chm: bool, crop_box: BoxInt, output_path: str) -> None:
+    image = read_image(image_path=image_path, chm=chm, mode="c")
+    crop_image_array_from_box(array=image, chm=chm, crop_box=crop_box, output_path=output_path)
 
 
 def _get_cropped_image_name(cropped_annotations: Dict[Any, Any], extension: str) -> str:
@@ -503,19 +496,31 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
             # Create the cropped RGB image
             rgb_output_path = os.path.join(rgb_output_folder_path, output_file)
             if not os.path.exists(rgb_output_path):
-                crop_image_from_box(full_rgb_path, image_box, rgb_output_path)
+                crop_image_from_box(
+                    full_rgb_path, chm=False, crop_box=image_box, output_path=rgb_output_path
+                )
 
             # Create the cropped unfiltered CHM image
             chm_unfiltered_output_path = os.path.join(
                 chm_unfiltered_output_folder_path, output_file
             )
             if not os.path.exists(chm_unfiltered_output_path):
-                crop_image_from_box(full_chm_unfiltered_path, image_box, chm_unfiltered_output_path)
+                crop_image_from_box(
+                    full_chm_unfiltered_path,
+                    chm=True,
+                    crop_box=image_box,
+                    output_path=chm_unfiltered_output_path,
+                )
 
             # Create the cropped filtered CHM image
             chm_filtered_output_path = os.path.join(chm_filtered_output_folder_path, output_file)
             if not os.path.exists(chm_filtered_output_path):
-                crop_image_from_box(full_chm_filtered_path, image_box, chm_filtered_output_path)
+                crop_image_from_box(
+                    full_chm_filtered_path,
+                    chm=True,
+                    crop_box=image_box,
+                    output_path=chm_filtered_output_path,
+                )
 
     if remove_unused:
         remove_all_files_but(rgb_output_folder_path, files_to_keep)
@@ -523,54 +528,10 @@ def crop_all_rgb_and_chm_images_from_annotations_folder(
         remove_all_files_but(chm_filtered_output_folder_path, files_to_keep)
 
 
-def crop_all_images_from_annotations_folder(
-    annotations_folder_path: str,
-    full_images_folders_paths: List[str],
-    output_cropped_images_folders_paths: List[str],
-    clear_if_not_empty: bool,
-    remove_unused: bool,
-) -> None:
-    full_images_paths = get_files_in_folders(full_images_folders_paths)
-
-    if clear_if_not_empty:
-        for folder_path in output_cropped_images_folders_paths:
-            remove_folder(folder_path)
-
-    for folder_path in output_cropped_images_folders_paths:
-        create_folder(folder_path)
-
-    files_to_keep: List[str] = []
-
-    # Iterate over the cropped annotations
-    for file_name in tqdm(
-        os.listdir(annotations_folder_path),
-        leave=False,
-        desc="Cropping images: Cropped annotations",
-    ):
-        annotations_file_path = os.path.join(annotations_folder_path, file_name)
-        if os.path.splitext(annotations_file_path)[1] == ".json":
-            # Get the annotations
-            cropped_annotations = open_json(annotations_file_path)
-            output_file = _get_cropped_image_name(cropped_annotations, extension=".npy")
-            image_box = get_image_box_from_cropped_annotations(cropped_annotations)
-            files_to_keep.append(output_file)
-
-            # Create the cropped images
-            for full_image_path, cropped_folder_path in zip(
-                full_images_paths, output_cropped_images_folders_paths
-            ):
-                output_path = os.path.join(cropped_folder_path, output_file)
-                if not os.path.exists(output_path):
-                    crop_image_from_box(full_image_path, image_box, output_path)
-
-    if remove_unused:
-        for cropped_folder_path in output_cropped_images_folders_paths:
-            remove_all_files_but(cropped_folder_path, files_to_keep)
-
-
 def crop_image(
     cropped_annotations_folder_path: str,
     full_image_path: str,
+    chm: bool,
     output_folder_path: str,
     clear_if_not_empty: bool,
     remove_unused: bool,
@@ -600,7 +561,9 @@ def crop_image(
             # Create the cropped image
             output_path = os.path.join(output_folder_path, output_file)
             if not os.path.exists(output_path):
-                crop_image_from_box(full_image_path, image_box, output_path)
+                crop_image_from_box(
+                    full_image_path, chm=chm, crop_box=image_box, output_path=output_path
+                )
 
     if remove_unused:
         remove_all_files_but(output_folder_path, files_to_keep)
@@ -609,6 +572,7 @@ def crop_image(
 def crop_image_array(
     cropped_annotations_folder_path: str,
     full_image_array: np.ndarray,
+    chm: bool,
     output_folder_path: str,
     clear_if_not_empty: bool,
     remove_unused: bool,
@@ -638,7 +602,9 @@ def crop_image_array(
             # Create the cropped image
             output_path = os.path.join(output_folder_path, output_file)
             if not os.path.exists(output_path):
-                crop_image_array_from_box(full_image_array, image_box, output_path)
+                crop_image_array_from_box(
+                    full_image_array, chm=chm, crop_box=image_box, output_path=output_path
+                )
 
     if remove_unused:
         remove_all_files_but(output_folder_path, files_to_keep)
@@ -647,6 +613,7 @@ def crop_image_array(
 def merge_tif(
     images_paths: List[str],
     chm: bool,
+    temp_path: str,
     output_path: Optional[str] = None,
 ) -> np.ndarray:
     if len(images_paths) == 0:
@@ -657,7 +624,7 @@ def merge_tif(
     if output_type not in available_output_types:
         raise ValueError(f"Only these output types are supported: {available_output_types}")
 
-    start_time = time.time_ns()
+    start_time = time.process_time()
 
     # tifffile is quicker to just open the files
     images: List[np.ndarray] = []
@@ -665,16 +632,27 @@ def merge_tif(
         image = read_image(image_path, mode="c", chm=chm)
         images.append(image)
 
-    end_time = time.time_ns()
+    end_time = time.process_time()
     print(f"Loading time: {(end_time - start_time)}")
-    start_time = time.time_ns()
+    start_time = time.process_time()
 
     # Stack images along a new axis to create a multi-channel image
-    multi_channel_image = np.concatenate(images, axis=2)
+    channels = sum([image.shape[2] for image in images])
+    shape = (images[0].shape[0], images[0].shape[1], channels)
+    multi_channel_image = np.lib.format.open_memmap(
+        temp_path, mode="w+", shape=shape, dtype=images[0].dtype
+    )
+    first_channel = 0
+    for image in images:
+        last_channel = first_channel + image.shape[2]
+        multi_channel_image[:, :, first_channel:last_channel] = image
+        first_channel = last_channel
 
-    end_time = time.time_ns()
+    # multi_channel_image = np.concatenate(images, axis=2)
+
+    end_time = time.process_time()
     print(f"Concat time: {(end_time - start_time)}")
-    start_time = time.time_ns()
+    start_time = time.process_time()
 
     if output_path is not None:
         if output_type == ".npy":
@@ -701,7 +679,7 @@ def merge_tif(
                 for i in range(multi_channel_image.shape[2]):
                     dst.write(multi_channel_image[:, :, i], i + 1)
 
-    end_time = time.time_ns()
+    end_time = time.process_time()
     print(f"Write time: {(end_time - start_time)}")
 
     return multi_channel_image
