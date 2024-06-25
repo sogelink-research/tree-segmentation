@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import argparse
-import cProfile
-import multiprocessing as mp
 import os
 import pickle
-import pstats
 import warnings
 from collections import defaultdict
 from itertools import product
@@ -22,10 +19,9 @@ from augmentations import (
     get_transform_pixel_rgb,
     get_transform_spatial,
 )
-from box_cls import Box
 from dataloaders import convert_ground_truth_from_tensors, initialize_dataloaders
 from dataset_constants import DatasetConst
-from datasets import compute_mean_and_std, normalize, normalize_file
+from datasets import compute_mean_and_std, normalize
 from geojson_conversions import open_geojson_feature_collection
 from layers import AMF_GD_YOLOv8
 from metrics import AP_Metrics, AP_Metrics_List
@@ -33,9 +29,7 @@ from plot import create_bboxes_training_image
 from preprocessing.chm import compute_slices_chm, get_full_chm_slice_path
 from preprocessing.data import (
     annots_coordinates_to_local,
-    crop_all_images_from_annotations_folder,
     crop_annots_into_limits,
-    crop_image,
     crop_image_array,
     find_annots_repartition,
     get_channels_count,
@@ -50,11 +44,7 @@ from preprocessing.lidar import (
     filter_full_lidar,
     get_lidar_files_from_image,
 )
-from preprocessing.rgb_cir import (
-    download_cir,
-    download_rgb_image_from_polygon,
-    get_rgb_images_paths_from_polygon,
-)
+from preprocessing.rgb_cir import download_cir, download_rgb_image_from_polygon
 from training import (
     TrainingMetrics,
     TreeDataset,
@@ -254,7 +244,6 @@ class DatasetParams:
             mean, std = compute_mean_and_std(
                 image_file_path_or_tensor,
                 per_channel=per_channel,
-                chm=chm,
                 replace_no_data=replace_no_data,
             )
         return mean, std
@@ -263,14 +252,8 @@ class DatasetParams:
         self, full_images_paths: Dict[str, List[str]], annotations: geojson.FeatureCollection
     ):
         # Merge full images
-        full_merged_rgb_cir_shape, full_merged_rgb_cir = merge_tif(
-            full_images_paths["rgb_cir"], output_path=None, chm=False
-        )
-        print(f"{full_merged_rgb_cir_shape = }")
-        full_merged_chm_shape, full_merged_chm = merge_tif(
-            full_images_paths["chm"], output_path=None, chm=True
-        )
-        print(f"{full_merged_chm_shape = }")
+        full_merged_rgb_cir = merge_tif(full_images_paths["rgb_cir"], output_path=None, chm=False)
+        full_merged_chm = merge_tif(full_images_paths["chm"], output_path=None, chm=True)
 
         # Normalize the full images
         full_merged_rgb_cir_tensor = torch.from_numpy(full_merged_rgb_cir).permute((2, 0, 1))

@@ -1,7 +1,7 @@
 import os
 import random
 from copy import deepcopy
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import albumentations as A
 import numpy as np
@@ -11,13 +11,13 @@ from albumentations import pytorch as Atorch
 from PIL import Image
 from torch.utils.data import Dataset
 
-from dataset_constants import DatasetConst
 from plot import get_bounding_boxes
 from utils import (
     get_coordinates_from_full_image_file_name,
     get_file_base_name,
+    is_npy_file,
+    is_tif_file,
     read_image,
-    read_memmap,
     read_numpy,
     write_image,
 )
@@ -84,7 +84,6 @@ def _compute_channels_mean_and_std_file(
     file_path: str,
     per_channel: bool,
     replace_no_data: bool,
-    chm: bool,
     no_data_new_value: float = 0.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Computes the mean and the standard deviation along every channel of the image given as input.
@@ -94,7 +93,6 @@ def _compute_channels_mean_and_std_file(
         per_channel (bool): whether to compute one value for each channel or one for the whole images.
         replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
         before computations.
-        chm (bool): whether the image is CHM or RGB.
         no_data_new_value (float, optional): the value replacing NO_DATA (-9999) before computations.
         Defaults to 0.0.
 
@@ -109,9 +107,6 @@ def _compute_channels_mean_and_std_file(
         raise InvalidPathException(file_path, "file")
     if is_tif_file(file_path):
         image = tifffile.imread(file_path)
-    elif is_memmap_file(file_path):
-        dtype_type = DatasetConst.CHM_DATA_TYPE.value if chm else DatasetConst.RGB_DATA_TYPE.value
-        image = read_memmap(file_path, dtype_type)
     elif is_npy_file(file_path):
         image = read_numpy(file_path, mode="r+")
     else:
@@ -125,7 +120,6 @@ def compute_mean_and_std(
     tensor_or_file_or_folder_path: str | torch.Tensor,
     per_channel: bool,
     replace_no_data: bool,
-    chm: bool,
     no_data_new_value: float = 0.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Computes the mean and the standard deviation along every channel of the image(s) given as input
@@ -137,7 +131,6 @@ def compute_mean_and_std(
         per_channel (bool): whether to compute one value for each channel or one for the whole images.
         replace_no_data (bool): whether to replace the NO_DATA values, which are originally equal to -9999,
         before computations.
-        chm (bool): whether the image(s) are CHM or RGB.
         no_data_new_value (float, optional): the value replacing NO_DATA (-9999) before computations.
         Defaults to 0.0.
 
@@ -157,7 +150,7 @@ def compute_mean_and_std(
     if os.path.isfile(tensor_or_file_or_folder_path):
         file_path = tensor_or_file_or_folder_path
         return _compute_channels_mean_and_std_file(
-            file_path, per_channel, replace_no_data, chm, no_data_new_value
+            file_path, per_channel, replace_no_data, no_data_new_value
         )
 
     if os.path.isdir(tensor_or_file_or_folder_path):
@@ -167,7 +160,7 @@ def compute_mean_and_std(
         for file_name in os.listdir(folder_path):
             file_path = os.path.join(folder_path, file_name)
             mean, std = _compute_channels_mean_and_std_file(
-                file_path, per_channel, replace_no_data, chm, no_data_new_value
+                file_path, per_channel, replace_no_data, no_data_new_value
             )
             means.append(mean)
             stds.append(std)
@@ -267,9 +260,8 @@ def normalize_file(
     std: torch.Tensor,
     chm: bool,
     no_data_new_value: float = 0.0,
-    image_shape: Optional[Tuple[int, ...]] = None,
 ) -> None:
-    image = read_image(image_path, chm, mode="c", shape=image_shape)
+    image = read_image(image_path, chm, mode="c")
     replace_no_data = chm
     normalized_image = normalize(
         torch.from_numpy(image).permute((2, 0, 1)),
@@ -278,7 +270,7 @@ def normalize_file(
         replace_no_data=replace_no_data,
         no_data_new_value=no_data_new_value,
     )
-    write_image(normalized_image.permute((1, 2, 0)).cpu().numpy(), output_path)
+    write_image(normalized_image.permute((1, 2, 0)).cpu().numpy(), chm=chm, save_path=output_path)
 
 
 def denormalize(image: torch.Tensor, mean: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
@@ -304,18 +296,6 @@ def denormalize(image: torch.Tensor, mean: torch.Tensor, std: torch.Tensor) -> t
     std = reshape(std, "std").to(image.dtype)
 
     return std * image + mean
-
-
-def is_tif_file(file_path: str) -> bool:
-    return file_path.lower().endswith((".tif", ".tiff"))
-
-
-def is_memmap_file(file_path: str) -> bool:
-    return file_path.lower().endswith(".mmap")
-
-
-def is_npy_file(file_path: str) -> bool:
-    return file_path.lower().endswith(".npy")
 
 
 class TreeDataset(Dataset):
@@ -492,9 +472,9 @@ class TreeDataset(Dataset):
         # Read the images
         files_paths = self.files_paths_list[idx]
         rgb_path = files_paths["rgb"]
-        image_rgb = read_image(rgb_path, chm=False, mode="c", shape=(640, 640, -1))
+        image_rgb = read_image(rgb_path, chm=False, mode="c")
         chm_path = files_paths["chm"]
-        image_chm = read_image(chm_path, chm=True, mode="c", shape=(640, 640, -1))
+        image_chm = read_image(chm_path, chm=True, mode="c")
 
         # Get bboxes and labels
         bboxes = deepcopy(self.bboxes[idx])
@@ -553,7 +533,7 @@ class TreeDataset(Dataset):
         """
         files_paths = self.files_paths_list[idx]
         rgb_path = files_paths["rgb"]
-        image_rgb = read_image(rgb_path, chm=False, mode="c", shape=(640, 640, -1))
+        image_rgb = read_image(rgb_path, chm=False, mode="c")
         return image_rgb
 
     def get_chm_image(self, idx: int) -> np.ndarray:
@@ -567,7 +547,7 @@ class TreeDataset(Dataset):
         """
         files_paths = self.files_paths_list[idx]
         chm_path = files_paths["chm"]
-        image_chm = read_image(chm_path, chm=True, mode="c", shape=(640, 640, -1))
+        image_chm = read_image(chm_path, chm=True, mode="c")
         return image_chm
 
     def get_full_coords_name(self, idx: int) -> str:

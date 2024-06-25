@@ -9,7 +9,6 @@ import numpy as np
 import numpy.typing as npt
 import rasterio
 import shapely.geometry as shp_geom
-import tifffile
 from osgeo import gdal
 from PIL import Image
 
@@ -22,7 +21,6 @@ from box_cls import (
     box_pixels_to_coordinates,
     intersection_ratio,
 )
-from dataset_constants import DatasetConst
 from geojson_conversions import get_bbox_polygon
 from utils import (
     Folders,
@@ -650,11 +648,11 @@ def merge_tif(
     images_paths: List[str],
     chm: bool,
     output_path: Optional[str] = None,
-) -> Tuple[Tuple[int, ...], np.ndarray]:
+) -> np.ndarray:
     if len(images_paths) == 0:
         raise ValueError("images_paths is empty.")
 
-    available_output_types = [".mmap", ".tif", ".npy", None]
+    available_output_types = [".tif", ".npy", None]
     output_type = None if output_path is None else os.path.splitext(output_path)[1]
     if output_type not in available_output_types:
         raise ValueError(f"Only these output types are supported: {available_output_types}")
@@ -679,10 +677,10 @@ def merge_tif(
     start_time = time.time_ns()
 
     if output_path is not None:
-        if output_type in [".mmap", ".npy"]:
-            # Save the memmap
+        if output_type == ".npy":
+            # Save the memory map
             multi_channel_image = crop_dtype_type_precision_image(multi_channel_image)
-            write_image(multi_channel_image, output_path)
+            write_image(multi_channel_image, chm=chm, save_path=output_path)
         elif output_type == ".tif":
             # Save the TIF
             with rasterio.open(images_paths[0]) as img:
@@ -706,7 +704,7 @@ def merge_tif(
     end_time = time.time_ns()
     print(f"Write time: {(end_time - start_time)}")
 
-    return multi_channel_image.shape, multi_channel_image
+    return multi_channel_image
 
 
 def get_channels_count(folder_path: str, chm: bool) -> int:

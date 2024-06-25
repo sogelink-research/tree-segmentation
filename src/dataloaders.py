@@ -1,4 +1,3 @@
-import time
 from typing import Callable, Dict, Iterable, List, Tuple
 
 import torch
@@ -8,11 +7,11 @@ from box_cls import Box
 from datasets import TreeDataset
 
 
-def quick_stack(tensor_list: List[torch.Tensor]):
-    new_tensor = torch.empty((len(tensor_list), *tensor_list[0].shape))
-    for i, tensor in enumerate(tensor_list):
-        new_tensor[i] = tensor
-    return new_tensor
+# def quick_stack(tensor_list: List[torch.Tensor]):
+#     new_tensor = torch.empty((len(tensor_list), *tensor_list[0].shape))
+#     for i, tensor in enumerate(tensor_list):
+#         new_tensor[i] = tensor
+#     return new_tensor
 
 
 def tree_dataset_collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
@@ -49,21 +48,12 @@ def tree_dataset_collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, t
         indices.extend([i] * bbox.shape[0])
         image_indices.append(image_index)
 
-    start_time = time.process_time()
-
-    rgb_images = quick_stack(rgb_images_list)
-    chm_images = quick_stack(chm_images_list)
-
-    end_time = time.process_time()
-    print(f"Custom Stack time: {end_time - start_time:.6f} seconds")
-    start_time = time.process_time()
+    # rgb_images = quick_stack(rgb_images_list)
+    # chm_images = quick_stack(chm_images_list)
 
     # Convert the lists to tensors and stack them
     rgb_images = torch.stack(rgb_images_list)
     chm_images = torch.stack(chm_images_list)
-
-    end_time = time.process_time()
-    print(f"Torch Stack time:  {end_time - start_time:.6f} seconds")
 
     bboxes = torch.cat(bboxes)
     labels = torch.cat(labels)

@@ -268,10 +268,6 @@ def is_tif_file(file_path: str) -> bool:
     return file_path.lower().endswith((".tif", ".tiff"))
 
 
-def is_memmap_file(file_path: str) -> bool:
-    return file_path.lower().endswith(".mmap")
-
-
 def is_npy_file(file_path: str) -> bool:
     return file_path.lower().endswith(".npy")
 
@@ -284,17 +280,11 @@ def write_numpy(image: np.ndarray, save_path: str) -> None:
     mmapped_array.flush()
 
 
-def write_memmap(image: np.ndarray, save_path: str) -> None:
-    mmapped_array = np.memmap(save_path, dtype=image.dtype, mode="w+", shape=image.shape)
-    mmapped_array[:] = image[:]
-    mmapped_array.flush()
-
-
-def write_image(image: np.ndarray, save_path: str) -> None:
+def write_image(image: np.ndarray, chm: bool, save_path: str) -> None:
+    dtype_type = DatasetConst.CHM_DATA_TYPE.value if chm else DatasetConst.RGB_DATA_TYPE.value
+    image = image.astype(dtype_type)
     if is_tif_file(save_path):
         tifffile.imwrite(save_path, image)
-    elif is_memmap_file(save_path):
-        write_memmap(image, save_path)
     elif is_npy_file(save_path):
         write_numpy(image, save_path)
     else:
@@ -307,42 +297,11 @@ def read_numpy(file_path: str, mode: str) -> np.ndarray:
     return mmapped_array
 
 
-def read_memmap(
-    file_path: str,
-    dtype_type: type,
-    shape: Optional[Tuple[int, ...]] = None,
-) -> np.ndarray:
-    mmapped_array = np.memmap(file_path, dtype=dtype_type, mode="c", shape=None).__array__()
-    if shape is None:
-        shape = (DatasetConst.CROPPED_SIZE.value, DatasetConst.CROPPED_SIZE.value, -1)
-
-    # shape_size = int(np.prod(shape))
-    # if shape_size != mmapped_array.size:
-    #     if -1 not in shape:
-    #         raise Exception(f"The image cannot be open with the shape {shape}.")
-    #     if mmapped_array.size % shape_size != 0:
-    #         raise Exception(
-    #             f"The image cannot be open with the shape {shape}, even by adding multiple channels."
-    #         )
-    #     index = shape.index(-1)
-    #     real_shape = list(shape)
-    #     real_shape[index] = mmapped_array.size // (-shape_size)
-    #     real_shape = tuple(real_shape)
-    # else:
-    #     real_shape = shape
-    mmapped_array = mmapped_array.reshape(shape)
-    return mmapped_array
-
-
-def read_image(
-    image_path: str, chm: bool, mode: str, shape: Optional[Tuple[int, ...]] = None
-) -> np.ndarray:
+def read_image(image_path: str, chm: bool, mode: str) -> np.ndarray:
     dtype_type = DatasetConst.CHM_DATA_TYPE.value if chm else DatasetConst.RGB_DATA_TYPE.value
 
     if is_tif_file(image_path):
         image = tifffile.imread(image_path)
-    elif is_memmap_file(image_path):
-        image = read_memmap(image_path, dtype_type, shape=shape)
     elif is_npy_file(image_path):
         image = read_numpy(image_path, mode)
     else:

@@ -554,7 +554,7 @@ class AMF_GD_YOLOv8(nn.Module):
         model_name: Optional[str] = None, best: bool = True, epoch: Optional[int] = None
     ) -> str:
         model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
-        best_str = "_best" if best else f""
+        best_str = "_best" if best else ""
         epoch_str = "" if epoch is None else f"_{epoch}ep"
         model_weights_path = os.path.join(model_folder_path, f"weights{best_str}{epoch_str}.pt")
         return model_weights_path
