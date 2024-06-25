@@ -23,7 +23,7 @@ def main():
     # Training parameters
 
     lr = 1e-2
-    epochs = 0
+    epochs = 1000
     batch_size = 10
     num_workers = 0
     accumulate = 10
