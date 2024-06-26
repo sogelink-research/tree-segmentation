@@ -1,4 +1,6 @@
-from typing import List, Optional, Tuple, TypeVar, cast
+import os
+from collections import defaultdict
+from typing import Dict, List, Optional, Tuple, TypeVar, cast
 
 import numpy as np
 import torch
@@ -11,6 +13,7 @@ from layers import AMF_GD_YOLOv8
 
 
 List_int_or_str = TypeVar("List_int_or_str", List[int], List[str])
+Match = Tuple[Tuple[int, int], float, int | str]
 
 
 def hungarian_algorithm(
@@ -20,7 +23,7 @@ def hungarian_algorithm(
     gt_labels: List_int_or_str,
     iou_threshold: float,
     agnostic: bool,
-) -> Tuple[List[Tuple[Tuple[int, int], float]], List[int], List[int]]:
+) -> Tuple[List[Match], List[Tuple[int, int | str]], List[Tuple[int, int | str]]]:
     pred_len = len(pred_bboxes)
     gt_len = len(gt_bboxes)
 
@@ -41,7 +44,7 @@ def hungarian_algorithm(
 
     # Extract pairs of indices where matches were found
     matched_pairs = [
-        ((pred, gt), float(1 - cost_matrix[pred, gt]))
+        ((pred, gt), float(1 - cost_matrix[pred, gt]), pred_labels[pred])
         for pred, gt in zip(pred_ind, gt_ind)
         if pred < pred_len and gt < gt_len and cost_matrix[pred, gt] != max_cost
     ]
@@ -50,7 +53,9 @@ def hungarian_algorithm(
     unmatched_pred = list(
         set(range(pred_len)).difference(set(map(lambda t: t[0][0], matched_pairs)))
     )
+    unmatched_pred = [(pred, pred_labels[pred]) for pred in unmatched_pred]
     unmatched_gt = list(set(range(gt_len)).difference(set(map(lambda t: t[0][1], matched_pairs))))
+    unmatched_gt = [(gt, gt_labels[gt]) for gt in unmatched_gt]
 
     return matched_pairs, unmatched_pred, unmatched_gt
 
@@ -64,10 +69,10 @@ def hungarian_algorithm_confs(
     iou_threshold: float,
     conf_threshold_list: List[float],
     agnostic: bool,
-) -> Tuple[List[List[Tuple[Tuple[int, int], float]]], List[List[int]], List[List[int]]]:
-    matched_pairs_list: List[List[Tuple[Tuple[int, int], float]]] = []
-    unmatched_pred_list: List[List[int]] = []
-    unmatched_gt_list: List[List[int]] = []
+) -> Tuple[List[List[Match]], List[List[Tuple[int, int | str]]], List[List[Tuple[int, int | str]]]]:
+    matched_pairs_list: List[List[Match]] = []
+    unmatched_pred_list: List[List[Tuple[int, int | str]]] = []
+    unmatched_gt_list: List[List[Tuple[int, int | str]]] = []
 
     for conf_threshold in conf_threshold_list:
         mask = [i for i in range(len(pred_scores)) if pred_scores[i] > conf_threshold]
@@ -84,9 +89,9 @@ def hungarian_algorithm_confs(
 
 
 def compute_sorted_ap(
-    matched_pairs: List[Tuple[Tuple[int, int], float]],
-    unmatched_pred: List[int],
-    unmatched_gt: List[int],
+    matched_pairs: List[Match],
+    unmatched_pred: List[Tuple[int, int | str]],
+    unmatched_gt: List[Tuple[int, int | str]],
 ) -> Tuple[List[float], List[float], float]:
     matched_pairs.sort(key=lambda t: t[1])
     sorted_ious = list(map(lambda t: t[1], matched_pairs))
@@ -106,25 +111,95 @@ def compute_sorted_ap(
     return sorted_ious, aps, sorted_ap
 
 
+def compute_sorted_ap_per_label(
+    matched_pairs: List[Match],
+    unmatched_preds: List[Tuple[int, int | str]],
+    unmatched_gts: List[Tuple[int, int | str]],
+) -> Dict[int | str, Tuple[List[float], List[float], float]]:
+
+    grouped_matched_pairs = defaultdict(list)
+    grouped_unmatched_preds = defaultdict(list)
+    grouped_unmatched_gts = defaultdict(list)
+
+    for matched_pair in matched_pairs:
+        label = matched_pair[2]
+        grouped_matched_pairs[label].append(matched_pair)
+
+    for unmatched_pred in unmatched_preds:
+        label = unmatched_pred[1]
+        grouped_unmatched_preds[label].append(unmatched_pred)
+
+    for unmatched_gt in unmatched_gts:
+        label = unmatched_gt[1]
+        grouped_unmatched_gts[label].append(unmatched_gt)
+
+    results = {}
+    for label in grouped_matched_pairs.keys():
+        matched_pairs_temp = grouped_matched_pairs[label]
+        unmatched_preds_temp = grouped_unmatched_preds[label]
+        unmatched_gts_temp = grouped_unmatched_gts[label]
+        results[label] = compute_sorted_ap(
+            matched_pairs=matched_pairs_temp,
+            unmatched_pred=unmatched_preds_temp,
+            unmatched_gt=unmatched_gts_temp,
+        )
+
+    return results
+
+
 def compute_sorted_ap_confs(
-    matched_pairs_list: List[List[Tuple[Tuple[int, int], float]]],
-    unmatched_pred_list: List[List[int]],
-    unmatched_gt_list: List[List[int]],
+    matched_pairs_list: List[List[Match]],
+    unmatched_preds_list: List[List[Tuple[int, int | str]]],
+    unmatched_gts_list: List[List[Tuple[int, int | str]]],
 ) -> Tuple[List[List[float]], List[List[float]], List[float]]:
 
     sorted_ious_list: List[List[float]] = []
     aps_list: List[List[float]] = []
     sorted_ap_list: List[float] = []
 
-    for matched_pairs, unmatched_pred, unmatched_gt in zip(
-        matched_pairs_list, unmatched_pred_list, unmatched_gt_list
+    for matched_pairs, unmatched_preds, unmatched_gts in zip(
+        matched_pairs_list, unmatched_preds_list, unmatched_gts_list
     ):
-        sorted_ious, aps, sorted_ap = compute_sorted_ap(matched_pairs, unmatched_pred, unmatched_gt)
+        sorted_ious, aps, sorted_ap = compute_sorted_ap(
+            matched_pairs, unmatched_preds, unmatched_gts
+        )
         sorted_ious_list.append(sorted_ious)
         aps_list.append(aps)
         sorted_ap_list.append(sorted_ap)
 
     return sorted_ious_list, aps_list, sorted_ap_list
+
+
+def compute_sorted_ap_confs_per_label(
+    matched_pairs_list: List[List[Match]],
+    unmatched_preds_list: List[List[Tuple[int, int | str]]],
+    unmatched_gts_list: List[List[Tuple[int, int | str]]],
+) -> Dict[int | str, Tuple[List[List[float]], List[List[float]], List[float]]]:
+
+    sorted_ious_list_dict: Dict[int | str, List[List[float]]] = {}
+    aps_list_dict: Dict[int | str, List[List[float]]] = {}
+    sorted_ap_list_dict: Dict[int | str, List[float]] = {}
+
+    for idx, (matched_pairs, unmatched_preds, unmatched_gts) in enumerate(
+        zip(matched_pairs_list, unmatched_preds_list, unmatched_gts_list)
+    ):
+        sorted_ap_per_label = compute_sorted_ap_per_label(
+            matched_pairs, unmatched_preds, unmatched_gts
+        )
+        for label, (sorted_ious, aps, sorted_ap) in sorted_ap_per_label.items():
+            sorted_ious_list_dict[label][idx] = sorted_ious
+            aps_list_dict[label][idx] = aps
+            sorted_ap_list_dict[label][idx] = sorted_ap
+
+    results = {}
+    for label in sorted_ap_per_label.keys():
+        sorted_ious_list = sorted_ious_list_dict[label]
+        aps_list = aps_list_dict[label]
+        sorted_ap_list = sorted_ap_list_dict[label]
+
+        results[label] = (sorted_ious_list, aps_list, sorted_ap_list)
+
+    return results
 
 
 def plot_ap_iou(
@@ -221,13 +296,16 @@ class AP_Metrics:
         self.reset()
 
     def reset(self) -> None:
-        self.matched_pairs: List[List[Tuple[Tuple[int, int], float]]] = [
+        self.matched_pairs: List[List[Match]] = [[] for _ in range(len(self.conf_threshold_list))]
+        self.unmatched_pred: List[List[Tuple[int, int | str]]] = [
             [] for _ in range(len(self.conf_threshold_list))
         ]
-        self.unmatched_pred: List[List[int]] = [[] for _ in range(len(self.conf_threshold_list))]
-        self.unmatched_gt: List[List[int]] = [[] for _ in range(len(self.conf_threshold_list))]
+        self.unmatched_gt: List[List[Tuple[int, int | str]]] = [
+            [] for _ in range(len(self.conf_threshold_list))
+        ]
 
         self.sorted_ap_updated = False
+        self.sorted_ap_per_label_updated = False
 
     def add_preds(
         self,
@@ -276,13 +354,19 @@ class AP_Metrics:
                 self.unmatched_gt[i].extend(unmatched_gt_temp[i])
 
         self.sorted_ap_updated = False
+        self.sorted_ap_per_label_updated = False
 
-    def compute_sorted_ap(self) -> None:
-        if not self.sorted_ap_updated:
+    def compute_sorted_ap(self, per_label: bool = False) -> None:
+        if not per_label and not self.sorted_ap_updated:
             self.sorted_ious_list, self.aps_list, self.sorted_ap_list = compute_sorted_ap_confs(
                 self.matched_pairs, self.unmatched_pred, self.unmatched_gt
             )
             self.sorted_ap_updated = True
+
+        if per_label and not self.sorted_ap_per_label_updated:
+            self.sorted_ap_per_label_dict = compute_sorted_ap_confs_per_label(
+                self.matched_pairs, self.unmatched_pred, self.unmatched_gt
+            )
 
     def get_sorted_aps(
         self,
@@ -325,6 +409,66 @@ class AP_Metrics:
         best_sorted_ap = self.sorted_ap_list[best_index]
         best_conf_threshold = self.conf_threshold_list[best_index]
         return best_sorted_ious, best_aps, best_sorted_ap, best_conf_threshold
+
+    def get_sorted_aps_per_label(
+        self,
+    ) -> Dict[int | str, Tuple[List[List[float]], List[List[float]], List[float]]]:
+        self.compute_sorted_ap(per_label=True)
+        return self.sorted_ap_per_label_dict
+
+    def get_best_sorted_ap_per_label(
+        self,
+    ) -> Dict[int | str, Tuple[List[float], List[float], float, float]]:
+        self.compute_sorted_ap(per_label=True)
+        best_sorted_ap_dict = {}
+        for label, sorted_ap_elems in self.sorted_ap_per_label_dict.items():
+            sorted_ious_list, aps_list, sorted_ap_list = sorted_ap_elems
+
+            best_index = sorted_ap_list.index(max(sorted_ap_list))
+            best_sorted_ious = sorted_ious_list[best_index]
+            best_aps = aps_list[best_index]
+            best_sorted_ap = sorted_ap_list[best_index]
+            best_conf_threshold = self.conf_threshold_list[best_index]
+
+            best_sorted_ap_dict[label] = (
+                best_sorted_ious,
+                best_aps,
+                best_sorted_ap,
+                best_conf_threshold,
+            )
+
+        return best_sorted_ap_dict
+
+    def plot_ap_iou_per_label(self, save_path: str, title: Optional[str] = None) -> None:
+        best_sorted_ious_list = []
+        best_aps_list = []
+        best_sorted_ap_list = []
+        best_conf_threshold_list = []
+        legend_list = []
+
+        best_sorted_ap_dict = self.get_best_sorted_ap_per_label()
+
+        for label, (
+            best_sorted_ious,
+            best_aps,
+            best_sorted_ap,
+            best_conf_threshold,
+        ) in best_sorted_ap_dict.items():
+            legend_list.append(label)
+            best_sorted_ious_list.append(best_sorted_ious)
+            best_aps_list.append(best_aps)
+            best_sorted_ap_list.append(best_sorted_ap)
+            best_conf_threshold_list.append(best_conf_threshold)
+
+        plot_ap_iou(
+            sorted_ious_list=best_sorted_ious_list,
+            aps_list=best_aps_list,
+            sorted_ap_list=best_sorted_ap_list,
+            conf_threshold_list=best_conf_threshold_list,
+            legend_list=legend_list,
+            title=title,
+            save_path=save_path,
+        )
 
 
 class AP_Metrics_List:

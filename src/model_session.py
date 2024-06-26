@@ -587,6 +587,13 @@ class ModelSession:
                     ),
                 )
 
+                ap_metrics.plot_ap_iou_per_label(
+                    save_path=os.path.join(
+                        model_folder_path, f"ap_iou_per_label_{full_postfix}.png"
+                    ),
+                    title=f"Sorted AP curve per class on the {loader_legend}",
+                )
+
                 ap_metrics_list.add_ap_metrics(ap_metrics, legend=data_legend)
 
             ap_metrics_list.plot_ap_iou(
