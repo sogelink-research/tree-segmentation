@@ -495,13 +495,21 @@ class ModelSession:
 
     @running_message("Loading the datasets...")
     def _load_datasets(self) -> Dict[str, TreeDataset]:
+        if self.training_data.dataset_params.agnostic:
+            only_label = self.training_data.dataset_params.class_names[0]
+            labels_transformation_drop_rgb = {only_label: only_label}
+            labels_transformation_drop_chm = {only_label: only_label}
+        else:
+            labels_transformation_drop_rgb = DatasetConst.LABELS_TRANSFORMATION_DROP_RGB.value
+            labels_transformation_drop_chm = DatasetConst.LABELS_TRANSFORMATION_DROP_CHM.value
+
         datasets = load_tree_datasets_from_split(
             self.training_data.data_split_file_path,
             labels_to_index=self.training_data.dataset_params.class_indices,
             proba_drop_rgb=self.training_data.training_params.proba_drop_rgb,
-            labels_transformation_drop_rgb=DatasetConst.LABELS_TRANSFORMATION_DROP_RGB.value,
+            labels_transformation_drop_rgb=labels_transformation_drop_rgb,
             proba_drop_chm=self.training_data.training_params.proba_drop_chm,
-            labels_transformation_drop_chm=DatasetConst.LABELS_TRANSFORMATION_DROP_CHM.value,
+            labels_transformation_drop_chm=labels_transformation_drop_chm,
             dismissed_classes=[],
             transform_spatial_training=self.training_data.training_params.transform_spatial_training,
             transform_pixel_rgb_training=self.training_data.training_params.transform_pixel_rgb_training,

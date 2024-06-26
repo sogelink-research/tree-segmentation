@@ -5,7 +5,7 @@ import re
 import time
 from collections import defaultdict
 from math import ceil
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 import albumentations as A
 import geojson
@@ -773,9 +773,9 @@ def load_tree_datasets_from_split(
     transform_pixel_chm_training: A.Compose | None,
     dismissed_classes: List[str] = [],
     proba_drop_rgb: float = 0.0,
-    labels_transformation_drop_rgb: Dict[str, str | None] | None = None,
+    labels_transformation_drop_rgb: Mapping[str, str | None] | None = None,
     proba_drop_chm: float = 0.0,
-    labels_transformation_drop_chm: Dict[str, str | None] | None = None,
+    labels_transformation_drop_chm: Mapping[str, str | None] | None = None,
     no_data_new_value: float = -5.0,
 ) -> Dict[str, TreeDataset]:
     with open(data_split_file_path, "r") as f:

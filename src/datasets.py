@@ -1,7 +1,7 @@
 import os
 import random
 from copy import deepcopy
-from typing import Dict, List, Tuple
+from typing import Dict, List, Mapping, Tuple
 
 import albumentations as A
 import numpy as np
@@ -269,9 +269,9 @@ class TreeDataset(Dataset):
         files_paths_list: List[Dict[str, str]],
         labels_to_index: Dict[str, int],
         proba_drop_rgb: float = 0.0,
-        labels_transformation_drop_rgb: Dict[str, str | None] | None = None,
+        labels_transformation_drop_rgb: Mapping[str, str | None] | None = None,
         proba_drop_chm: float = 0.0,
-        labels_transformation_drop_chm: Dict[str, str | None] | None = None,
+        labels_transformation_drop_chm: Mapping[str, str | None] | None = None,
         dismissed_classes: List[str] = [],
         transform_spatial: A.Compose | None = None,
         transform_pixel_rgb: A.Compose | None = None,
@@ -287,12 +287,12 @@ class TreeDataset(Dataset):
             labels_to_index (Dict[str, int]): dictionary associating a label name with an index.
             proba_drop_rgb (float, optional): probability to drop the RGB image and replace it by a
             tensor of zeros. Default to 0.0.
-            labels_transformation_drop_rgb (Dict[str, str] | None): indicates the labels that
+            labels_transformation_drop_rgb (Mapping[str, str] | None): indicates the labels that
             change to another label if the RGB image is dropped. Is mandatory if proba_drop_rgb > 0.
             Defaults to None.
             proba_drop_chm (float, optional): probability to drop the CHM image and replace it by a
             tensor of zeros. Default to 0.0.
-            labels_transformation_drop_chm (Dict[str, str] | None): indicates the labels that
+            labels_transformation_drop_chm (Mapping[str, str] | None): indicates the labels that
             change to another label if the CHM image is dropped. Is mandatory if proba_drop_chm > 0.
             Defaults to None.
             dismissed_classes (List[str], optional): list of classes for which the bounding boxes
