@@ -135,7 +135,7 @@ def compute_dtm(
 
     band = new_ds.GetRasterBand(1)
 
-    gdal.FillNodata(targetBand=band, maskBand=None, maxSearchDist=200, smoothingIterations=20)
+    gdal.FillNodata(targetBand=band, maskBand=None, maxSearchDist=1000, smoothingIterations=20)
 
     # new_ds.GetRasterBand(1).WriteArray(band.ReadAsArray())
 
@@ -315,9 +315,20 @@ def compute_full_dtm(
 
         band = new_ds.GetRasterBand(1)
 
+        # Fill small NO_DATA areas
         gdal.FillNodata(targetBand=band, maskBand=None, maxSearchDist=200, smoothingIterations=20)
 
+        # Replace NO_DATA values with 0
+        nodata_value = band.GetNoDataValue()
+        data = band.ReadAsArray()
+        data[data == nodata_value] = 0
+
+        band.WriteArray(data)
+
         # Close all datasets
+        band.FlushCache()
+        old_ds.FlushCache()
+        new_ds.FlushCache()
         old_ds = None
         new_ds = None
         if verbose:
@@ -503,7 +514,8 @@ def compute_slices_chm(
     except Exception as e:
         raise e
     finally:
-        remove_folder(temp_folder)
+        pass
+        # remove_folder(temp_folder)
 
 
 def get_full_chm_slice_path(

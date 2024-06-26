@@ -48,7 +48,7 @@ class InvalidPathException(Exception):
         super().__init__(message)
 
 
-def _compute_channels_mean_std_tensor(
+def _compute_channels_mean_std_array(
     image: np.ndarray,
     per_channel: bool,
     replace_no_data: bool,
@@ -111,7 +111,7 @@ def _compute_channels_mean_and_std_file(
         image = read_numpy(file_path, mode="r+")
     else:
         image = np.array(Image.open(file_path))
-    return _compute_channels_mean_std_tensor(image, per_channel, replace_no_data, no_data_new_value)
+    return _compute_channels_mean_std_array(image, per_channel, replace_no_data, no_data_new_value)
 
 
 def compute_mean_and_std(
@@ -141,7 +141,7 @@ def compute_mean_and_std(
     """
     if isinstance(array_or_file_or_folder_path, np.ndarray):
         array = array_or_file_or_folder_path
-        return _compute_channels_mean_std_tensor(
+        return _compute_channels_mean_std_array(
             array, per_channel, replace_no_data, no_data_new_value
         )
 
