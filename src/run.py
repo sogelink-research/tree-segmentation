@@ -55,15 +55,15 @@ class ModelTrainingSession(ModelSession):
 
 
 def main():
-    # Training session
-    model_training_session = ModelTrainingSession()
-    model_training_session.train()
-    model_training_session.close()
-
-    # model_training_session = ModelSession.from_name("trained_model_rgb_cir_multi_chm_0ep_0")
-    # model_training_session.training_data.dataset_params.agnostic = False
-    # model_training_session.compute_metrics()
+    # # Training session
+    # model_training_session = ModelTrainingSession()
+    # model_training_session.train()
     # model_training_session.close()
+
+    model_training_session = ModelSession.from_name("trained_model_1000ep_0")
+    model_training_session.training_data.dataset_params.agnostic = False
+    model_training_session.compute_metrics()
+    model_training_session.close()
 
 
 if __name__ == "__main__":

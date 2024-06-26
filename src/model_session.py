@@ -601,6 +601,12 @@ class ModelSession:
         loaders_legend = ["Training set", "Validation set", "Test set"]
         loaders_zip = list(zip(loaders, loaders_postfix, loaders_legend))
 
+        predictions_folder = os.path.join(model_folder_path, "predictions")
+        ap_iou_folder = os.path.join(model_folder_path, "ap_iou")
+        sap_conf_folder = os.path.join(model_folder_path, "sap_conf")
+        for folder in [predictions_folder, ap_iou_folder, sap_conf_folder]:
+            create_folder(folder)
+
         use_rgb_chm = [(True, True), (True, False), (False, True)]
 
         for loader, loader_postfix, loader_legend in tqdm(loaders_zip, desc="Datasets"):
