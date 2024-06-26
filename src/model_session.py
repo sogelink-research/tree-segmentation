@@ -279,8 +279,6 @@ class DatasetParams:
         start_time = time.time()
 
         # Normalize the full images
-        self._mean_rgb_cir, self._std_rgb_cir = self.mean_rgb_cir, self.std_rgb_cir  # TODO: Remove
-        self._mean_chm, self._std_chm = self.mean_chm, self.std_chm  # TODO: Remove
         self.mean_rgb_cir, self.std_rgb_cir = self._init_mean_std(
             full_merged_rgb_cir, self._mean_rgb_cir, self._std_rgb_cir, chm=False
         )
