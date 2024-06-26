@@ -5,6 +5,10 @@
 - Use pip and a requirements.txt file instead of conda env environment.yml
 - Remove useless dependencies (there are tools to do this)
 
+## Metrics
+
+- Finalize the metrics per class by creating the functions to visualize them.
+
 ## Hyperparameters
 
 - Solve the pickle saving issue

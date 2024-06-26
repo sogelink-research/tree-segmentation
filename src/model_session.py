@@ -35,6 +35,7 @@ from preprocessing.data import (
     find_annots_repartition,
     get_channels_count,
     get_cropping_limits,
+    make_annots_agnostic,
     merge_tif,
     save_annots_per_image,
 )
@@ -115,6 +116,7 @@ class DatasetParams:
         use_cir: bool,
         use_chm: bool,
         chm_z_layers: Sequence[Tuple[float, float]],
+        agnostic: bool,
         resolution: float = 0.08,
         tile_size: int = 640,
         tile_overlap: int = 0,
@@ -132,6 +134,7 @@ class DatasetParams:
         self.use_cir = use_cir
         self.use_chm = use_chm
         self.chm_z_layers = chm_z_layers
+        self.agnostic = agnostic
         self.resolution = resolution
         self.tile_size = tile_size
         self.tile_overlap = tile_overlap
@@ -143,6 +146,9 @@ class DatasetParams:
         self.std_rgb_cir = std_rgb_cir
         self.mean_chm = mean_chm
         self.std_chm = std_chm
+
+        if self.agnostic:
+            self.class_names = {0: self.class_names[0]}
 
         self.class_indices = {value: key for key, value in self.class_names.items()}
 
@@ -321,6 +327,8 @@ class DatasetParams:
         )
         crop_annots_into_limits(annots_repartition)
         annots_coordinates_to_local(annots_repartition)
+        if self.agnostic:
+            make_annots_agnostic(annots_repartition, self.class_names[0])
 
         # Save cropped annotations
         output_image_prefix = self.image_data.base_name

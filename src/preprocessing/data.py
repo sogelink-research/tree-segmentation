@@ -322,6 +322,21 @@ def annots_coordinates_to_local(
             annots[i].box = box_pixels_full_to_cropped(annot.box, limits_box)
 
 
+def make_annots_agnostic(annots_repartition: Dict[Box, List[Annotation]], only_label: str) -> None:
+    """Modifies the bounding boxes repartition dictionary in place to make them agnostic.
+
+    Args:
+        annots_repartition (Dict[Box, List[Box]]): dictionary associating the
+        bounding box of each image with the list of tree bounding boxes that fit in.
+        only_label (str): the label to give to all bounding boxes.
+    """
+    for annots in tqdm(
+        annots_repartition.values(), leave=False, desc="To agnostic: Bounding boxes"
+    ):
+        for i, annot in enumerate(annots):
+            annots[i].label = only_label
+
+
 def save_annots_per_image(
     annots_repartition: Dict[Box, List[Annotation]],
     output_folder_path: str,

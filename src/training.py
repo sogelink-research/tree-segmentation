@@ -129,8 +129,8 @@ class TrainingMetrics:
         cmap = plt.get_cmap("tab10")
 
         categories_colors = {label: cmap(i) for i, label in enumerate(categories_index.keys())}
-        legend_space = 1
-        figsize = (7 * ncols, 5 * nrows + legend_space)
+        legend_space = 0.5
+        figsize = (5 * ncols, 3.5 * nrows + legend_space)
         legend_y_position = legend_space / figsize[1]
 
         for interval, save_path in zip(intervals, save_paths):
@@ -231,12 +231,11 @@ def train(
         conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
         ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
 
-    # Predictions saved as an image
-    compute_image_preds = epoch % image_preds_interval == 0
+    # # Predictions saved as an image
+    # compute_image_preds = epoch % image_preds_interval == 0
 
     model.train()
     stream = tqdm(train_loader, leave=False, desc="Training")
-    start_time = time.process_time()
     for data in stream:
         # Get the data
         image_rgb: torch.Tensor = data["image_rgb"]
@@ -246,10 +245,6 @@ def train(
         gt_indices: torch.Tensor = data["indices"]
         image_indices: torch.Tensor = data["image_indices"]
 
-        end_time = time.process_time()
-        print(f"{'Load time':<20}: {end_time - start_time:.6f} seconds")
-        start_time = time.process_time()
-
         image_rgb = image_rgb.to(device, non_blocking=True)
         image_chm = image_chm.to(device, non_blocking=True)
         gt_bboxes = gt_bboxes.to(device, non_blocking=True)
@@ -257,21 +252,14 @@ def train(
         gt_indices = gt_indices.to(device, non_blocking=True)
         image_indices = image_indices.to(device, non_blocking=True)
 
-        end_time = time.process_time()
-        print(f"{'Send GPU time':<20}: {end_time - start_time:.6f} seconds")
-        start_time = time.process_time()
-
         # Compute the model output
         output = model.forward(image_rgb, image_chm)
-
-        end_time = time.process_time()
-        print(f"{'Forward time':<20}: {end_time - start_time:.6f} seconds")
-        start_time = time.process_time()
 
         # Compute the AP metrics
         with torch.no_grad():
             # Model evaluations:
-            if compute_ap or compute_image_preds:
+            # if compute_ap or compute_image_preds:
+            if compute_ap:
                 preds = model.preds_from_output(output)
 
             # Compute the AP metrics
@@ -285,71 +273,54 @@ def train(
                     image_indices=image_indices,
                 )
 
-            if compute_image_preds:
-                dataset_idx = 0
-                if dataset_idx in image_indices.tolist():
-                    batch_idx = image_indices.tolist().index(dataset_idx)
+            # if compute_image_preds:
+            #     dataset_idx = 0
+            #     if dataset_idx in image_indices.tolist():
+            #         batch_idx = image_indices.tolist().index(dataset_idx)
 
-                    bboxes_per_image, scores_per_image, classes_per_image = (
-                        model.predict_from_preds(
-                            preds[batch_idx : batch_idx + 1],
-                            iou_threshold=0.5,
-                            conf_threshold=0.1,
-                            number_best=40,
-                        )
-                    )
-                    gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
-                        gt_bboxes=gt_bboxes,
-                        gt_classes=gt_classes,
-                        gt_indices=gt_indices,
-                        image_indices=image_indices,
-                    )
+            #         bboxes_per_image, scores_per_image, classes_per_image = (
+            #             model.predict_from_preds(
+            #                 preds[batch_idx : batch_idx + 1],
+            #                 iou_threshold=0.5,
+            #                 conf_threshold=0.1,
+            #                 number_best=40,
+            #             )
+            #         )
+            #         gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
+            #             gt_bboxes=gt_bboxes,
+            #             gt_classes=gt_classes,
+            #             gt_indices=gt_indices,
+            #             image_indices=image_indices,
+            #         )
 
-                    image_rgb_initial = torch.tensor(
-                        train_loader.dataset.get_rgb_image(dataset_idx)
-                    ).permute((2, 0, 1))
-                    image_chm_initial = torch.tensor(
-                        train_loader.dataset.get_chm_image(dataset_idx)
-                    ).permute((2, 0, 1))
+            #         image_rgb_initial = torch.tensor(
+            #             train_loader.dataset.get_rgb_image(dataset_idx)
+            #         ).permute((2, 0, 1))
+            #         image_chm_initial = torch.tensor(
+            #             train_loader.dataset.get_chm_image(dataset_idx)
+            #         ).permute((2, 0, 1))
 
-                    create_bboxes_training_image(
-                        image_rgb=image_rgb_initial,
-                        image_chm=image_chm_initial,
-                        pred_bboxes=bboxes_per_image[0],
-                        pred_labels=classes_per_image[0],
-                        pred_scores=scores_per_image[0],
-                        gt_bboxes=gt_bboxes_per_image[batch_idx],
-                        gt_labels=gt_classes_per_image[batch_idx],
-                        labels_int_to_str=model.class_names,
-                        colors_dict=DatasetConst.CLASS_COLORS.value,
-                        save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}_train.png"),
-                    )
-
-        end_time = time.process_time()
-        print(f"{'Metrics time':<20}: {end_time - start_time:.6f} seconds")
-        start_time = time.process_time()
+            #         create_bboxes_training_image(
+            #             image_rgb=image_rgb_initial,
+            #             image_chm=image_chm_initial,
+            #             pred_bboxes=bboxes_per_image[0],
+            #             pred_labels=classes_per_image[0],
+            #             pred_scores=scores_per_image[0],
+            #             gt_bboxes=gt_bboxes_per_image[batch_idx],
+            #             gt_labels=gt_classes_per_image[batch_idx],
+            #             labels_int_to_str=model.class_names,
+            #             colors_dict=DatasetConst.CLASS_COLORS.value,
+            #             save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}_train.png"),
+            #         )
 
         # Compute the loss
         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
-
-        end_time = time.process_time()
-        print(f"{'Loss time':<20}: {end_time - start_time:.6f} seconds")
-        start_time = time.process_time()
-
         total_loss.backward()
-
-        end_time = time.process_time()
-        print(f"{'Backward time':<20}: {end_time - start_time:.6f} seconds")
-        start_time = time.process_time()
 
         # Gradient accumulation
         if (running_accumulation_step + 1) % accumulation_steps == 0:
             optimizer.step()
             optimizer.zero_grad()
-
-        end_time = time.process_time()
-        print(f"{'Optimizer time':<20}: {end_time - start_time:.6f} seconds")
-        start_time = time.process_time()
 
         running_accumulation_step += 1
 
@@ -360,10 +331,6 @@ def train(
         )
         for key, value in loss_dict.items():
             training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
-
-        end_time = time.process_time()
-        print(f"{'Store loss time':<20}: {end_time - start_time:.6f} seconds")
-        start_time = time.process_time()
 
     if compute_ap:
         _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
@@ -392,8 +359,8 @@ def validate(
         conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
         ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
 
-    # Predictions saved as an image
-    compute_image_preds = epoch % image_preds_interval == 0
+    # # Predictions saved as an image
+    # compute_image_preds = epoch % image_preds_interval == 0
 
     model.eval()
     stream = tqdm(val_loader, leave=False, desc="Validation")
@@ -431,7 +398,8 @@ def validate(
                 )
 
             # Model evaluations:
-            if compute_ap or compute_image_preds:
+            # if compute_ap or compute_image_preds:
+            if compute_ap:
                 preds = model.preds_from_output(output)
 
             # Compute the AP metrics
@@ -445,46 +413,47 @@ def validate(
                     image_indices=image_indices,
                 )
 
-            # Save the predictions in an image
-            if compute_image_preds:
-                dataset_idx = 0
-                if dataset_idx in image_indices.tolist():
-                    batch_idx = image_indices.tolist().index(dataset_idx)
+            # # Save the predictions in an image
+            # if compute_image_preds:
+            #     dataset_idx = 0
+            #     if dataset_idx in image_indices.tolist():
+            #         batch_idx = image_indices.tolist().index(dataset_idx)
 
-                    bboxes_per_image, scores_per_image, classes_per_image = (
-                        model.predict_from_preds(
-                            preds[batch_idx : batch_idx + 1],
-                            iou_threshold=0.5,
-                            conf_threshold=0.1,
-                            number_best=40,
-                        )
-                    )
-                    gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
-                        gt_bboxes=gt_bboxes,
-                        gt_classes=gt_classes,
-                        gt_indices=gt_indices,
-                        image_indices=image_indices,
-                    )
+            #         bboxes_per_image, scores_per_image, classes_per_image = (
+            #             model.predict_from_preds(
+            #                 preds[batch_idx : batch_idx + 1],
+            #                 iou_threshold=0.5,
+            #                 conf_threshold=0.1,
+            #                 number_best=40,
+            #             )
+            #         )
+            #         gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
+            #             gt_bboxes=gt_bboxes,
+            #             gt_classes=gt_classes,
+            #             gt_indices=gt_indices,
+            #             image_indices=image_indices,
+            #         )
 
-                    image_rgb_initial = torch.tensor(
-                        val_loader.dataset.get_rgb_image(dataset_idx)
-                    ).permute((2, 0, 1))
-                    image_chm_initial = torch.tensor(
-                        val_loader.dataset.get_chm_image(dataset_idx)
-                    ).permute((2, 0, 1))
+            #         image_rgb_initial = torch.tensor(
+            #             val_loader.dataset.get_rgb_image(dataset_idx)
+            #         ).permute((2, 0, 1))
+            #         image_chm_initial = torch.tensor(
+            #             val_loader.dataset.get_chm_image(dataset_idx)
+            #         ).permute((2, 0, 1))
 
-                    create_bboxes_training_image(
-                        image_rgb=image_rgb_initial,
-                        image_chm=image_chm_initial,
-                        pred_bboxes=bboxes_per_image[0],
-                        pred_labels=classes_per_image[0],
-                        pred_scores=scores_per_image[0],
-                        gt_bboxes=gt_bboxes_per_image[batch_idx],
-                        gt_labels=gt_classes_per_image[batch_idx],
-                        labels_int_to_str=model.class_names,
-                        colors_dict=DatasetConst.CLASS_COLORS.value,
-                        save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}_val.png"),
-                    )
+            #         create_bboxes_training_image(
+            #             image_rgb=image_rgb_initial,
+            #             image_chm=image_chm_initial,
+            #             pred_bboxes=bboxes_per_image[0],
+            #             pred_labels=classes_per_image[0],
+            #             pred_scores=scores_per_image[0],
+            #             gt_bboxes=gt_bboxes_per_image[batch_idx],
+            #             gt_labels=gt_classes_per_image[batch_idx],
+            #             labels_int_to_str=model.class_names,
+            #             colors_dict=DatasetConst.CLASS_COLORS.value,
+            #             save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}_val.png"),
+            #         )
+
     if compute_ap:
         _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
         training_metrics.update("Validation", "Best sortedAP", sorted_ap, y_axis="sortedAP")

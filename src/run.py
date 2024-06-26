@@ -11,6 +11,7 @@ def main():
     annotations_file_name = "122000_484000.geojson"
     z_tops: Sequence[float] = [1, 2, 3, 5, 7, 10, 15, 20, np.inf]
     z_limits_list = [(-np.inf, z_top) for z_top in z_tops]
+    agnostic = True
 
     dataset_params = DatasetParams(
         annotations_file_name=annotations_file_name,
@@ -18,6 +19,7 @@ def main():
         use_cir=True,
         use_chm=True,
         chm_z_layers=z_limits_list,
+        agnostic=agnostic,
     )
 
     # Training parameters
