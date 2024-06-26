@@ -590,6 +590,7 @@ def train_and_validate(
     accumulate: int,
     device: torch.device,
     show_training_metrics: bool,
+    no_improvement_stop_epochs: int,
 ) -> AMF_GD_YOLOv8:
 
     train_loader, val_loader, test_loader = initialize_dataloaders(
@@ -614,6 +615,7 @@ def train_and_validate(
     ]
 
     best_model = model
+    best_epoch = 0
     best_loss = np.inf
     skip_until = 3
     temp_models_interval = 100
@@ -649,6 +651,7 @@ def train_and_validate(
         if epoch >= skip_until:
             # Store and save the best model
             if current_loss < best_loss:
+                best_epoch = epoch
                 best_model = model
                 best_loss = current_loss
                 best_model.save_weights()
@@ -663,6 +666,9 @@ def train_and_validate(
                 best_temp_model.save_weights(best=False, epoch=best_temp_epoch)
 
         training_metrics.end_loop(epoch)
+
+        if (epoch - best_epoch) > no_improvement_stop_epochs:
+            break
 
     # Save the plot showing the evolution of the metrics
     training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)

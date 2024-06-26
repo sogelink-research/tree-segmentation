@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -6,55 +6,61 @@ import torch
 from model_session import DatasetParams, ModelSession, TrainingData, TrainingParams
 
 
+class ModelTrainingSession(ModelSession):
+    """A class to launch a training session with only the necessary hyperparameters"""
+
+    def __init__(
+        self,
+        use_rgb: bool = True,
+        use_cir: bool = True,
+        use_chm: bool = True,
+        chm_z_layers: Optional[Sequence[Tuple[float, float]]] = None,
+        annotations_file_name: str = "122000_484000.geojson",
+        agnostic: bool = False,
+        lr: float = 1e-2,
+        epochs: int = 1000,
+        batch_size: int = 10,
+        num_workers: int = 0,
+        accumulate: int = 10,
+        no_improvement_stop_epochs: int = 50,
+        proba_drop_rgb: float = 1 / 3,
+        proba_drop_chm: float = 1 / 3,
+        device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+        postfix: str = "",
+    ) -> None:
+        if chm_z_layers is None:
+            z_tops = [1, 2, 3, 5, 7, 10, 15, 20, np.inf]
+            chm_z_layers = [(-np.inf, z_top) for z_top in z_tops]
+
+        dataset_params = DatasetParams(
+            annotations_file_name=annotations_file_name,
+            use_rgb=use_rgb,
+            use_cir=use_cir,
+            use_chm=use_chm,
+            chm_z_layers=chm_z_layers,
+            agnostic=agnostic,
+        )
+        training_params = TrainingParams(
+            lr=lr,
+            epochs=epochs,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            accumulate=accumulate,
+            no_improvement_stop_epochs=no_improvement_stop_epochs,
+            proba_drop_rgb=proba_drop_rgb,
+            proba_drop_chm=proba_drop_chm,
+        )
+        training_data = TrainingData(dataset_params=dataset_params, training_params=training_params)
+        super().__init__(training_data=training_data, device=device, postfix=postfix)
+
+
 def main():
-    # Data parameters
-    annotations_file_name = "122000_484000.geojson"
-    z_tops: Sequence[float] = [1, 2, 3, 5, 7, 10, 15, 20, np.inf]
-    z_limits_list = [(-np.inf, z_top) for z_top in z_tops]
-    agnostic = True
-
-    dataset_params = DatasetParams(
-        annotations_file_name=annotations_file_name,
-        use_rgb=True,
-        use_cir=True,
-        use_chm=True,
-        chm_z_layers=z_limits_list,
-        agnostic=agnostic,
-    )
-
-    # Training parameters
-
-    lr = 1e-2
-    epochs = 1000
-    batch_size = 10
-    num_workers = 0
-    accumulate = 10
-
-    proba_drop_rgb = 1 / 3
-    proba_drop_chm = 1 / 3
-
-    postfix = "rgb_cir_multi_chm"
-
-    training_params = TrainingParams(
-        lr=lr,
-        epochs=epochs,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        accumulate=accumulate,
-        proba_drop_rgb=proba_drop_rgb,
-        proba_drop_chm=proba_drop_chm,
-    )
-
-    # Training data
-    training_data = TrainingData(dataset_params=dataset_params, training_params=training_params)
-
     # Training session
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model_session = ModelSession(training_data=training_data, device=device, postfix=postfix)
+    model_training_session = ModelTrainingSession()
 
-    model_session.train()
+    model_training_session.train()
 
-    model_session.close()
+    model_training_session.close()
 
     # model_session = ModelSession.from_name(
     #     "trained_model_rgb_cir_multi_chm_1500ep_2", device=device

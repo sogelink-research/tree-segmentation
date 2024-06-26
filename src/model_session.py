@@ -396,6 +396,7 @@ class TrainingParams:
         batch_size: int,
         num_workers: int,
         accumulate: int,
+        no_improvement_stop_epochs: int,
         proba_drop_rgb: float,
         proba_drop_chm: float,
         transform_spatial_training: A.Compose | None = None,
@@ -407,6 +408,7 @@ class TrainingParams:
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.accumulate = accumulate
+        self.no_improvement_stop_epochs = no_improvement_stop_epochs
         self.proba_drop_rgb = proba_drop_rgb
         self.proba_drop_chm = proba_drop_chm
         self.transform_spatial_training = transform_spatial_training
@@ -550,6 +552,7 @@ class ModelSession:
             accumulate=self.training_data.training_params.accumulate,
             device=self.device,
             show_training_metrics=False,
+            no_improvement_stop_epochs=self.training_data.training_params.no_improvement_stop_epochs,
         )
 
         # Save the best model
