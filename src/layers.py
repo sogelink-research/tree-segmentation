@@ -93,21 +93,6 @@ class DetectCustom(Detect):
             x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)
         return x
 
-    # def preds_from_output(self, x: List[torch.Tensor]) -> torch.Tensor:
-    #     # Inference path
-    #     shape = x[0].shape  # BCHW
-    #     x_cat = torch.cat([xi.view(shape[0], self.no, -1) for xi in x], 2)
-    #     if self.dynamic or self.shape != shape:
-    #         self.anchors, self.strides = (
-    #             x.transpose(0, 1) for x in make_anchors(x, self.stride, 0.5)
-    #         )
-    #         self.shape = shape
-
-    #     box, cls = x_cat.split((self.reg_max * 4, self.nc), 1)
-    #     dbox = self.decode_bboxes(self.dfl(box), self.anchors.unsqueeze(0)) * self.strides
-    #     y = torch.cat((dbox, cls.sigmoid()), 1)
-    #     return y
-
     def preds_from_output(self, x: List[torch.Tensor]) -> torch.Tensor:
         # Inference path
         shape = x[0].shape  # BCHW
@@ -399,10 +384,25 @@ class AMF_GD_YOLOv8(nn.Module):
         super().__init__()
 
         # Store
+        self.c_input_left = c_input_left
+        self.c_input_right = c_input_right
         self.class_names = class_names
         self.class_indices = {value: key for key, value in class_names.items()}
         self.name = name
         create_folder(self.folder_path)
+
+        if self.c_input_left == 0 and self.c_input_right == 0:
+            raise Exception("Input can't have both 0 channel.")
+        if self.c_input_left == 0:
+            self.c_input_left = 1
+            self.use_left = False
+        else:
+            self.use_left = True
+        if self.c_input_right == 0:
+            self.c_input_right = 1
+            self.use_right = False
+        else:
+            self.use_right = True
 
         # AMFNet structure
         self.amfnet = AMFNet(c_input_left, c_input_right, scale, r).to(device)
@@ -451,21 +451,53 @@ class AMF_GD_YOLOv8(nn.Module):
 
     def _pre_process(
         self,
-        x_left: torch.Tensor | str,
-        x_right: torch.Tensor | str,
+        x_left: torch.Tensor | str | None,
+        x_right: torch.Tensor | str | None,
+        device: torch.device,
+        use_left_temp: bool = True,
+        use_right_temp: bool = True,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         if isinstance(x_left, str):
             x_left = self._open_image(x_left)
         if isinstance(x_right, str):
             x_right = self._open_image(x_right)
+
+        if x_left is None:
+            if self.use_left and use_left_temp:
+                raise Exception("The input of the left channel shouldn't be None.")
+            elif x_right is None:
+                raise Exception("x_right and x_left cannot both be None.")
+            else:
+                x_left = torch.zeros(
+                    (x_right.shape[0], self.c_input_left, x_right.shape[2], x_right.shape[3])
+                ).to(device)
+        if x_right is None:
+            if self.use_right and use_right_temp:
+                raise Exception("The input of the left channel shouldn't be None.")
+            elif x_left is None:
+                raise Exception("x_right and x_left cannot both be None.")
+            else:
+                x_right = torch.zeros(
+                    (x_left.shape[0], self.c_input_right, x_left.shape[2], x_left.shape[3])
+                ).to(device)
+
         return x_left, x_right
 
     def forward(
         self,
-        x_left: torch.Tensor | str,
-        x_right: torch.Tensor | str,
+        x_left: torch.Tensor | str | None,
+        x_right: torch.Tensor | str | None,
+        device: torch.device,
+        use_left_temp: bool = True,
+        use_right_temp: bool = True,
     ) -> List[torch.Tensor]:
-        x_left, x_right = self._pre_process(x_left=x_left, x_right=x_right)
+        x_left, x_right = self._pre_process(
+            x_left=x_left,
+            x_right=x_right,
+            device=device,
+            use_left_temp=use_left_temp,
+            use_right_temp=use_right_temp,
+        )
         xs = self.amfnet(x_left, x_right)
         xs = self.gd(xs)
         output = self.detect.forward(xs)
@@ -495,13 +527,14 @@ class AMF_GD_YOLOv8(nn.Module):
     @torch.no_grad()
     def predict(
         self,
-        x_left: torch.Tensor | str,
-        x_right: torch.Tensor | str,
+        x_left: torch.Tensor | str | None,
+        x_right: torch.Tensor | str | None,
+        device: torch.device,
         iou_threshold: float = 0.5,
         conf_threshold: Optional[float] = None,
         number_best: Optional[int] = None,
     ) -> Tuple[List[List[Box]], List[List[float]], List[List[int]]]:
-        output = self.forward(x_left, x_right)
+        output = self.forward(x_left, x_right, device)
         preds = self.preds_from_output(output)
         return self.predict_from_preds(
             preds,

@@ -268,10 +268,10 @@ class TreeDataset(Dataset):
         self,
         files_paths_list: List[Dict[str, str]],
         labels_to_index: Dict[str, int],
+        labels_transformation_drop_rgb: Mapping[str, str | None],
+        labels_transformation_drop_chm: Mapping[str, str | None],
         proba_drop_rgb: float = 0.0,
-        labels_transformation_drop_rgb: Mapping[str, str | None] | None = None,
         proba_drop_chm: float = 0.0,
-        labels_transformation_drop_chm: Mapping[str, str | None] | None = None,
         dismissed_classes: List[str] = [],
         transform_spatial: A.Compose | None = None,
         transform_pixel_rgb: A.Compose | None = None,
@@ -285,24 +285,24 @@ class TreeDataset(Dataset):
             files_paths_list (List[Dict[str, str]]): list of dictionaries containing the paths to
             RGB, CHM and annotations.
             labels_to_index (Dict[str, int]): dictionary associating a label name with an index.
+            labels_transformation_drop_rgb (Mapping[str, str | None]): indicates the
+            labels that change to another label if the RGB image is dropped. Is mandatory if
+            proba_drop_rgb > 0.
+            labels_transformation_drop_chm (Mapping[str, str | None]): indicates the
+            labels that change to another label if the CHM image is dropped. Is mandatory if
+            proba_drop_chm > 0.
             proba_drop_rgb (float, optional): probability to drop the RGB image and replace it by a
             tensor of zeros. Default to 0.0.
-            labels_transformation_drop_rgb (Mapping[str, str] | None): indicates the labels that
-            change to another label if the RGB image is dropped. Is mandatory if proba_drop_rgb > 0.
-            Defaults to None.
             proba_drop_chm (float, optional): probability to drop the CHM image and replace it by a
             tensor of zeros. Default to 0.0.
-            labels_transformation_drop_chm (Mapping[str, str] | None): indicates the labels that
-            change to another label if the CHM image is dropped. Is mandatory if proba_drop_chm > 0.
-            Defaults to None.
             dismissed_classes (List[str], optional): list of classes for which the bounding boxes
             are ignored. Defaults to [].
             transform_spatial (Callable | None, optional): spatial augmentations applied to CHM and
             RGB images. Defaults to None.
-            transform_pixel_rgb (Callable | None, optional): pixel augmentations applied to RGB images.
-            Defaults to None.
-            transform_pixel_chm (Callable | None, optional): pixel augmentations applied to CHM images.
-            Defaults to None.
+            transform_pixel_rgb (Callable | None, optional): pixel augmentations applied to RGB
+            images. Defaults to None.
+            transform_pixel_chm (Callable | None, optional): pixel augmentations applied to CHM
+            images. Defaults to None.
             no_data_new_value (float): value replacing NO_DATA (-9999) before normalizing images.
         """
 
@@ -351,31 +351,45 @@ class TreeDataset(Dataset):
         if len(self) == 0:
             self.rgb_channels = 0
             self.chm_channels = 0
-        else:
-            files_paths = self.files_paths_list[0]
-            rgb_path = files_paths["rgb"]
+            return
+
+        files_paths = self.files_paths_list[0]
+        if "rgb_cir" in files_paths.keys():
+            rgb_path = files_paths["rgb_cir"]
             image_rgb = read_image(rgb_path, mode="c", chm=False)
+            self.rgb_channels = image_rgb.shape[2]
+            self.use_rgb = True
+        else:
+            assert self.proba_drop_rgb == 0.0, "If RGB is not used, proba_drop_rgb should be 0."
+            self.rgb_channels = 0
+            self.use_rgb = False
+
+        if "chm" in files_paths.keys():
             chm_path = files_paths["chm"]
             image_chm = read_image(chm_path, mode="c", chm=True)
-            self.rgb_channels = image_rgb.shape[2]
             self.chm_channels = image_chm.shape[2]
+            self.use_chm = True
+        else:
+            assert self.proba_drop_chm == 0.0, "If CHM is not used, proba_drop_chm should be 0."
+            self.chm_channels = 0
+            self.use_chm = False
 
     def __len__(self) -> int:
         return len(self.files_paths_list)
 
     def random_chm_rgb_drop(
         self,
-        image_rgb: np.ndarray,
-        image_chm: np.ndarray,
+        image_rgb: np.ndarray | None,
+        image_chm: np.ndarray | None,
         bboxes: List[List[float]],
         labels: List[int],
-    ) -> Tuple[np.ndarray, np.ndarray, List[List[float]], List[int]]:
+    ) -> Tuple[np.ndarray | None, np.ndarray | None, List[List[float]], List[int]]:
         """Randomly drops the RGB or the CHM image with probabilities specified during
         initialization. The bounding boxes labels are modified accordingly.
 
         Args:
-            image_rgb (np.ndarray): RGB image.
-            image_chm (np.ndarray): CHM image
+            image_rgb (np.ndarray | None): RGB image.
+            image_chm (np.ndarray | None): CHM image
             bboxes (List[List[float]]): bounding boxes.
             labels (List[int]): class labels.
 
@@ -386,15 +400,16 @@ class TreeDataset(Dataset):
             CHM.
 
         Returns:
-            Tuple[np.ndarray, np.ndarray, List[List[float]], List[int]]: (RGB image, CHM image,
-            bounding boxes, class labels) after modification.
+            Tuple[np.ndarray | None, np.ndarray | None, List[List[float]], List[int]]: (RGB image,
+            CHM image, bounding boxes, class labels) after modification.
         """
         random_val = random.random()
-        if random_val < self.proba_drop_rgb:
+        if random_val < self.proba_drop_rgb or not self.use_rgb:
             # Drop RGB
             if self.labels_transformation_drop_rgb is None:
                 raise TypeError("self.labels_transformation_drop_rgb shouldn't be None here.")
-            image_rgb = np.zeros_like(image_rgb)
+            if image_rgb is not None:
+                image_rgb = np.zeros_like(image_rgb)
             # Replace the labels
             drop: List[int] = []
             for i, label in enumerate(labels):
@@ -410,11 +425,12 @@ class TreeDataset(Dataset):
                 bboxes.pop(idx)
                 labels.pop(idx)
 
-        elif random_val < self.proba_drop_rgb + self.proba_drop_chm:
+        elif random_val < self.proba_drop_rgb + self.proba_drop_chm or not self.use_chm:
             # Drop CHM
             if self.labels_transformation_drop_chm is None:
                 raise TypeError("self.labels_transformation_drop_chm shouldn't be None here.")
-            image_chm = np.zeros_like(image_chm)
+            if image_chm is not None:
+                image_chm = np.zeros_like(image_chm)
             # Replace the labels
             drop: List[int] = []
             for i, label in enumerate(labels):
@@ -434,35 +450,47 @@ class TreeDataset(Dataset):
     def get_not_normalized(self, idx: int) -> Dict[str, torch.Tensor]:
         # Read the images
         files_paths = self.files_paths_list[idx]
-        rgb_path = files_paths["rgb"]
-        image_rgb = read_image(rgb_path, chm=False, mode="c")
-        chm_path = files_paths["chm"]
-        image_chm = read_image(chm_path, chm=True, mode="c")
+        if self.use_rgb:
+            rgb_path = files_paths["rgb_cir"]
+            image_rgb = read_image(rgb_path, chm=False, mode="c")
+        else:
+            image_rgb = None
+
+        if self.use_chm:
+            chm_path = files_paths["chm"]
+            image_chm = read_image(chm_path, chm=True, mode="c")
+        else:
+            image_chm = None
 
         # Get bboxes and labels
         bboxes = deepcopy(self.bboxes[idx])
         labels = deepcopy(self.labels[idx])
 
         # Apply the spatial transform to the two images, bboxes and labels
+        input_data = {"bboxes": bboxes, "class_labels": labels}
+        if image_rgb is not None:
+            input_data["image_rgb"] = image_rgb
+        if image_chm is not None:
+            input_data["image_chm"] = image_chm
+
         if self.transform_spatial is not None:
-            transformed_spatial = self.transform_spatial(
-                image=image_rgb,
-                image_chm=image_chm,
-                bboxes=bboxes,
-                class_labels=labels,
-            )
-            image_rgb = transformed_spatial["image"]
-            image_chm = transformed_spatial["image_chm"]
+            transformed_spatial = self.transform_spatial(**input_data)
+
             bboxes = transformed_spatial["bboxes"]
             labels = transformed_spatial["class_labels"]
 
+            if image_rgb is not None:
+                image_rgb = transformed_spatial["image_rgb"]
+            if image_chm is not None:
+                image_chm = transformed_spatial["image_chm"]
+
         # Apply the pixel transform the to RGB image
-        if self.transform_pixel_rgb is not None:
+        if image_rgb is not None and self.transform_pixel_rgb is not None:
             transformed = self.transform_pixel_rgb(image=image_rgb)
             image_rgb = transformed["image"]
 
         # Apply the pixel transform the to CHM image
-        if self.transform_pixel_chm is not None:
+        if image_chm is not None and self.transform_pixel_chm is not None:
             transformed = self.transform_pixel_chm(image=image_chm)
             image_chm = transformed["image"]
 
@@ -471,10 +499,16 @@ class TreeDataset(Dataset):
         )
 
         to_tensor = Atorch.ToTensorV2()
+        image_rgb_tensor = (
+            to_tensor(image=image_rgb)["image"].to(torch.float32) if image_rgb is not None else None
+        )
+        image_chm_tensor = (
+            to_tensor(image=image_chm)["image"].to(torch.float32) if image_chm is not None else None
+        )
 
         sample = {
-            "image_rgb": to_tensor(image=image_rgb)["image"].to(torch.float32),
-            "image_chm": to_tensor(image=image_chm)["image"].to(torch.float32),
+            "image_rgb": image_rgb_tensor,
+            "image_chm": image_chm_tensor,
             "bboxes": torch.tensor(bboxes).to(torch.float32),
             "labels": torch.tensor(labels),
             "image_index": idx,
@@ -495,7 +529,7 @@ class TreeDataset(Dataset):
             np.ndarray: RGB image.
         """
         files_paths = self.files_paths_list[idx]
-        rgb_path = files_paths["rgb"]
+        rgb_path = files_paths["rgb_cir"]
         image_rgb = read_image(rgb_path, chm=False, mode="c")
         return image_rgb
 
@@ -537,7 +571,7 @@ class TreeDataset(Dataset):
             str: pixel coordinates name of the data.
         """
         files_paths = self.files_paths_list[idx]
-        rgb_path = files_paths["rgb"]
+        rgb_path = files_paths["rgb_cir"]
         coord_name = get_file_base_name(rgb_path)
         return coord_name
 
@@ -551,6 +585,6 @@ class TreeDataset(Dataset):
             str: name of the full image (without any extension).
         """
         files_paths = self.files_paths_list[idx]
-        rgb_path = files_paths["rgb"]
+        rgb_path = files_paths["rgb_cir"]
         full_image_name = os.path.basename(os.path.dirname(rgb_path))
         return full_image_name

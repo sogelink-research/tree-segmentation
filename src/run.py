@@ -26,7 +26,7 @@ class ModelTrainingSession(ModelSession):
         proba_drop_rgb: float = 1 / 3,
         proba_drop_chm: float = 1 / 3,
         device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        postfix: str = "",
+        postfix: Optional[str] = None,
     ) -> None:
         if chm_z_layers is None:
             z_tops = [1, 2, 3, 5, 7, 10, 15, 20, np.inf]
@@ -57,15 +57,13 @@ class ModelTrainingSession(ModelSession):
 def main():
     # Training session
     model_training_session = ModelTrainingSession()
-
     model_training_session.train()
-
     model_training_session.close()
 
-    # model_session = ModelSession.from_name(
-    #     "trained_model_rgb_cir_multi_chm_1500ep_2", device=device
-    # )
-    # model_session.compute_metrics()
+    # model_training_session = ModelSession.from_name("trained_model_rgb_cir_multi_chm_0ep_0")
+    # model_training_session.training_data.dataset_params.agnostic = False
+    # model_training_session.compute_metrics()
+    # model_training_session.close()
 
 
 if __name__ == "__main__":

@@ -14,14 +14,16 @@ from datasets import TreeDataset
 #     return new_tensor
 
 
-def tree_dataset_collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+def tree_dataset_collate_fn(
+    batch: List[Dict[str, torch.Tensor | None]],
+) -> Dict[str, torch.Tensor | None]:
     """Custom collate function for a Dataloader taking a TreeDataset.
 
     Args:
-        batch (List[Dict[str, torch.Tensor]]): A batch as a list of TreeDataset outputs.
+        batch (List[Dict[str,  torch.Tensor | None]]): A batch as a list of TreeDataset outputs.
 
     Returns:
-        Dict[str, torch.Tensor]: The final batch returned by the DataLoader.
+        Dict[str, torch.Tensor | None]: The final batch returned by the DataLoader.
     """
     # Initialize lists to hold the extracted components
     rgb_images_list = []
@@ -30,6 +32,9 @@ def tree_dataset_collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, t
     labels = []
     indices = []
     image_indices = []
+
+    use_rgb = True
+    use_chm = True
 
     # Iterate through the batch
     for i, item in enumerate(batch):
@@ -40,20 +45,31 @@ def tree_dataset_collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, t
         label = item["labels"]
         image_index = item["image_index"]
 
+        if rgb_image is None:
+            use_rgb = False
+        if chm_image is None:
+            use_chm = False
+
         # Append the extracted components to the lists
         rgb_images_list.append(rgb_image)
         chm_images_list.append(chm_image)
         bboxes.append(bbox)
         labels.append(label)
-        indices.extend([i] * bbox.shape[0])
+        indices.extend([i] * bbox.shape[0])  # type: ignore
         image_indices.append(image_index)
 
-    # rgb_images = quick_stack(rgb_images_list)
-    # chm_images = quick_stack(chm_images_list)
-
     # Convert the lists to tensors and stack them
-    rgb_images = torch.stack(rgb_images_list)
-    chm_images = torch.stack(chm_images_list)
+    if use_rgb:
+        rgb_images = torch.stack(rgb_images_list)
+        # rgb_images = quick_stack(rgb_images_list)
+    else:
+        rgb_images = None
+
+    if use_chm:
+        chm_images = torch.stack(chm_images_list)
+        # chm_images = quick_stack(chm_images_list)
+    else:
+        chm_images = None
 
     bboxes = torch.cat(bboxes)
     labels = torch.cat(labels)

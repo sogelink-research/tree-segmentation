@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import pickle
 import time
 import warnings
 from collections import defaultdict
 from itertools import product
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import albumentations as A
 import geojson
@@ -142,11 +143,12 @@ class DatasetParams:
         self.split_random_seed = split_random_seed
         self.no_data_new_value = no_data_new_value
         self.filter_lidar = filter_lidar
-        self.mean_rgb_cir = mean_rgb_cir
-        self.std_rgb_cir = std_rgb_cir
-        self.mean_chm = mean_chm
-        self.std_chm = std_chm
+        self._mean_rgb_cir = mean_rgb_cir
+        self._std_rgb_cir = std_rgb_cir
+        self._mean_chm = mean_chm
+        self._std_chm = std_chm
 
+    def initialize(self) -> None:
         if self.agnostic:
             self.class_names = {0: self.class_names[0]}
 
@@ -245,7 +247,7 @@ class DatasetParams:
         replace_no_data = chm
 
         # Compute mean and std if they are missing
-        if mean is None or std is None:
+        if not isinstance(mean, np.ndarray) or not isinstance(std, np.ndarray):
             mean, std = compute_mean_and_std(
                 image_file_path_or_tensor,
                 per_channel=per_channel,
@@ -277,11 +279,13 @@ class DatasetParams:
         start_time = time.time()
 
         # Normalize the full images
+        self._mean_rgb_cir, self._std_rgb_cir = self.mean_rgb_cir, self.std_rgb_cir  # TODO: Remove
+        self._mean_chm, self._std_chm = self.mean_chm, self.std_chm  # TODO: Remove
         self.mean_rgb_cir, self.std_rgb_cir = self._init_mean_std(
-            full_merged_rgb_cir, self.mean_rgb_cir, self.std_rgb_cir, chm=False
+            full_merged_rgb_cir, self._mean_rgb_cir, self._std_rgb_cir, chm=False
         )
         self.mean_chm, self.std_chm = self._init_mean_std(
-            full_merged_chm, self.mean_chm, self.std_chm, chm=True
+            full_merged_chm, self._mean_chm, self._std_chm, chm=True
         )
 
         end_p_time = time.process_time()
@@ -415,6 +419,9 @@ class TrainingParams:
         self.transform_pixel_rgb_training = transform_pixel_rgb_training
         self.transform_pixel_chm_training = transform_pixel_chm_training
 
+    def initialize(self) -> None:
+        pass
+
 
 class TrainingData:
     @running_message(start_message="Initializing the training parameters...")
@@ -422,6 +429,9 @@ class TrainingData:
         self.dataset_params = dataset_params
         self.training_params = training_params
 
+    def initialize(self) -> None:
+        self.dataset_params.initialize()
+        self.training_params.initialize()
         self._split_data(self.dataset_params.split_random_seed)
         self._init_transforms()
 
@@ -442,9 +452,13 @@ class TrainingData:
         )
 
     def _init_transforms(self):
-        self.transform_spatial_training = (
-            self.training_params.transform_spatial_training or get_transform_spatial()
-        )
+        if self.training_params.transform_spatial_training is None:
+            self.transform_spatial_training = get_transform_spatial(
+                use_rgb=self.dataset_params.use_rgb or self.dataset_params.use_cir,
+                use_chm=self.dataset_params.use_chm,
+            )
+        else:
+            self.transform_spatial_training = self.training_params.transform_spatial_training
 
         self.transform_pixel_rgb_training = (
             self.training_params.transform_pixel_rgb_training
@@ -476,6 +490,14 @@ class ModelSession:
                 self.training_data.training_params.epochs, self.postfix
             )
         self.model_path = AMF_GD_YOLOv8.get_weights_path_from_name(self.model_name)
+        self.best_epoch = -1
+
+    @running_message("Creating the dataset...")
+    def initialize(self) -> Tuple[Dict[str, TreeDataset], AMF_GD_YOLOv8]:
+        self.training_data.initialize()
+        datasets = self._load_datasets()
+        model = self._load_model()
+        return datasets, model
 
     @running_message("Loading the model...")
     def _load_model(self) -> AMF_GD_YOLOv8:
@@ -495,7 +517,7 @@ class ModelSession:
 
         return model
 
-    @running_message("Loading the datasets...")
+    @running_message("Loading the dataset...")
     def _load_datasets(self) -> Dict[str, TreeDataset]:
         if self.training_data.dataset_params.agnostic:
             only_label = self.training_data.dataset_params.class_names[0]
@@ -538,11 +560,10 @@ class ModelSession:
         warnings.filterwarnings("ignore", category=UserWarning, module="torch.autograd.graph")
 
         # Load data and model
-        model = self._load_model()
-        datasets = self._load_datasets()
+        datasets, model = self.initialize()
 
         # Train and extract the best model
-        model = train_and_validate(
+        model, self.best_epoch = train_and_validate(
             model=model,
             datasets=datasets,
             lr=self.training_data.training_params.lr,
@@ -556,14 +577,14 @@ class ModelSession:
         )
 
         # Save the best model
-        self._save_model(model)
+        self.save_model(model)
+        self.save_params()
 
         self.compute_metrics()
 
     @running_message("Computing metrics...")
     def compute_metrics(self):
-        model = self._load_model()
-        datasets = self._load_datasets()
+        datasets, model = self.initialize()
 
         train_loader, val_loader, test_loader = initialize_dataloaders(
             datasets=datasets,
@@ -582,14 +603,11 @@ class ModelSession:
         loaders_legend = ["Training set", "Validation set", "Test set"]
         loaders_zip = list(zip(loaders, loaders_postfix, loaders_legend))
 
-        use_rgbs = [True, False]
-        use_chms = [True, False]
-
-        iterations = list(product(use_rgbs, use_chms))
+        use_rgb_chm = [(True, True), (True, False), (False, True)]
 
         for loader, loader_postfix, loader_legend in tqdm(loaders_zip, desc="Datasets"):
             ap_metrics_list = AP_Metrics_List()
-            for use_rgb, use_chm in tqdm(iterations, desc="Type of input", leave=False):
+            for use_rgb, use_chm in tqdm(use_rgb_chm, desc="Type of input", leave=False):
 
                 data_postfix = rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)
                 data_legend = rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)
@@ -602,19 +620,19 @@ class ModelSession:
                     use_chm=use_chm,
                     ap_conf_thresholds=conf_thresholds,
                     output_geojson_save_path=os.path.join(
-                        model_folder_path, f"{full_postfix}.geojson"
+                        model_folder_path, "predictions", f"predictions_{full_postfix}.geojson"
                     ),
                 )
 
                 ap_metrics.plot_ap_iou_per_label(
                     save_path=os.path.join(
-                        model_folder_path, f"ap_iou_per_label_{full_postfix}.png"
+                        model_folder_path, "ap_iou", f"ap_iou_per_label_{full_postfix}.png"
                     ),
                     title=f"Sorted AP curve per class on the {loader_legend}",
                 )
                 ap_metrics.plot_sap_conf_per_label(
                     save_path=os.path.join(
-                        model_folder_path, f"sap_conf_per_label_{full_postfix}.png"
+                        model_folder_path, "sap_conf", f"sap_conf_per_label_{full_postfix}.png"
                     ),
                     title=f"Sorted AP w.r.t the confidence threshold per class on the {loader_legend}",
                 )
@@ -622,27 +640,79 @@ class ModelSession:
                 ap_metrics_list.add_ap_metrics(ap_metrics, legend=data_legend)
 
             ap_metrics_list.plot_ap_iou(
-                save_path=os.path.join(model_folder_path, f"ap_iou_{loader_postfix}.png"),
+                save_path=os.path.join(model_folder_path, "ap_iou", f"ap_iou_{loader_postfix}.png"),
                 title=f"Sorted AP curve on the {loader_legend}",
             )
             ap_metrics_list.plot_sap_conf(
-                save_path=os.path.join(model_folder_path, f"sap_conf_{loader_postfix}.png"),
+                save_path=os.path.join(
+                    model_folder_path, "sap_conf", f"sap_conf_{loader_postfix}.png"
+                ),
                 title=f"Sorted AP w.r.t the confidence threshold on the {loader_legend}",
             )
 
-    @staticmethod
-    def _pickle_path(model_name: str) -> str:
-        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
-        return os.path.join(model_folder_path, "model_session.pkl")
+    def save_params(self):
+        params_to_save = {
+            "annotations_file": self.training_data.dataset_params.annotations_file_name,
+            "agnostic": self.training_data.dataset_params.agnostic,
+            "use_rgb": self.training_data.dataset_params.use_rgb,
+            "use_cir": self.training_data.dataset_params.use_cir,
+            "use_chm": self.training_data.dataset_params.use_chm,
+            "chm_z_layers": self.training_data.dataset_params.chm_z_layers,
+            "class_names": self.training_data.dataset_params.class_names,
+            "filter_lidar": self.training_data.dataset_params.filter_lidar,
+            "mean_rgb_cir": self.training_data.dataset_params.mean_rgb_cir,
+            "mean_chm": self.training_data.dataset_params.mean_chm,
+            "std_rgb_cir": self.training_data.dataset_params.std_rgb_cir,
+            "std_chm": self.training_data.dataset_params.std_chm,
+            "no_data_new_value": self.training_data.dataset_params.no_data_new_value,
+            "resolution": self.training_data.dataset_params.resolution,
+            "split_random_seed": self.training_data.dataset_params.split_random_seed,
+            "tile_overlap": self.training_data.dataset_params.tile_overlap,
+            "tile_size": self.training_data.dataset_params.tile_size,
+            "accumulate": self.training_data.training_params.accumulate,
+            "batch_size": self.training_data.training_params.batch_size,
+            "epochs": self.training_data.training_params.epochs,
+            "lr": self.training_data.training_params.lr,
+            "no_improvement_stop_epochs": self.training_data.training_params.no_improvement_stop_epochs,
+            "num_workers": self.training_data.training_params.num_workers,
+            "proba_drop_chm": self.training_data.training_params.proba_drop_chm,
+            "proba_drop_rgb": self.training_data.training_params.proba_drop_rgb,
+            "best_epoch": self.best_epoch,
+            "device": self.device.type,
+            "model_name": self.model_name,
+            "model_path": self.model_path,
+            "postfix": self.postfix,
+        }
+        save_path = ModelSession.get_params_path(self.model_name)
+        with open(save_path, "w") as fp:
+            json.dump(params_to_save, fp, cls=FullJsonEncoder, sort_keys=True, indent=4)
 
-    def _save_model(self, model: AMF_GD_YOLOv8):
+    def save_model(self, model: AMF_GD_YOLOv8):
         # Save the weights
         model.save_weights()
 
         # Save the class instance
-        pickle_path = ModelSession._pickle_path(self.model_name)
+        pickle_path = ModelSession.get_pickle_path(self.model_name)
         with open(pickle_path, "wb") as f:
             pickle.dump(self, f)
+
+    def close(self):
+        self.training_data.dataset_params.close()
+
+    @staticmethod
+    def get_params_path(model_name: str) -> str:
+        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
+        return os.path.join(model_folder_path, "model_params.json")
+
+    @staticmethod
+    def get_pickle_path(model_name: str) -> str:
+        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
+        return os.path.join(model_folder_path, "model_session.pkl")
+
+    @staticmethod
+    def already_exists(model_name: str) -> bool:
+        pickle_path = ModelSession.get_pickle_path(model_name)
+        return os.path.exists(pickle_path)
 
     @staticmethod
     def from_pickle(file_path: str, device: torch.device) -> ModelSession:
@@ -652,12 +722,21 @@ class ModelSession:
         return model_session
 
     @staticmethod
-    def from_name(model_name: str, device: torch.device) -> ModelSession:
-        file_path = ModelSession._pickle_path(model_name)
+    def from_name(
+        model_name: str,
+        device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    ) -> ModelSession:
+        if not ModelSession.already_exists(model_name):
+            raise Exception(f"There is no model called {model_name}.")
+        file_path = ModelSession.get_pickle_path(model_name)
         return ModelSession.from_pickle(file_path, device)
 
-    def close(self):
-        self.training_data.dataset_params.close()
+
+class FullJsonEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return json.JSONEncoder.default(self, obj)
 
 
 def simple_test():
@@ -724,7 +803,7 @@ def simple_test():
                 "Simple_Test_metrics_values.json",
             )
         )
-        output = model.forward(image_rgb, image_chm)
+        output = model.forward(image_rgb, image_chm, device)
         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
         total_loss.backward()
 

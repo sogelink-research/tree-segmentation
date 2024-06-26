@@ -326,8 +326,6 @@ def read_numpy(file_path: str, mode: str) -> np.ndarray:
 
 
 def read_image(image_path: str, chm: bool, mode: str) -> np.ndarray:
-    dtype_type = DatasetConst.CHM_DATA_TYPE.value if chm else DatasetConst.RGB_DATA_TYPE.value
-
     if is_tif_file(image_path):
         # image = tifffile.imread(image_path)
         image = read_tif(image_path, mode)

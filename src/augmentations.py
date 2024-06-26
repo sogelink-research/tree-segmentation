@@ -12,9 +12,14 @@ from matplotlib import pyplot as plt
 CROP_SIZE = 640
 
 
-def get_transform_spatial():
+def get_transform_spatial(use_rgb: bool, use_chm: bool):
     distort_steps = 30
     distort_limit = 0.2
+    additional_targets = {}
+    if use_rgb:
+        additional_targets["image_rgb"] = "image"
+    if use_chm:
+        additional_targets["image_chm"] = "image"
     transform_spatial = A.Compose(
         [
             A.RandomCrop(width=CROP_SIZE, height=CROP_SIZE, p=1.0),
@@ -29,6 +34,7 @@ def get_transform_spatial():
             A.RandomRotate90(p=1.0),
             A.Perspective(interpolation=cv2.INTER_LINEAR, p=0.5),
         ],
+        additional_targets=additional_targets,
     )
     return transform_spatial
 
@@ -116,7 +122,7 @@ def main():
     types = ["RGB", "GREY"]
 
     # Transform images
-    transform_spatial = get_transform_spatial()
+    transform_spatial = get_transform_spatial(use_rgb=True, use_chm=False)
     transform_pixel_rgb = get_transform_pixel_rgb(image_rgb_cir.shape[2])
     transform_pixel_chm = get_transform_pixel_chm(image_chm.shape[2] or 1)
 

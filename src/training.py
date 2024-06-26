@@ -238,22 +238,24 @@ def train(
     stream = tqdm(train_loader, leave=False, desc="Training")
     for data in stream:
         # Get the data
-        image_rgb: torch.Tensor = data["image_rgb"]
-        image_chm: torch.Tensor = data["image_chm"]
+        image_rgb: torch.Tensor | None = data["image_rgb"]
+        image_chm: torch.Tensor | None = data["image_chm"]
         gt_bboxes: torch.Tensor = data["bboxes"]
         gt_classes: torch.Tensor = data["labels"]
         gt_indices: torch.Tensor = data["indices"]
         image_indices: torch.Tensor = data["image_indices"]
 
-        image_rgb = image_rgb.to(device, non_blocking=True)
-        image_chm = image_chm.to(device, non_blocking=True)
+        if image_rgb is not None:
+            image_rgb = image_rgb.to(device, non_blocking=True)
+        if image_chm is not None:
+            image_chm = image_chm.to(device, non_blocking=True)
         gt_bboxes = gt_bboxes.to(device, non_blocking=True)
         gt_classes = gt_classes.to(device, non_blocking=True)
         gt_indices = gt_indices.to(device, non_blocking=True)
         image_indices = image_indices.to(device, non_blocking=True)
 
         # Compute the model output
-        output = model.forward(image_rgb, image_chm)
+        output = model.forward(image_rgb, image_chm, device)
 
         # Compute the AP metrics
         with torch.no_grad():
@@ -325,7 +327,7 @@ def train(
         running_accumulation_step += 1
 
         # Store the loss
-        batch_size = image_rgb.shape[0]
+        batch_size = image_indices.shape[0]
         training_metrics.update(
             "Training", "Total Loss", total_loss.item(), count=batch_size, y_axis="Loss"
         )
@@ -367,28 +369,30 @@ def validate(
     with torch.no_grad():
         for data in stream:
             # Get the data
-            image_rgb: torch.Tensor = data["image_rgb"]
-            image_chm: torch.Tensor = data["image_chm"]
+            image_rgb: torch.Tensor | None = data["image_rgb"]
+            image_chm: torch.Tensor | None = data["image_chm"]
             gt_bboxes: torch.Tensor = data["bboxes"]
             gt_classes: torch.Tensor = data["labels"]
             gt_indices: torch.Tensor = data["indices"]
             image_indices: torch.Tensor = data["image_indices"]
 
-            image_rgb = image_rgb.to(device, non_blocking=True)
-            image_chm = image_chm.to(device, non_blocking=True)
+            if image_rgb is not None:
+                image_rgb = image_rgb.to(device, non_blocking=True)
+            if image_chm is not None:
+                image_chm = image_chm.to(device, non_blocking=True)
             gt_bboxes = gt_bboxes.to(device, non_blocking=True)
             gt_classes = gt_classes.to(device, non_blocking=True)
             gt_indices = gt_indices.to(device, non_blocking=True)
             image_indices = image_indices.to(device, non_blocking=True)
 
             # Compute the model output
-            output = model.forward(image_rgb, image_chm)
+            output = model.forward(image_rgb, image_chm, device)
 
             # Compute the loss
             total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
 
             # Store the loss
-            batch_size = image_rgb.shape[0]
+            batch_size = image_indices.shape[0]
             training_metrics.update(
                 "Validation", "Total Loss", total_loss.item(), count=batch_size, y_axis="Loss"
             )
@@ -512,30 +516,44 @@ def evaluate_model(
     if output_geojson_save_path is not None:
         geojson_outputs: List[geojson.FeatureCollection] = []
 
+    if not use_rgb and not use_chm:
+        raise Exception("You cannot use neither of RGB and CHM.")
+
+    if not use_rgb:
+        old_use_rgb = data_loader.dataset.use_rgb
+        old_use_chm = data_loader.dataset.use_chm
+        data_loader.dataset.use_rgb = False
+        data_loader.dataset.use_chm = True
+    elif not use_chm:
+        old_use_rgb = data_loader.dataset.use_rgb
+        old_use_chm = data_loader.dataset.use_chm
+        data_loader.dataset.use_rgb = True
+        data_loader.dataset.use_chm = False
+
     model.eval()
     with torch.no_grad():
         for data in tqdm(data_loader, leave=False, desc="Evaluating the model"):
             # Get the data
-            image_rgb: torch.Tensor = data["image_rgb"]
-            if not use_rgb:
-                image_rgb = torch.zeros_like(image_rgb)
-            image_chm: torch.Tensor = data["image_chm"]
-            if not use_chm:
-                image_chm = torch.zeros_like(image_chm)
+            image_rgb: torch.Tensor | None = data["image_rgb"]
+            image_chm: torch.Tensor | None = data["image_chm"]
             gt_bboxes: torch.Tensor = data["bboxes"]
             gt_classes: torch.Tensor = data["labels"]
             gt_indices: torch.Tensor = data["indices"]
             image_indices: torch.Tensor = data["image_indices"]
 
-            image_rgb = image_rgb.to(device, non_blocking=True)
-            image_chm = image_chm.to(device, non_blocking=True)
+            if image_rgb is not None:
+                image_rgb = image_rgb.to(device, non_blocking=True)
+            if image_chm is not None:
+                image_chm = image_chm.to(device, non_blocking=True)
             gt_bboxes = gt_bboxes.to(device, non_blocking=True)
             gt_classes = gt_classes.to(device, non_blocking=True)
             gt_indices = gt_indices.to(device, non_blocking=True)
             image_indices = image_indices.to(device, non_blocking=True)
 
             # Compute the model output
-            output = model.forward(image_rgb, image_chm)
+            output = model.forward(
+                image_rgb, image_chm, use_left_temp=use_rgb, use_right_temp=use_chm, device=device
+            )
             preds = model.preds_from_output(output)
 
             # Compute the AP metrics
@@ -577,6 +595,10 @@ def evaluate_model(
         geojson_outputs_merged = merge_geojson_feature_collections(geojson_outputs)
         save_geojson(geojson_outputs_merged, output_geojson_save_path)
 
+    if not use_rgb or not use_chm:
+        data_loader.dataset.use_rgb = old_use_rgb
+        data_loader.dataset.use_chm = old_use_chm
+
     return ap_metrics
 
 
@@ -591,7 +613,7 @@ def train_and_validate(
     device: torch.device,
     show_training_metrics: bool,
     no_improvement_stop_epochs: int,
-) -> AMF_GD_YOLOv8:
+) -> Tuple[AMF_GD_YOLOv8, int]:
 
     train_loader, val_loader, test_loader = initialize_dataloaders(
         datasets, batch_size, num_workers
@@ -678,7 +700,7 @@ def train_and_validate(
             "metrics_values.json",
         )
     )
-    return best_model
+    return best_model, best_epoch
 
 
 def get_all_files_iteratively(folder_path: str) -> List[str]:
@@ -761,7 +783,7 @@ def create_and_save_splitted_datasets(
             chm_file = rgb_file.replace(rgb_folder_path, chm_folder_path)
 
             new_dict = {
-                "rgb": rgb_file,
+                "rgb_cir": rgb_file,
                 "chm": chm_file,
                 "annotations": annotations_file,
             }
@@ -777,11 +799,11 @@ def load_tree_datasets_from_split(
     transform_spatial_training: A.Compose | None,
     transform_pixel_rgb_training: A.Compose | None,
     transform_pixel_chm_training: A.Compose | None,
-    dismissed_classes: List[str] = [],
+    labels_transformation_drop_rgb: Mapping[str, str | None],
+    labels_transformation_drop_chm: Mapping[str, str | None],
     proba_drop_rgb: float = 0.0,
-    labels_transformation_drop_rgb: Mapping[str, str | None] | None = None,
     proba_drop_chm: float = 0.0,
-    labels_transformation_drop_chm: Mapping[str, str | None] | None = None,
+    dismissed_classes: List[str] = [],
     no_data_new_value: float = -5.0,
 ) -> Dict[str, TreeDataset]:
     with open(data_split_file_path, "r") as f:
@@ -806,9 +828,9 @@ def load_tree_datasets_from_split(
         data_split["validation"],
         labels_to_index=labels_to_index,
         proba_drop_rgb=0.0,
-        labels_transformation_drop_rgb=None,
+        labels_transformation_drop_rgb=labels_transformation_drop_rgb,
         proba_drop_chm=0.0,
-        labels_transformation_drop_chm=None,
+        labels_transformation_drop_chm=labels_transformation_drop_chm,
         dismissed_classes=dismissed_classes,
         transform_spatial=None,
         transform_pixel_rgb=None,
@@ -825,9 +847,9 @@ def load_tree_datasets_from_split(
         test_data,
         labels_to_index=labels_to_index,
         proba_drop_rgb=0.0,
-        labels_transformation_drop_rgb=None,
+        labels_transformation_drop_rgb=labels_transformation_drop_rgb,
         proba_drop_chm=0.0,
-        labels_transformation_drop_chm=None,
+        labels_transformation_drop_chm=labels_transformation_drop_chm,
         dismissed_classes=dismissed_classes,
         transform_spatial=None,
         transform_pixel_rgb=None,
