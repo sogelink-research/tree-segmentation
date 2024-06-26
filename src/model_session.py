@@ -609,6 +609,12 @@ class ModelSession:
                     ),
                     title=f"Sorted AP curve per class on the {loader_legend}",
                 )
+                ap_metrics.plot_sap_conf_per_label(
+                    save_path=os.path.join(
+                        model_folder_path, f"sap_conf_per_label_{full_postfix}.png"
+                    ),
+                    title=f"Sorted AP w.r.t the confidence threshold per class on the {loader_legend}",
+                )
 
                 ap_metrics_list.add_ap_metrics(ap_metrics, legend=data_legend)
 

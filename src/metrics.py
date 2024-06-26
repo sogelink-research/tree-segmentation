@@ -470,6 +470,30 @@ class AP_Metrics:
             save_path=save_path,
         )
 
+    def plot_sap_conf_per_label(self, save_path: str, title: Optional[str] = None) -> None:
+        sorted_ap_lists = []
+        conf_threshold_lists = []
+        legend_list = []
+
+        sorted_aps_per_label_dict = self.get_sorted_aps_per_label()
+
+        for label, (
+            sorted_ious_list,
+            aps_list,
+            sorted_ap_list,
+        ) in sorted_aps_per_label_dict.items():
+            sorted_ap_lists.append(sorted_ap_list)
+            conf_threshold_lists.append(self.conf_threshold_list)
+            legend_list.append(label)
+
+        plot_sap_conf(
+            sorted_ap_lists=sorted_ap_lists,
+            conf_threshold_lists=conf_threshold_lists,
+            legend_list=legend_list,
+            title=title,
+            save_path=save_path,
+        )
+
 
 class AP_Metrics_List:
     def __init__(
