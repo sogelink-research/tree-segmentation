@@ -267,14 +267,16 @@ class DatasetParams:
         start_time = time.time()
         # Merge full images
         temp_folder = create_random_temp_folder()
-        temp_path = os.path.join(temp_folder, "rgb_cir.npy")
-        full_merged_rgb_cir = merge_tif(
-            full_images_paths["rgb_cir"], temp_path=temp_path, output_path=None, chm=False
-        )
-        temp_path = os.path.join(temp_folder, "chm.npy")
-        full_merged_chm = merge_tif(
-            full_images_paths["chm"], temp_path=temp_path, output_path=None, chm=True
-        )
+        if self.use_rgb or self.use_cir:
+            temp_path = os.path.join(temp_folder, "rgb_cir.npy")
+            full_merged_rgb_cir = merge_tif(
+                full_images_paths["rgb_cir"], temp_path=temp_path, output_path=None, chm=False
+            )
+        if self.use_chm:
+            temp_path = os.path.join(temp_folder, "chm.npy")
+            full_merged_chm = merge_tif(
+                full_images_paths["chm"], temp_path=temp_path, output_path=None, chm=True
+            )
 
         end_p_time = time.process_time()
         print(f"{'Merge P time':<20}: {end_p_time - start_p_time:.6f} seconds")

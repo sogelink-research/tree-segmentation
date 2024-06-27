@@ -68,7 +68,13 @@ def main():
             "use_rgb": False,
             "use_cir": False,
             "use_chm": False,
-        }
+        },
+        {
+            "agnostic": True,
+            "use_rgb": True,
+            "use_cir": True,
+            "use_chm": True,
+        },
     ]
 
     # Generate all combinations of arguments
