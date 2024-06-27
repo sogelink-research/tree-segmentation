@@ -154,6 +154,11 @@ class DatasetParams:
 
         self.class_indices = {value: key for key, value in self.class_names.items()}
 
+        if hasattr(self, "cropped_data_folder_path") and os.path.isdir(
+            self.cropped_data_folder_path
+        ):
+            return
+
         full_images_paths, annotations = self._download_data()
         self._merge_and_crop_data(full_images_paths, annotations)
 
@@ -616,6 +621,7 @@ class ModelSession:
                 data_postfix = rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)
                 data_legend = rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)
                 full_postfix = "_".join([loader_postfix, data_postfix])
+                full_legend = " with ".join([loader_postfix, data_postfix])
                 ap_metrics = evaluate_model(
                     model,
                     loader,
@@ -632,13 +638,13 @@ class ModelSession:
                     save_path=os.path.join(
                         model_folder_path, "ap_iou", f"ap_iou_per_label_{full_postfix}.png"
                     ),
-                    title=f"Sorted AP curve per class on the {loader_legend}",
+                    title=f"Sorted AP curve per class on the {full_legend}",
                 )
                 ap_metrics.plot_sap_conf_per_label(
                     save_path=os.path.join(
                         model_folder_path, "sap_conf", f"sap_conf_per_label_{full_postfix}.png"
                     ),
-                    title=f"Sorted AP w.r.t the confidence threshold per class on the {loader_legend}",
+                    title=f"Sorted AP w.r.t the confidence threshold per class on the {full_legend}",
                 )
 
                 ap_metrics_list.add_ap_metrics(ap_metrics, legend=data_legend)

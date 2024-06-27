@@ -1,3 +1,4 @@
+from itertools import product
 from typing import Optional, Sequence, Tuple
 
 import numpy as np
@@ -55,11 +56,41 @@ class ModelTrainingSession(ModelSession):
 
 
 def main():
-    # Training session
-    agnostic = True
-    model_training_session = ModelTrainingSession(agnostic=agnostic)
-    model_training_session.train()
-    model_training_session.close()
+    params_dict = {
+        "agnostic": [True, False],
+        "use_rgb": [True, False],
+        "use_cir": [True, False],
+        "use_chm": [True, False],
+    }
+
+    forget_combinations = [
+        {
+            "use_rgb": False,
+            "use_cir": False,
+            "use_chm": False,
+        }
+    ]
+
+    # Generate all combinations of arguments
+    keys, values = zip(*params_dict.items())
+    combinations = [dict(zip(keys, v)) for v in product(*values)]
+
+    filtered_combinations = [
+        comb
+        for comb in combinations
+        if not all(
+            [
+                all([comb[key] == value for key, value in forget_comb.items()])
+                for forget_comb in forget_combinations
+            ]
+        )
+    ]
+
+    for combination in filtered_combinations:
+        # Training session
+        model_training_session = ModelTrainingSession(**combination)
+        model_training_session.train()
+        model_training_session.close()
 
     # model_training_session = ModelSession.from_name("trained_model_1000ep_0")
     # model_training_session.training_data.dataset_params.agnostic = False

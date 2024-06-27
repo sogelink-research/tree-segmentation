@@ -261,8 +261,7 @@ def train(
     running_accumulation_step: int,
     training_metrics: TrainingMetrics,
     epoch: int,
-    ap_interval: int = 20,
-    image_preds_interval: int = 50,
+    ap_interval: int,
 ) -> int:
     # AP metrics
     compute_ap = epoch % ap_interval == 0
@@ -271,9 +270,6 @@ def train(
         thresholds_high = np.linspace(0.1, 1.0, 19)
         conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
         ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
-
-    # # Predictions saved as an image
-    # compute_image_preds = epoch % image_preds_interval == 0
 
     model.train()
     stream = tqdm(train_loader, leave=False, desc="Training")
@@ -300,13 +296,8 @@ def train(
 
         # Compute the AP metrics
         with torch.no_grad():
-            # Model evaluations:
-            # if compute_ap or compute_image_preds:
             if compute_ap:
                 preds = model.preds_from_output(output)
-
-            # Compute the AP metrics
-            if compute_ap:
                 ap_metrics.add_preds(
                     model=model,
                     preds=preds,
@@ -315,46 +306,6 @@ def train(
                     gt_indices=gt_indices,
                     image_indices=image_indices,
                 )
-
-            # if compute_image_preds:
-            #     dataset_idx = 0
-            #     if dataset_idx in image_indices.tolist():
-            #         batch_idx = image_indices.tolist().index(dataset_idx)
-
-            #         bboxes_per_image, scores_per_image, classes_per_image = (
-            #             model.predict_from_preds(
-            #                 preds[batch_idx : batch_idx + 1],
-            #                 iou_threshold=0.5,
-            #                 conf_threshold=0.1,
-            #                 number_best=40,
-            #             )
-            #         )
-            #         gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
-            #             gt_bboxes=gt_bboxes,
-            #             gt_classes=gt_classes,
-            #             gt_indices=gt_indices,
-            #             image_indices=image_indices,
-            #         )
-
-            #         image_rgb_initial = torch.tensor(
-            #             train_loader.dataset.get_rgb_image(dataset_idx)
-            #         ).permute((2, 0, 1))
-            #         image_chm_initial = torch.tensor(
-            #             train_loader.dataset.get_chm_image(dataset_idx)
-            #         ).permute((2, 0, 1))
-
-            #         create_bboxes_training_image(
-            #             image_rgb=image_rgb_initial,
-            #             image_chm=image_chm_initial,
-            #             pred_bboxes=bboxes_per_image[0],
-            #             pred_labels=classes_per_image[0],
-            #             pred_scores=scores_per_image[0],
-            #             gt_bboxes=gt_bboxes_per_image[batch_idx],
-            #             gt_labels=gt_classes_per_image[batch_idx],
-            #             labels_int_to_str=model.class_names,
-            #             colors_dict=DatasetConst.CLASS_COLORS.value,
-            #             save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}_train.png"),
-            #         )
 
         # Compute the loss
         total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
@@ -391,8 +342,7 @@ def validate(
     device: torch.device,
     training_metrics: TrainingMetrics,
     epoch: int,
-    ap_interval: int = 20,
-    image_preds_interval: int = 50,
+    ap_interval: int,
 ) -> float:
     # AP metrics
     compute_ap = epoch % ap_interval == 0
@@ -401,9 +351,6 @@ def validate(
         thresholds_high = np.linspace(0.1, 1.0, 19)
         conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
         ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
-
-    # # Predictions saved as an image
-    # compute_image_preds = epoch % image_preds_interval == 0
 
     model.eval()
     stream = tqdm(val_loader, leave=False, desc="Validation")
@@ -443,12 +390,8 @@ def validate(
                 )
 
             # Model evaluations:
-            # if compute_ap or compute_image_preds:
             if compute_ap:
                 preds = model.preds_from_output(output)
-
-            # Compute the AP metrics
-            if compute_ap:
                 ap_metrics.add_preds(
                     model=model,
                     preds=preds,
@@ -457,47 +400,6 @@ def validate(
                     gt_indices=gt_indices,
                     image_indices=image_indices,
                 )
-
-            # # Save the predictions in an image
-            # if compute_image_preds:
-            #     dataset_idx = 0
-            #     if dataset_idx in image_indices.tolist():
-            #         batch_idx = image_indices.tolist().index(dataset_idx)
-
-            #         bboxes_per_image, scores_per_image, classes_per_image = (
-            #             model.predict_from_preds(
-            #                 preds[batch_idx : batch_idx + 1],
-            #                 iou_threshold=0.5,
-            #                 conf_threshold=0.1,
-            #                 number_best=40,
-            #             )
-            #         )
-            #         gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
-            #             gt_bboxes=gt_bboxes,
-            #             gt_classes=gt_classes,
-            #             gt_indices=gt_indices,
-            #             image_indices=image_indices,
-            #         )
-
-            #         image_rgb_initial = torch.tensor(
-            #             val_loader.dataset.get_rgb_image(dataset_idx)
-            #         ).permute((2, 0, 1))
-            #         image_chm_initial = torch.tensor(
-            #             val_loader.dataset.get_chm_image(dataset_idx)
-            #         ).permute((2, 0, 1))
-
-            #         create_bboxes_training_image(
-            #             image_rgb=image_rgb_initial,
-            #             image_chm=image_chm_initial,
-            #             pred_bboxes=bboxes_per_image[0],
-            #             pred_labels=classes_per_image[0],
-            #             pred_scores=scores_per_image[0],
-            #             gt_bboxes=gt_bboxes_per_image[batch_idx],
-            #             gt_labels=gt_classes_per_image[batch_idx],
-            #             labels_int_to_str=model.class_names,
-            #             colors_dict=DatasetConst.CLASS_COLORS.value,
-            #             save_path=os.path.join(model.folder_path, f"Data_epoch_{epoch}_val.png"),
-            #         )
 
     if compute_ap:
         _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
@@ -527,10 +429,10 @@ def rgb_chm_usage_legend(use_rgb: bool, use_chm: bool):
         if use_chm:
             return "RGB and CHM"
         else:
-            return "RGB"
+            return "RGB only"
     else:
         if use_chm:
-            return "CHM"
+            return "CHM only"
         else:
             return "No data"
 
@@ -654,6 +556,7 @@ def train_and_validate(
     device: torch.device,
     show_training_metrics: bool,
     no_improvement_stop_epochs: int,
+    ap_interval: int = 10,
 ) -> Tuple[AMF_GD_YOLOv8, int]:
 
     train_loader, val_loader, test_loader = initialize_dataloaders(
@@ -681,14 +584,8 @@ def train_and_validate(
     best_epoch = 0
     best_loss = np.inf
     skip_until = 3
-    temp_models_interval = 100
 
     for epoch in tqdm(range(1, epochs + 1), desc="Epoch"):
-        if epoch % temp_models_interval == 1:
-            best_temp_epoch = -1
-            best_temp_model = model
-            best_temp_loss = np.inf
-
         # training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
         training_metrics.save_metrics(
             os.path.join(
@@ -706,9 +603,12 @@ def train_and_validate(
             running_accumulation_step,
             training_metrics,
             epoch=epoch,
+            ap_interval=ap_interval,
         )
 
-        current_loss = validate(val_loader, model, device, training_metrics, epoch=epoch)
+        current_loss = validate(
+            val_loader, model, device, training_metrics, epoch=epoch, ap_interval=ap_interval
+        )
         scheduler.step()
 
         if epoch >= skip_until:
@@ -718,15 +618,6 @@ def train_and_validate(
                 best_model = model
                 best_loss = current_loss
                 best_model.save_weights()
-
-            # Store and save the best temp model
-            if current_loss < best_temp_loss:
-                best_temp_epoch = epoch
-                best_temp_model = model
-                best_temp_loss = current_loss
-
-            if epoch % temp_models_interval == 0:
-                best_temp_model.save_weights(best=False, epoch=best_temp_epoch)
 
         training_metrics.end_loop(epoch)
 
