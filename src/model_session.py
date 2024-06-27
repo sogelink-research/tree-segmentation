@@ -162,8 +162,14 @@ class DatasetParams:
         full_images_paths, annotations = self._download_data()
         self._merge_and_crop_data(full_images_paths, annotations)
 
-        self.channels_rgb = get_channels_count(self.cropped_rgb_cir_folder_path, chm=False)
-        self.channels_chm = get_channels_count(self.cropped_chm_folder_path, chm=True)
+        if self.cropped_rgb_cir_folder_path is None:
+            self.channels_rgb = 0
+        else:
+            self.channels_rgb = get_channels_count(self.cropped_rgb_cir_folder_path, chm=False)
+        if self.cropped_chm_folder_path is None:
+            self.channels_chm = 0
+        else:
+            self.channels_chm = get_channels_count(self.cropped_chm_folder_path, chm=True)
 
     def _download_data(self):
         create_all_folders()
@@ -378,6 +384,8 @@ class DatasetParams:
                 clear_if_not_empty=False,
                 remove_unused=True,
             )
+        else:
+            self.cropped_rgb_cir_folder_path = None
 
         # Crop CHM images
         if self.use_chm:
@@ -392,6 +400,8 @@ class DatasetParams:
                 clear_if_not_empty=False,
                 remove_unused=True,
             )
+        else:
+            self.cropped_chm_folder_path = None
 
         end_p_time = time.process_time()
         print(f"{'Crop images P time':<20}: {end_p_time - start_p_time:.6f} seconds")
