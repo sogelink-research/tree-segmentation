@@ -691,8 +691,8 @@ def split_files_into_lists(
 
 
 def create_and_save_splitted_datasets(
-    rgb_folder_path: str,
-    chm_folder_path: str,
+    rgb_folder_path: str | None,
+    chm_folder_path: str | None,
     annotations_folder_path: str,
     sets_ratios: Sequence[int | float],
     sets_names: List[str],
@@ -709,10 +709,18 @@ def create_and_save_splitted_datasets(
     for set_name, set_files in files_dict.items():
         all_files_dict[set_name] = []
         for annotations_file in set_files:
-            rgb_file = annotations_file.replace(annotations_folder_path, rgb_folder_path).replace(
-                ".json", ".npy"
-            )
-            chm_file = rgb_file.replace(rgb_folder_path, chm_folder_path)
+            if rgb_folder_path is not None:
+                rgb_file = annotations_file.replace(
+                    annotations_folder_path, rgb_folder_path
+                ).replace(".json", ".npy")
+            else:
+                rgb_file = None
+            if chm_folder_path is not None:
+                chm_file = annotations_file.replace(
+                    annotations_folder_path, chm_folder_path
+                ).replace(".json", ".npy")
+            else:
+                chm_file = None
 
             new_dict = {
                 "rgb_cir": rgb_file,
