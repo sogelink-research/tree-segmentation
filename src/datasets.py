@@ -181,30 +181,6 @@ def _compute_channels_mean_std_array(
     means = [result[0] for result in results]
     stds = [result[1] for result in results]
 
-    # # Split image into chunks
-    # chunk_size = 1000
-    # chunks = [
-    #     (i, j)
-    #     for i in range(0, image.shape[0], chunk_size)
-    #     for j in range(0, image.shape[1], chunk_size)
-    # ]
-
-    # means = []
-    # stds = []
-
-    # # Compute means of all chunks
-    # with ThreadPoolExecutor() as executor:
-    #     futures = [
-    #         executor.submit(
-    #             compute_chunk_mean_std, image[i : i + chunk_size, j : j + chunk_size, :]
-    #         )
-    #         for i, j in chunks
-    #     ]
-    #     for future in as_completed(futures):
-    #         mean, std = future.result()
-    #         means.append(mean)
-    #         stds.append(std)
-
     mean = np.mean(means, axis=0).reshape(-1)
     std = np.mean(stds, axis=0).reshape(-1)
     return mean, std
