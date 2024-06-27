@@ -285,13 +285,17 @@ class DatasetParams:
         print(f"{'Merge time':<20}: {end_time - start_time:.6f} seconds")
         start_time = time.time()
 
-        # Normalize the full images
-        self.mean_rgb_cir, self.std_rgb_cir = self._init_mean_std(
-            full_merged_rgb_cir, self._mean_rgb_cir, self._std_rgb_cir, chm=False
-        )
-        self.mean_chm, self.std_chm = self._init_mean_std(
-            full_merged_chm, self._mean_chm, self._std_chm, chm=True
-        )
+        # Compute mean and std of the full images
+        if self.use_rgb or self.use_cir:
+            self.mean_rgb_cir, self.std_rgb_cir = self._init_mean_std(
+                full_merged_rgb_cir, self._mean_rgb_cir, self._std_rgb_cir, chm=False
+            )
+            self._mean_rgb_cir, self._std_rgb_cir = self.mean_rgb_cir, self.std_rgb_cir
+        if self.use_chm:
+            self.mean_chm, self.std_chm = self._init_mean_std(
+                full_merged_chm, self._mean_chm, self._std_chm, chm=True
+            )
+            self._mean_chm, self._std_chm = self.mean_chm, self.std_chm
 
         end_p_time = time.process_time()
         print(f"{'Mean and std P time':<20}: {end_p_time - start_p_time:.6f} seconds")
@@ -300,19 +304,22 @@ class DatasetParams:
         print(f"{'Mean and std time':<20}: {end_time - start_time:.6f} seconds")
         start_time = time.time()
 
-        full_merged_rgb_cir = normalize(
-            full_merged_rgb_cir,
-            mean=self.mean_rgb_cir,
-            std=self.std_rgb_cir,
-            replace_no_data=False,
-        )
-        full_merged_chm = normalize(
-            full_merged_chm,
-            mean=self.mean_chm,
-            std=self.std_chm,
-            replace_no_data=True,
-            no_data_new_value=self.no_data_new_value,
-        )
+        # Normalize the full images
+        if self.use_rgb or self.use_cir:
+            full_merged_rgb_cir = normalize(
+                full_merged_rgb_cir,
+                mean=self.mean_rgb_cir,
+                std=self.std_rgb_cir,
+                replace_no_data=False,
+            )
+        if self.use_chm:
+            full_merged_chm = normalize(
+                full_merged_chm,
+                mean=self.mean_chm,
+                std=self.std_chm,
+                replace_no_data=True,
+                no_data_new_value=self.no_data_new_value,
+            )
 
         end_p_time = time.process_time()
         print(f"{'Normalize P time':<20}: {end_p_time - start_p_time:.6f} seconds")
@@ -359,30 +366,32 @@ class DatasetParams:
         start_time = time.time()
 
         # Crop RGB/CIR images
-        self.cropped_rgb_cir_folder_path = os.path.join(
-            self.cropped_data_folder_path, "rgb_cir", output_image_prefix
-        )
-        crop_image_array(
-            self.cropped_annotations_folder_path,
-            full_merged_rgb_cir,
-            chm=False,
-            output_folder_path=self.cropped_rgb_cir_folder_path,
-            clear_if_not_empty=False,
-            remove_unused=True,
-        )
+        if self.use_rgb or self.use_cir:
+            self.cropped_rgb_cir_folder_path = os.path.join(
+                self.cropped_data_folder_path, "rgb_cir", output_image_prefix
+            )
+            crop_image_array(
+                self.cropped_annotations_folder_path,
+                full_merged_rgb_cir,
+                chm=False,
+                output_folder_path=self.cropped_rgb_cir_folder_path,
+                clear_if_not_empty=False,
+                remove_unused=True,
+            )
 
         # Crop CHM images
-        self.cropped_chm_folder_path = os.path.join(
-            self.cropped_data_folder_path, "chm", output_image_prefix
-        )
-        crop_image_array(
-            self.cropped_annotations_folder_path,
-            full_merged_chm,
-            chm=True,
-            output_folder_path=self.cropped_chm_folder_path,
-            clear_if_not_empty=False,
-            remove_unused=True,
-        )
+        if self.use_chm:
+            self.cropped_chm_folder_path = os.path.join(
+                self.cropped_data_folder_path, "chm", output_image_prefix
+            )
+            crop_image_array(
+                self.cropped_annotations_folder_path,
+                full_merged_chm,
+                chm=True,
+                output_folder_path=self.cropped_chm_folder_path,
+                clear_if_not_empty=False,
+                remove_unused=True,
+            )
 
         end_p_time = time.process_time()
         print(f"{'Crop images P time':<20}: {end_p_time - start_p_time:.6f} seconds")
@@ -672,10 +681,10 @@ class ModelSession:
             "chm_z_layers": self.training_data.dataset_params.chm_z_layers,
             "class_names": self.training_data.dataset_params.class_names,
             "filter_lidar": self.training_data.dataset_params.filter_lidar,
-            "mean_rgb_cir": self.training_data.dataset_params.mean_rgb_cir,
-            "mean_chm": self.training_data.dataset_params.mean_chm,
-            "std_rgb_cir": self.training_data.dataset_params.std_rgb_cir,
-            "std_chm": self.training_data.dataset_params.std_chm,
+            "mean_rgb_cir": self.training_data.dataset_params._mean_rgb_cir,
+            "mean_chm": self.training_data.dataset_params._mean_chm,
+            "std_rgb_cir": self.training_data.dataset_params._std_rgb_cir,
+            "std_chm": self.training_data.dataset_params._std_chm,
             "no_data_new_value": self.training_data.dataset_params.no_data_new_value,
             "resolution": self.training_data.dataset_params.resolution,
             "split_random_seed": self.training_data.dataset_params.split_random_seed,

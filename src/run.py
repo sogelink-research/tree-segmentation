@@ -84,7 +84,7 @@ def main():
     filtered_combinations = [
         comb
         for comb in combinations
-        if not all(
+        if not any(
             [
                 all([comb[key] == value for key, value in forget_comb.items()])
                 for forget_comb in forget_combinations
