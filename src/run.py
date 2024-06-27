@@ -56,7 +56,8 @@ class ModelTrainingSession(ModelSession):
 
 def main():
     # Training session
-    model_training_session = ModelTrainingSession()
+    agnostic = True
+    model_training_session = ModelTrainingSession(agnostic=agnostic)
     model_training_session.train()
     model_training_session.close()
 
