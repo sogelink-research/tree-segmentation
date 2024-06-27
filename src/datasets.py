@@ -1,9 +1,10 @@
+import json
 import os
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from math import ceil
-from typing import Callable, Dict, List, Mapping, Tuple, TypeVar
+from typing import Callable, Dict, List, Mapping, Sequence, Tuple, TypeVar
 
 import albumentations as A
 import numpy as np
@@ -143,6 +144,49 @@ def quick_where_chunk(
             future.result()
 
     return array
+
+
+def quick_merge_chunk(
+    arrays: List[np.ndarray],
+    save_path: str,
+    axis: int = 2,
+    chunk_size: int = 1000,
+    allow_modify_chunk_size: bool = True,
+) -> np.ndarray:
+    for i in range(len(arrays)):
+        while arrays[i].ndim < axis:
+            arrays[i] = arrays[i][..., np.newaxis]
+
+    channels = sum([array.shape[2] for array in arrays])
+    shape = (arrays[0].shape[0], arrays[0].shape[1], channels)
+    dtye = arrays[0].dtype
+    mmapped_array = np.lib.format.open_memmap(save_path, mode="w+", shape=shape, dtype=dtye)
+
+    def process_chunk_merge(array_slice: Tuple[slice, ...]):
+        # mmapped_array[array_slice] = np.concatenate(
+        #     [array[array_slice] for array in arrays], axis=axis
+        # )
+        first_channel = 0
+        for array in arrays:
+            last_channel = first_channel + array.shape[axis]
+            slice_object = tuple(list(array_slice) + [slice(first_channel, last_channel)])
+            mmapped_array[slice_object] = array[array_slice]
+
+    # Get slices
+    slices = generate_slices(
+        mmapped_array.shape[:-1], chunk_size, allow_modify_chunk_size=allow_modify_chunk_size
+    )
+
+    # Compute method on all chunks
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_chunk_merge, current_slice) for current_slice in slices]
+
+        # Wait for all tasks to complete
+        for future in as_completed(futures):
+            future.result()
+
+    mmapped_array.flush()
+    return mmapped_array
 
 
 def _compute_channels_mean_std_array(
@@ -694,3 +738,164 @@ class TreeDataset(Dataset):
         rgb_path = files_paths["rgb_cir"]
         full_image_name = os.path.basename(os.path.dirname(rgb_path))
         return full_image_name
+
+
+def get_all_files_iteratively(folder_path: str) -> List[str]:
+    """Finds iteratively all the files below the input folder.
+
+    Args:
+        folder_path (str): folder to look into.
+
+    Returns:
+        List[str]: the list of all the files.
+    """
+    all_files = []
+    for dirpath, dirnames, filenames in os.walk(folder_path):
+        for filename in filenames:
+            all_files.append(os.path.join(dirpath, filename))
+    return sorted(all_files, key=lambda file: os.path.basename(file))
+
+
+def split_files_into_lists(
+    folder_path: str,
+    sets_ratios: Sequence[int | float],
+    sets_names: List[str],
+    random_seed: int | None = None,
+) -> Dict[str, List[str]]:
+    """Splits files in a folder into multiple lists based on specified ratios.
+
+    Args:
+        folder_path (str): path to the folder containing the files.
+        sets_ratios (List[int | float]): the proportions for each list.
+        sets_names (List[str]): the keys for the dictionary
+        random_seed (int | None, optional): a seed for the randomization. Defaults to None.
+
+    Returns:
+        Dict[str, List[str]]: a dictionary where each key from the input names is linked
+        with a list of files.
+    """
+    files = get_all_files_iteratively(folder_path)
+    total_ratio = sum(sets_ratios)
+    ratios = [r / total_ratio for r in sets_ratios]
+
+    if random_seed is not None:
+        random.seed(random_seed)
+    random.shuffle(files)
+    split_indices = [0] * (len(ratios) + 1)
+    split_indices[-1] = len(files)
+    sum_ratios = 0.0
+    for i in range(len(ratios) - 1):
+        sum_ratios += ratios[i]
+        split_indices[i + 1] = int(round(len(files) * (sum_ratios)))
+
+    files_dict = {}
+    for i in range(len(ratios)):
+        files_dict[sets_names[i]] = files[split_indices[i] : split_indices[i + 1]]
+
+    return files_dict
+
+
+def create_and_save_splitted_datasets(
+    rgb_folder_path: str | None,
+    chm_folder_path: str | None,
+    annotations_folder_path: str,
+    sets_ratios: Sequence[int | float],
+    sets_names: List[str],
+    save_path: str,
+    random_seed: int | None = None,
+) -> None:
+    files_dict = split_files_into_lists(
+        folder_path=annotations_folder_path,
+        sets_ratios=sets_ratios,
+        sets_names=sets_names,
+        random_seed=random_seed,
+    )
+    all_files_dict = {}
+    for set_name, set_files in files_dict.items():
+        all_files_dict[set_name] = []
+        for annotations_file in set_files:
+            new_dict = {"annotations": annotations_file}
+
+            if rgb_folder_path is not None:
+                rgb_file = annotations_file.replace(
+                    annotations_folder_path, rgb_folder_path
+                ).replace(".json", ".npy")
+                new_dict["rgb_cir"] = rgb_file
+
+            if chm_folder_path is not None:
+                chm_file = annotations_file.replace(
+                    annotations_folder_path, chm_folder_path
+                ).replace(".json", ".npy")
+                new_dict["chm"] = chm_file
+
+            all_files_dict[set_name].append(new_dict)
+
+    with open(save_path, "w") as f:
+        json.dump(all_files_dict, f)
+
+
+def load_tree_datasets_from_split(
+    data_split_file_path: str,
+    labels_to_index: Dict[str, int],
+    transform_spatial_training: A.Compose | None,
+    transform_pixel_rgb_training: A.Compose | None,
+    transform_pixel_chm_training: A.Compose | None,
+    labels_transformation_drop_rgb: Mapping[str, str | None],
+    labels_transformation_drop_chm: Mapping[str, str | None],
+    proba_drop_rgb: float = 0.0,
+    proba_drop_chm: float = 0.0,
+    dismissed_classes: List[str] = [],
+    no_data_new_value: float = -5.0,
+) -> Dict[str, TreeDataset]:
+    with open(data_split_file_path, "r") as f:
+        data_split = json.load(f)
+
+    tree_datasets = {}
+    tree_datasets["training"] = TreeDataset(
+        data_split["training"],
+        labels_to_index=labels_to_index,
+        proba_drop_rgb=proba_drop_rgb,
+        labels_transformation_drop_rgb=labels_transformation_drop_rgb,
+        proba_drop_chm=proba_drop_chm,
+        labels_transformation_drop_chm=labels_transformation_drop_chm,
+        dismissed_classes=dismissed_classes,
+        transform_spatial=transform_spatial_training,
+        transform_pixel_rgb=transform_pixel_rgb_training,
+        transform_pixel_chm=transform_pixel_chm_training,
+        no_data_new_value=no_data_new_value,
+    )
+
+    tree_datasets["validation"] = TreeDataset(
+        data_split["validation"],
+        labels_to_index=labels_to_index,
+        proba_drop_rgb=0.0,
+        labels_transformation_drop_rgb=labels_transformation_drop_rgb,
+        proba_drop_chm=0.0,
+        labels_transformation_drop_chm=labels_transformation_drop_chm,
+        dismissed_classes=dismissed_classes,
+        transform_spatial=None,
+        transform_pixel_rgb=None,
+        transform_pixel_chm=None,
+        no_data_new_value=no_data_new_value,
+    )
+
+    if "test" in data_split:
+        test_data = data_split["test"]
+    else:
+        test_data = data_split["validation"]
+
+    tree_datasets["test"] = TreeDataset(
+        test_data,
+        labels_to_index=labels_to_index,
+        proba_drop_rgb=0.0,
+        labels_transformation_drop_rgb=labels_transformation_drop_rgb,
+        proba_drop_chm=0.0,
+        labels_transformation_drop_chm=labels_transformation_drop_chm,
+        dismissed_classes=dismissed_classes,
+        transform_spatial=None,
+        transform_pixel_rgb=None,
+        transform_pixel_chm=None,
+        no_data_new_value=no_data_new_value,
+    )
+
+    return tree_datasets

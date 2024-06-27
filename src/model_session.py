@@ -23,7 +23,12 @@ from augmentations import (
 )
 from dataloaders import convert_ground_truth_from_tensors, initialize_dataloaders
 from dataset_constants import DatasetConst
-from datasets import compute_mean_and_std, normalize
+from datasets import (
+    compute_mean_and_std,
+    create_and_save_splitted_datasets,
+    load_tree_datasets_from_split,
+    normalize,
+)
 from geojson_conversions import open_geojson_feature_collection
 from layers import AMF_GD_YOLOv8
 from metrics import AP_Metrics, AP_Metrics_List
@@ -51,9 +56,7 @@ from preprocessing.rgb_cir import download_cir, download_rgb_image_from_polygon
 from training import (
     TrainingMetrics,
     TreeDataset,
-    create_and_save_splitted_datasets,
     evaluate_model,
-    load_tree_datasets_from_split,
     rgb_chm_usage_legend,
     rgb_chm_usage_postfix,
     train_and_validate,
