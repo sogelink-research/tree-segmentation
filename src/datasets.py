@@ -1,7 +1,9 @@
 import os
 import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
-from typing import Dict, List, Mapping, Tuple
+from math import ceil
+from typing import Callable, Dict, List, Mapping, Tuple, TypeVar
 
 import albumentations as A
 import numpy as np
@@ -48,6 +50,101 @@ class InvalidPathException(Exception):
         super().__init__(message)
 
 
+def generate_chunks(
+    shape: Tuple[int, ...], chunk_size: int, allow_modify_chunk_size: bool
+) -> Tuple[List[Tuple[int, ...]], List[int]]:
+    if allow_modify_chunk_size:
+        chunk_size = ceil(shape[0] / max(round(shape[0] / chunk_size), 1))
+
+    if len(shape) == 1:
+        return [(i,) for i in range(0, shape[0], chunk_size)], [chunk_size]
+
+    chunks = []
+    for i in range(0, shape[0], chunk_size):
+        prev_chunks, prev_chunk_sizes = generate_chunks(
+            shape[1:], chunk_size, allow_modify_chunk_size
+        )
+        for rest in prev_chunks:
+            chunks.append((i,) + rest)
+        chunk_sizes = [chunk_size]
+        chunk_sizes.extend(prev_chunk_sizes)
+    return (chunks, chunk_sizes)
+
+
+def generate_slices(
+    shape: Tuple[int, ...], chunk_size: int, allow_modify_chunk_size: bool
+) -> List[Tuple[slice, ...]]:
+    chunks, chunk_sizes = generate_chunks(
+        shape, chunk_size, allow_modify_chunk_size=allow_modify_chunk_size
+    )
+    slices = [
+        tuple(
+            slice(i, min(i + real_chunk_size, dim))
+            for i, dim, real_chunk_size in zip(chunk_indices, shape, chunk_sizes)
+        )
+        for chunk_indices in chunks
+    ]
+    return slices
+
+
+T = TypeVar("T")
+
+
+def apply_chunk(
+    method: Callable[[np.ndarray], T],
+    array: np.ndarray,
+    chunk_size: int = 1000,
+    allow_modify_chunk_size: bool = True,
+) -> List[T]:
+    results: List[T] = []
+
+    # Get slices
+    slices = generate_slices(
+        array.shape, chunk_size, allow_modify_chunk_size=allow_modify_chunk_size
+    )
+
+    # Compute method on all chunks
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(method, array[current_slice]) for current_slice in slices]
+        for future in as_completed(futures):
+            result = future.result()
+            results.append(result)
+
+    return results
+
+
+def quick_where_chunk(
+    array: np.ndarray,
+    old_value: float,
+    new_value: float,
+    in_place: bool,
+    chunk_size: int = 1000,
+    allow_modify_chunk_size: bool = True,
+) -> np.ndarray:
+    def process_chunk_where(chunk: np.ndarray):
+        chunk[:] = np.where(chunk == old_value, new_value, chunk)
+
+    # Get slices
+    slices = generate_slices(
+        array.shape, chunk_size, allow_modify_chunk_size=allow_modify_chunk_size
+    )
+
+    if not in_place:
+        array = np.copy(array)
+
+    # Compute method on all chunks
+    with ThreadPoolExecutor() as executor:
+        futures = [
+            executor.submit(process_chunk_where, array[current_slice]) for current_slice in slices
+        ]
+
+        # Wait for all tasks to complete
+        for future in as_completed(futures):
+            future.result()
+
+    return array
+
+
 def _compute_channels_mean_std_array(
     image: np.ndarray,
     per_channel: bool,
@@ -69,14 +166,47 @@ def _compute_channels_mean_std_array(
         True and (1,) otherwise. They contain respectively the mean value and the standard deviation.
     """
     if replace_no_data:
-        image = np.where(image == -9999, no_data_new_value, image)
+        quick_where_chunk(image, -9999, no_data_new_value, in_place=True)
     if len(image.shape) == 2:
         image = image[..., np.newaxis]
 
     axis = (0, 1) if per_channel else (0, 1, 2)
     dtype = image.dtype if np.issubdtype(image.dtype, np.floating) else np.float32
-    mean = np.mean(image.astype(dtype), axis=axis).reshape(-1)
-    std = np.std(image.astype(dtype), axis=axis).reshape(-1)
+
+    def compute_chunk_mean_std(image_chunk: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        image_chunk = image_chunk.astype(dtype)
+        return np.mean(image_chunk, axis=axis), np.std(image_chunk, axis=axis)
+
+    results = apply_chunk(compute_chunk_mean_std, image)
+    means = [result[0] for result in results]
+    stds = [result[1] for result in results]
+
+    # # Split image into chunks
+    # chunk_size = 1000
+    # chunks = [
+    #     (i, j)
+    #     for i in range(0, image.shape[0], chunk_size)
+    #     for j in range(0, image.shape[1], chunk_size)
+    # ]
+
+    # means = []
+    # stds = []
+
+    # # Compute means of all chunks
+    # with ThreadPoolExecutor() as executor:
+    #     futures = [
+    #         executor.submit(
+    #             compute_chunk_mean_std, image[i : i + chunk_size, j : j + chunk_size, :]
+    #         )
+    #         for i, j in chunks
+    #     ]
+    #     for future in as_completed(futures):
+    #         mean, std = future.result()
+    #         means.append(mean)
+    #         stds.append(std)
+
+    mean = np.mean(means, axis=0).reshape(-1)
+    std = np.mean(stds, axis=0).reshape(-1)
     return mean, std
 
 
@@ -191,7 +321,7 @@ def normalize(
         np.ndarray: the normalized image.
     """
     if replace_no_data:
-        image = np.where(image == -9999, no_data_new_value, image)
+        quick_where_chunk(image, -9999, no_data_new_value, in_place=True)
     if len(image.shape) == 2:
         image = image[..., np.newaxis]
 
