@@ -151,12 +151,15 @@ class DatasetParams:
         self._mean_chm = mean_chm
         self._std_chm = std_chm
 
-    def initialize(self) -> None:
+        if not self.use_chm:
+            self.chm_z_layers = None
+
         if self.agnostic:
             self.class_names = {0: self.class_names[0]}
 
         self.class_indices = {value: key for key, value in self.class_names.items()}
 
+    def initialize(self) -> None:
         if hasattr(self, "cropped_data_folder_path") and os.path.isdir(
             self.cropped_data_folder_path
         ):
@@ -208,22 +211,25 @@ class DatasetParams:
                 full_lidar_path = filter_full_lidar(self.image_data)
 
             # Compute the CHM slices
-            full_chm_slices_paths = [
-                get_full_chm_slice_path(
-                    self.image_data, self.resolution, self.filter_lidar, z_limits
+            if self.chm_z_layers is not None:
+                full_chm_slices_paths = [
+                    get_full_chm_slice_path(
+                        self.image_data, self.resolution, self.filter_lidar, z_limits
+                    )
+                    for z_limits in self.chm_z_layers
+                ]
+                full_chm_slices_folders_paths = list(map(os.path.dirname, full_chm_slices_paths))
+                for full_slice_folder_path in full_chm_slices_folders_paths:
+                    create_folder(full_slice_folder_path)
+                compute_slices_chm(
+                    laz_file_name=full_lidar_path,
+                    output_tif_paths=full_chm_slices_paths,
+                    resolution=self.resolution,
+                    z_limits_list=self.chm_z_layers,
+                    skip_if_file_exists=True,
                 )
-                for z_limits in self.chm_z_layers
-            ]
-            full_chm_slices_folders_paths = list(map(os.path.dirname, full_chm_slices_paths))
-            for full_slice_folder_path in full_chm_slices_folders_paths:
-                create_folder(full_slice_folder_path)
-            compute_slices_chm(
-                laz_file_name=full_lidar_path,
-                output_tif_paths=full_chm_slices_paths,
-                resolution=self.resolution,
-                z_limits_list=self.chm_z_layers,
-                skip_if_file_exists=True,
-            )
+            else:
+                raise Exception("self.chm_z_layers should not be None.")
 
             # Store the folder paths
             full_images_paths["chm"].extend(full_chm_slices_paths)
@@ -457,6 +463,14 @@ class TrainingData:
         self.training_params = training_params
 
     def initialize(self) -> None:
+        if not self.dataset_params.use_rgb and not self.dataset_params.use_cir:
+            self.training_params.proba_drop_rgb = 0.0
+            self.training_params.proba_drop_chm = 0.0
+
+        if not self.dataset_params.use_chm:
+            self.training_params.proba_drop_rgb = 0.0
+            self.training_params.proba_drop_chm = 0.0
+
         self.dataset_params.initialize()
         self.training_params.initialize()
         self._split_data(self.dataset_params.split_random_seed)
