@@ -143,6 +143,9 @@ class TrainingMetrics:
                 if interval[1] <= 0
                 else min(interval[1], self.last_epoch)
             )
+            x_margin = (end - start) * 0.05
+            x_extent_min = start - x_margin
+            x_extent_max = end + x_margin
 
             self._create_fig_num()
             fig = plt.figure(self.fig_num, figsize=figsize)
@@ -158,20 +161,25 @@ class TrainingMetrics:
                     values = category_dict["avgs"]
 
                     index_start = bisect.bisect_left(epochs, start)
-                    index_end = bisect.bisect_left(epochs, end)
-                    index_start_values = index_start - 1 if index_start > 0 else index_start
-                    # index_after_start = index_start if index_start < len(epochs) else None
-                    # index_before_end = index_end-1 if index_end > 0 else None
-                    index_end_values = index_end if index_end < len(epochs) else index_end - 1
+                    index_end = bisect.bisect_right(epochs, end) - 1
+                    index_start_values = bisect.bisect_left(epochs, x_extent_min)
+                    if index_start_values > 0:
+                        index_start_values -= 1
+                    index_end_values = bisect.bisect_right(epochs, x_extent_max) - 1
+                    if index_end_values < len(epochs) - 1:
+                        index_end_values += 1
 
                     cropped_metric_dict[category_name] = {}
-                    cropped_metric_dict["epochs"] = epochs[
+                    cropped_metric_dict[category_name]["epochs"] = epochs[
                         index_start_values : index_end_values + 1
                     ]
-                    cropped_metric_dict["avgs"] = values[index_start_values : index_end_values + 1]
+                    cropped_metric_dict[category_name]["avgs"] = values[
+                        index_start_values : index_end_values + 1
+                    ]
 
-                    y_extent_min = min(y_extent_min, min(values[index_start : index_end + 1]))
-                    y_extent_max = max(y_extent_max, max(values[index_start : index_end + 1]))
+                    if index_end > index_start:
+                        y_extent_min = min(y_extent_min, min(values[index_start : index_end + 1]))
+                        y_extent_max = max(y_extent_max, max(values[index_start : index_end + 1]))
 
                 # Plot the metrics
                 index = metrics_index[metric_name]
@@ -195,14 +203,15 @@ class TrainingMetrics:
                     )
 
                 ax.grid(alpha=0.5)
-                y_interval = (y_extent_max - y_extent_min) // 8
-                ax.set_xticks(np.arange(y_extent_min, y_extent_max + y_interval, y_interval))
+                if np.isfinite(y_extent_min) and np.isfinite(y_extent_max):
+                    y_margin = (y_extent_max - y_extent_min) * 0.05
+                    ax.set_ylim(y_extent_min - y_margin, y_extent_max + y_margin)
 
                 if index >= n_metrics - ncols:
                     ax.set_xlabel("Epoch")
                     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-                    x_interval = (start - end) // 9
-                    ax.set_xticks(range(start, end + x_interval, x_interval))
+
+                    ax.set_xlim(start - x_margin, end + x_margin)
                 else:
                     ax.tick_params(
                         axis="x", which="both", bottom=False, top=False, labelbottom=False
