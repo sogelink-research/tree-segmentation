@@ -1,3 +1,4 @@
+import bisect
 import json
 import os
 import random
@@ -16,6 +17,7 @@ import torch
 import torch.nn as nn
 from IPython import display
 from ipywidgets import Output
+from matplotlib.ticker import MaxNLocator
 from ultralytics.utils.tal import make_anchors
 
 from dataloaders import (
@@ -132,35 +134,58 @@ class TrainingMetrics:
         legend_space = 0.5
         figsize = (5 * ncols, 3.5 * nrows + legend_space)
         legend_y_position = legend_space / figsize[1]
+        ax0 = None
 
         for interval, save_path in zip(intervals, save_paths):
+            start = interval[0] if interval[0] >= 0 else max(0, self.last_epoch + interval[0])
+            end = (
+                self.last_epoch + interval[1]
+                if interval[1] <= 0
+                else min(interval[1], self.last_epoch)
+            )
+
             self._create_fig_num()
             fig = plt.figure(self.fig_num, figsize=figsize)
             plt.clf()
 
             for metric_name, metric_dict in self.metrics.items():
-                index = metrics_index[metric_name]
-                ax = fig.add_subplot(nrows, ncols, index + 1)
+                # Extract the values in the interval
+                cropped_metric_dict = {}
+                y_extent_min = np.inf
+                y_extent_max = -np.inf
                 for category_name, category_dict in metric_dict.items():
                     epochs = category_dict["epochs"]
                     values = category_dict["avgs"]
 
-                    # Remove the epochs before from_epoch
-                    start = (
-                        interval[0] if interval[0] >= 0 else max(0, self.last_epoch + interval[0])
-                    )
-                    end = (
-                        self.last_epoch + interval[1]
-                        if interval[1] <= 0
-                        else min(interval[1], self.last_epoch)
-                    )
-                    kept_indices = [i for i in range(len(epochs)) if start <= epochs[i] <= end]
-                    epochs = [epochs[i] for i in kept_indices]
-                    values = [values[i] for i in kept_indices]
+                    index_start = bisect.bisect_left(epochs, start)
+                    index_end = bisect.bisect_left(epochs, end)
+                    index_start_values = index_start - 1 if index_start > 0 else index_start
+                    # index_after_start = index_start if index_start < len(epochs) else None
+                    # index_before_end = index_end-1 if index_end > 0 else None
+                    index_end_values = index_end if index_end < len(epochs) else index_end - 1
 
+                    cropped_metric_dict[category_name] = {}
+                    cropped_metric_dict["epochs"] = epochs[
+                        index_start_values : index_end_values + 1
+                    ]
+                    cropped_metric_dict["avgs"] = values[index_start_values : index_end_values + 1]
+
+                    y_extent_min = min(y_extent_min, min(values[index_start : index_end + 1]))
+                    y_extent_max = max(y_extent_max, max(values[index_start : index_end + 1]))
+
+                # Plot the metrics
+                index = metrics_index[metric_name]
+                ax = fig.add_subplot(nrows, ncols, index + 1, sharex=ax0)
+                if ax0 is None:
+                    ax0 = ax
+                for category_name, category_dict in cropped_metric_dict.items():
+                    epochs = category_dict["epochs"]
+                    values = category_dict["avgs"]
+
+                    # Remove the epochs before from_epoch
                     epochs_length = max(epochs) - min(epochs) if len(epochs) > 0 else 0
 
-                    fmt = "-" if epochs_length > 25 else "-o"
+                    fmt = "-" if epochs_length > 15 else "-o"
                     ax.plot(
                         epochs,
                         values,
@@ -168,9 +193,16 @@ class TrainingMetrics:
                         color=categories_colors[category_name],
                         # label=category_name,
                     )
+
                 ax.grid(alpha=0.5)
+                y_interval = (y_extent_max - y_extent_min) // 8
+                ax.set_xticks(np.arange(y_extent_min, y_extent_max + y_interval, y_interval))
+
                 if index >= n_metrics - ncols:
                     ax.set_xlabel("Epoch")
+                    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                    x_interval = (start - end) // 9
+                    ax.set_xticks(range(start, end + x_interval, x_interval))
                 else:
                     ax.tick_params(
                         axis="x", which="both", bottom=False, top=False, labelbottom=False
