@@ -21,6 +21,7 @@ from box_cls import (
     box_pixels_to_coordinates,
     intersection_ratio,
 )
+from datasets import quick_merge_chunk
 from geojson_conversions import get_bbox_polygon
 from utils import (
     Folders,
@@ -625,21 +626,17 @@ def crop_image_array(
         remove_all_files_but(output_folder_path, files_to_keep)
 
 
-def merge_tif(
-    images_paths: List[str],
-    chm: bool,
-    temp_path: str,
-    output_path: Optional[str] = None,
-) -> np.ndarray:
+def merge_tif(images_paths: List[str], chm: bool, output_path: str, memmap: bool) -> np.ndarray:
     if len(images_paths) == 0:
         raise ValueError("images_paths is empty.")
 
-    available_output_types = [".tif", ".npy", None]
+    available_output_types = [".tif", ".npy"]
     output_type = None if output_path is None else os.path.splitext(output_path)[1]
     if output_type not in available_output_types:
         raise ValueError(f"Only these output types are supported: {available_output_types}")
 
-    start_time = time.process_time()
+    if output_type == ".tif" and memmap:
+        raise NotImplementedError("")
 
     # tifffile is quicker to just open the files
     images: List[np.ndarray] = []
@@ -647,34 +644,17 @@ def merge_tif(
         image = read_image(image_path, mode="c", chm=chm)
         images.append(image)
 
-    end_time = time.process_time()
-    print(f"Loading time: {(end_time - start_time)}")
-    start_time = time.process_time()
-
     # Stack images along a new axis to create a multi-channel image
-    channels = sum([image.shape[2] for image in images])
-    shape = (images[0].shape[0], images[0].shape[1], channels)
-    multi_channel_image = np.lib.format.open_memmap(
-        temp_path, mode="w+", shape=shape, dtype=images[0].dtype
-    )
-    first_channel = 0
-    for image in images:
-        last_channel = first_channel + image.shape[2]
-        multi_channel_image[:, :, first_channel:last_channel] = image
-        first_channel = last_channel
-
-    # multi_channel_image = np.concatenate(images, axis=2)
-
-    end_time = time.process_time()
-    print(f"Concat time: {(end_time - start_time)}")
-    start_time = time.process_time()
 
     if output_path is not None:
         if output_type == ".npy":
-            # Save the memory map
-            multi_channel_image = crop_dtype_type_precision_image(multi_channel_image)
-            write_image(multi_channel_image, chm=chm, save_path=output_path)
+            if memmap:
+                merged_array = quick_merge_chunk(images, memmap_save_path=output_path, axis=2)
+            else:
+                merged_array = quick_merge_chunk(images, axis=2)
+                write_image(merged_array, chm=chm, save_path=output_path)
         elif output_type == ".tif":
+            merged_array = quick_merge_chunk(images, axis=2)
             # Save the TIF
             with rasterio.open(images_paths[0]) as img:
                 crs = img.crs
@@ -684,20 +664,17 @@ def merge_tif(
                 output_path,
                 "w",
                 driver="GTiff",
-                height=multi_channel_image.shape[0],
-                width=multi_channel_image.shape[1],
-                count=multi_channel_image.shape[2],
-                dtype=multi_channel_image.dtype,
+                height=merged_array.shape[0],
+                width=merged_array.shape[1],
+                count=merged_array.shape[2],
+                dtype=merged_array.dtype,
                 crs=crs,
                 transform=transform,
             ) as dst:
-                for i in range(multi_channel_image.shape[2]):
-                    dst.write(multi_channel_image[:, :, i], i + 1)
+                for i in range(merged_array.shape[2]):
+                    dst.write(merged_array[:, :, i], i + 1)
 
-    end_time = time.process_time()
-    print(f"Write time: {(end_time - start_time)}")
-
-    return multi_channel_image
+    return merged_array
 
 
 def get_channels_count(folder_path: str, chm: bool) -> int:
