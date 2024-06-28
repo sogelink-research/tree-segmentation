@@ -7,8 +7,7 @@ import pickle
 import time
 import warnings
 from collections import defaultdict
-from itertools import product
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 import albumentations as A
 import geojson
@@ -27,7 +26,6 @@ from datasets import (
     compute_mean_and_std,
     create_and_save_splitted_datasets,
     load_tree_datasets_from_split,
-    normalize,
     quick_normalize_chunk,
 )
 from geojson_conversions import open_geojson_feature_collection
@@ -70,6 +68,7 @@ from utils import (
     create_random_temp_folder,
     import_tqdm,
     remove_folder,
+    running_message,
 )
 
 
@@ -85,32 +84,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     return parser
-
-
-def running_message(start_message: Optional[str] = None, end_message: Optional[str] = None):
-    def decorator(func: Callable):
-        def wrapper(*args, **kwargs):
-            # Set default messages if not provided
-            start_msg = (
-                start_message if start_message is not None else f"Running {func.__name__}..."
-            )
-            start_msg = " -> " + start_msg
-            end_msg = end_message if end_message is not None else "Done."
-
-            # Print the start message
-            print(start_msg, flush=True)
-
-            # Execute the function
-            result = func(*args, **kwargs)
-
-            # Print the end message
-            print(end_msg, flush=True)
-
-            return result
-
-        return wrapper
-
-    return decorator
 
 
 class DatasetParams:
@@ -147,10 +120,10 @@ class DatasetParams:
         self.split_random_seed = split_random_seed
         self.no_data_new_value = no_data_new_value
         self.filter_lidar = filter_lidar
-        self._mean_rgb_cir = mean_rgb_cir
-        self._std_rgb_cir = std_rgb_cir
-        self._mean_chm = mean_chm
-        self._std_chm = std_chm
+        self.mean_rgb_cir = mean_rgb_cir
+        self.std_rgb_cir = std_rgb_cir
+        self.mean_chm = mean_chm
+        self.std_chm = std_chm
 
         if not self.use_chm:
             self.chm_z_layers = None
@@ -167,7 +140,8 @@ class DatasetParams:
             return
 
         full_images_paths, annotations = self._download_data()
-        self._merge_and_crop_data(full_images_paths, annotations)
+        # self._merge_and_crop_data(full_images_paths, annotations)
+        self._preprocess_all_data(full_images_paths, annotations)
 
         if self.cropped_rgb_cir_folder_path is None:
             self.channels_rgb = 0
@@ -252,100 +226,31 @@ class DatasetParams:
 
         return full_images_paths, annotations
 
-    def _init_mean_std(
-        self,
-        image_file_path_or_tensor: str | np.ndarray,
-        mean: np.ndarray | None,
-        std: np.ndarray | None,
-        chm: bool,
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        if type(mean) != type(std):
-            raise ValueError(
-                f"You should either specify mean and std or none of them. Here we have type(mean)={type(mean)} and type(std)={type(std)}."
-            )
+    # def _init_mean_std(
+    #     self,
+    #     image_file_path_or_tensor: str | np.ndarray,
+    #     mean: np.ndarray | None,
+    #     std: np.ndarray | None,
+    #     chm: bool,
+    # ) -> Tuple[np.ndarray, np.ndarray]:
+    #     if type(mean) != type(std):
+    #         raise ValueError(
+    #             f"You should either specify mean and std or none of them. Here we have type(mean)={type(mean)} and type(std)={type(std)}."
+    #         )
 
-        per_channel = not chm
-        replace_no_data = chm
+    #     per_channel = not chm
+    #     replace_no_data = chm
 
-        # Compute mean and std if they are missing
-        if not isinstance(mean, np.ndarray) or not isinstance(std, np.ndarray):
-            mean, std = compute_mean_and_std(
-                image_file_path_or_tensor,
-                per_channel=per_channel,
-                replace_no_data=replace_no_data,
-            )
-        return mean, std
+    #     # Compute mean and std if they are missing
+    #     if not isinstance(mean, np.ndarray) or not isinstance(std, np.ndarray):
+    #         mean, std = compute_mean_and_std(
+    #             image_file_path_or_tensor,
+    #             per_channel=per_channel,
+    #             replace_no_data=replace_no_data,
+    #         )
+    #     return mean, std
 
-    def _merge_and_crop_data(
-        self, full_images_paths: Dict[str, List[str]], annotations: geojson.FeatureCollection
-    ):
-        start_p_time = time.process_time()
-        start_time = time.time()
-        # Merge full images
-        temp_folder = create_random_temp_folder()
-        if self.use_rgb or self.use_cir:
-            temp_path = os.path.join(temp_folder, "rgb_cir.npy")
-            full_merged_rgb_cir = merge_tif(
-                full_images_paths["rgb_cir"], chm=False, output_path=temp_path, memmap=True
-            )
-        if self.use_chm:
-            temp_path = os.path.join(temp_folder, "chm.npy")
-            full_merged_chm = merge_tif(
-                full_images_paths["chm"], chm=True, output_path=temp_path, memmap=True
-            )
-
-        end_p_time = time.process_time()
-        print(f"{'Merge P time':<20}: {end_p_time - start_p_time:.6f} seconds")
-        start_p_time = time.process_time()
-        end_time = time.time()
-        print(f"{'Merge time':<20}: {end_time - start_time:.6f} seconds")
-        start_time = time.time()
-
-        # Compute mean and std of the full images
-        if self.use_rgb or self.use_cir:
-            self.mean_rgb_cir, self.std_rgb_cir = self._init_mean_std(
-                full_merged_rgb_cir, self._mean_rgb_cir, self._std_rgb_cir, chm=False
-            )
-            self._mean_rgb_cir, self._std_rgb_cir = self.mean_rgb_cir, self.std_rgb_cir
-        if self.use_chm:
-            self.mean_chm, self.std_chm = self._init_mean_std(
-                full_merged_chm, self._mean_chm, self._std_chm, chm=True
-            )
-            self._mean_chm, self._std_chm = self.mean_chm, self.std_chm
-
-        end_p_time = time.process_time()
-        print(f"{'Mean and std P time':<20}: {end_p_time - start_p_time:.6f} seconds")
-        start_p_time = time.process_time()
-        end_time = time.time()
-        print(f"{'Mean and std time':<20}: {end_time - start_time:.6f} seconds")
-        start_time = time.time()
-
-        # Normalize the full images
-        if self.use_rgb or self.use_cir:
-            quick_normalize_chunk(
-                full_merged_rgb_cir,
-                mean=self.mean_rgb_cir,
-                std=self.std_rgb_cir,
-                replace_no_data=False,
-                in_place=True,
-            )
-        if self.use_chm:
-            quick_normalize_chunk(
-                full_merged_chm,
-                mean=self.mean_chm,
-                std=self.std_chm,
-                replace_no_data=True,
-                no_data_new_value=self.no_data_new_value,
-                in_place=True,
-            )
-
-        end_p_time = time.process_time()
-        print(f"{'Normalize P time':<20}: {end_p_time - start_p_time:.6f} seconds")
-        start_p_time = time.process_time()
-        end_time = time.time()
-        print(f"{'Normalize time':<20}: {end_time - start_time:.6f} seconds")
-        start_time = time.time()
-
+    def _preprocess_annotations(self, annotations: geojson.FeatureCollection):
         # Create the cropped data folder path
         self.cropped_data_folder_path = create_random_temp_folder()
 
@@ -376,53 +281,267 @@ class DatasetParams:
             clear_if_not_empty=True,
         )
 
-        end_p_time = time.process_time()
-        print(f"{'Crop annots P time':<20}: {end_p_time - start_p_time:.6f} seconds")
-        start_p_time = time.process_time()
-        end_time = time.time()
-        print(f"{'Crop annots time':<20}: {end_time - start_time:.6f} seconds")
+    def _preprocess_images(
+        self, full_images_paths: List[str], chm: bool, specific_cropped_folder_path: str
+    ):
         start_time = time.time()
 
-        # Crop RGB/CIR images
+        # Merge files
+        temp_folder = create_random_temp_folder()
+        temp_path = os.path.join(temp_folder, "temp.npy")
+        full_merged = merge_tif(full_images_paths, chm=False, output_path=temp_path, memmap=True)
+
+        end_time = time.time()
+        print(f"{'Merge time':<20}: {end_time - start_time:.6f} seconds")
+        start_time = time.time()
+
+        # Compute mean and std
+        if chm:
+            mean, std = self.mean_chm, self.std_chm
+        else:
+            mean, std = self.mean_rgb_cir, self.std_rgb_cir
+
+        per_channel = not chm
+        replace_no_data = chm
+        if not isinstance(mean, np.ndarray) or not isinstance(std, np.ndarray):
+            mean, std = compute_mean_and_std(
+                full_merged,
+                per_channel=per_channel,
+                replace_no_data=replace_no_data,
+            )
+
+        # Store mean and std
+        if chm:
+            self.mean_chm, self.std_chm = mean, std
+        else:
+            self.mean_rgb_cir, self.std_rgb_cir = mean, std
+
+        end_time = time.time()
+        print(f"{'Mean std time':<20}: {end_time - start_time:.6f} seconds")
+        start_time = time.time()
+
+        # Normalize
+        quick_normalize_chunk(
+            full_merged,
+            mean=mean,
+            std=std,
+            replace_no_data=replace_no_data,
+            in_place=True,
+        )
+
+        end_time = time.time()
+        print(f"{'Normalize time':<20}: {end_time - start_time:.6f} seconds")
+        start_time = time.time()
+
+        # Crop the images
+        crop_image_array(
+            self.cropped_annotations_folder_path,
+            full_merged,
+            chm=chm,
+            output_folder_path=specific_cropped_folder_path,
+            clear_if_not_empty=False,
+            remove_unused=True,
+        )
+
+        end_time = time.time()
+        print(f"{'Crop time':<20}: {end_time - start_time:.6f} seconds")
+        start_time = time.time()
+
+        # Remove temporary folder
+        del full_merged
+        remove_folder(temp_folder)
+
+    def _preprocess_all_data(
+        self, full_images_paths: Dict[str, List[str]], annotations: geojson.FeatureCollection
+    ):
+        self._preprocess_annotations(annotations)
+
+        output_image_prefix = self.image_data.base_name
         if self.use_rgb or self.use_cir:
+            if self.use_rgb:
+                if self.use_cir:
+                    message = "RGB and CIR"
+                else:
+                    message = "RGB"
+            else:
+                message = "CIR"
+
             self.cropped_rgb_cir_folder_path = os.path.join(
                 self.cropped_data_folder_path, "rgb_cir", output_image_prefix
             )
-            crop_image_array(
-                self.cropped_annotations_folder_path,
-                full_merged_rgb_cir,
-                chm=False,
-                output_folder_path=self.cropped_rgb_cir_folder_path,
-                clear_if_not_empty=False,
-                remove_unused=True,
-            )
-        else:
-            self.cropped_rgb_cir_folder_path = None
 
-        # Crop CHM images
+            @running_message(f"Pre-processing {message} data...")
+            def _preprocess_images_rgb_cir():
+                self._preprocess_images(
+                    full_images_paths["rgb_cir"],
+                    chm=False,
+                    specific_cropped_folder_path=self.cropped_rgb_cir_folder_path,
+                )
+
+            _preprocess_images_rgb_cir()
+
         if self.use_chm:
             self.cropped_chm_folder_path = os.path.join(
                 self.cropped_data_folder_path, "chm", output_image_prefix
             )
-            crop_image_array(
-                self.cropped_annotations_folder_path,
-                full_merged_chm,
-                chm=True,
-                output_folder_path=self.cropped_chm_folder_path,
-                clear_if_not_empty=False,
-                remove_unused=True,
-            )
-        else:
-            self.cropped_chm_folder_path = None
 
-        end_p_time = time.process_time()
-        print(f"{'Crop images P time':<20}: {end_p_time - start_p_time:.6f} seconds")
-        start_p_time = time.process_time()
-        end_time = time.time()
-        print(f"{'Crop images time':<20}: {end_time - start_time:.6f} seconds")
-        start_time = time.time()
+            @running_message("Pre-processing CHM data...")
+            def _preprocess_images_chm():
+                self._preprocess_images(
+                    full_images_paths["chm"],
+                    chm=True,
+                    specific_cropped_folder_path=self.cropped_chm_folder_path,
+                )
 
-        remove_folder(temp_folder)
+            _preprocess_images_chm()
+
+    # def _merge_and_crop_data(
+    #     self, full_images_paths: Dict[str, List[str]], annotations: geojson.FeatureCollection
+    # ):
+    #     start_p_time = time.process_time()
+    #     start_time = time.time()
+    #     # Merge full images
+    #     temp_folder = create_random_temp_folder()
+    #     if self.use_rgb or self.use_cir:
+    #         temp_path = os.path.join(temp_folder, "rgb_cir.npy")
+    #         full_merged_rgb_cir = merge_tif(
+    #             full_images_paths["rgb_cir"], chm=False, output_path=temp_path, memmap=True
+    #         )
+    #     if self.use_chm:
+    #         temp_path = os.path.join(temp_folder, "chm.npy")
+    #         full_merged_chm = merge_tif(
+    #             full_images_paths["chm"], chm=True, output_path=temp_path, memmap=True
+    #         )
+
+    #     end_p_time = time.process_time()
+    #     print(f"{'Merge P time':<20}: {end_p_time - start_p_time:.6f} seconds")
+    #     start_p_time = time.process_time()
+    #     end_time = time.time()
+    #     print(f"{'Merge time':<20}: {end_time - start_time:.6f} seconds")
+    #     start_time = time.time()
+
+    #     # Compute mean and std of the full images
+    #     if self.use_rgb or self.use_cir:
+    #         self.mean_rgb_cir, self.std_rgb_cir = self._init_mean_std(
+    #             full_merged_rgb_cir, self._mean_rgb_cir, self._std_rgb_cir, chm=False
+    #         )
+    #         self._mean_rgb_cir, self._std_rgb_cir = self.mean_rgb_cir, self.std_rgb_cir
+    #     if self.use_chm:
+    #         self.mean_chm, self.std_chm = self._init_mean_std(
+    #             full_merged_chm, self._mean_chm, self._std_chm, chm=True
+    #         )
+    #         self._mean_chm, self._std_chm = self.mean_chm, self.std_chm
+
+    #     end_p_time = time.process_time()
+    #     print(f"{'Mean and std P time':<20}: {end_p_time - start_p_time:.6f} seconds")
+    #     start_p_time = time.process_time()
+    #     end_time = time.time()
+    #     print(f"{'Mean and std time':<20}: {end_time - start_time:.6f} seconds")
+    #     start_time = time.time()
+
+    #     # Normalize the full images
+    #     if self.use_rgb or self.use_cir:
+    #         quick_normalize_chunk(
+    #             full_merged_rgb_cir,
+    #             mean=self.mean_rgb_cir,
+    #             std=self.std_rgb_cir,
+    #             replace_no_data=False,
+    #             in_place=True,
+    #         )
+    #     if self.use_chm:
+    #         quick_normalize_chunk(
+    #             full_merged_chm,
+    #             mean=self.mean_chm,
+    #             std=self.std_chm,
+    #             replace_no_data=True,
+    #             no_data_new_value=self.no_data_new_value,
+    #             in_place=True,
+    #         )
+
+    #     end_p_time = time.process_time()
+    #     print(f"{'Normalize P time':<20}: {end_p_time - start_p_time:.6f} seconds")
+    #     start_p_time = time.process_time()
+    #     end_time = time.time()
+    #     print(f"{'Normalize time':<20}: {end_time - start_time:.6f} seconds")
+    #     start_time = time.time()
+
+    #     # Create the cropped data folder path
+    #     self.cropped_data_folder_path = create_random_temp_folder()
+
+    #     # Get tiles
+    #     cropping_limits_x, cropping_limits_y = get_cropping_limits(
+    #         self.full_image_path_tif, self.tile_size, self.tile_overlap
+    #     )
+
+    #     # Crop annotations into tiles
+    #     visibility_threshold = 0.2
+    #     annots_repartition = find_annots_repartition(
+    #         cropping_limits_x, cropping_limits_y, annotations, self.image_data, visibility_threshold
+    #     )
+    #     crop_annots_into_limits(annots_repartition)
+    #     annots_coordinates_to_local(annots_repartition)
+    #     if self.agnostic:
+    #         make_annots_agnostic(annots_repartition, self.class_names[0])
+
+    #     # Save cropped annotations
+    #     output_image_prefix = self.image_data.base_name
+    #     self.cropped_annotations_folder_path = os.path.join(
+    #         self.cropped_data_folder_path, "annotations", output_image_prefix
+    #     )
+    #     save_annots_per_image(
+    #         annots_repartition,
+    #         self.cropped_annotations_folder_path,
+    #         self.full_image_path_tif,
+    #         clear_if_not_empty=True,
+    #     )
+
+    #     end_p_time = time.process_time()
+    #     print(f"{'Crop annots P time':<20}: {end_p_time - start_p_time:.6f} seconds")
+    #     start_p_time = time.process_time()
+    #     end_time = time.time()
+    #     print(f"{'Crop annots time':<20}: {end_time - start_time:.6f} seconds")
+    #     start_time = time.time()
+
+    #     # Crop RGB/CIR images
+    #     if self.use_rgb or self.use_cir:
+    #         self.cropped_rgb_cir_folder_path = os.path.join(
+    #             self.cropped_data_folder_path, "rgb_cir", output_image_prefix
+    #         )
+    #         crop_image_array(
+    #             self.cropped_annotations_folder_path,
+    #             full_merged_rgb_cir,
+    #             chm=False,
+    #             output_folder_path=self.cropped_rgb_cir_folder_path,
+    #             clear_if_not_empty=False,
+    #             remove_unused=True,
+    #         )
+    #     else:
+    #         self.cropped_rgb_cir_folder_path = None
+
+    #     # Crop CHM images
+    #     if self.use_chm:
+    #         self.cropped_chm_folder_path = os.path.join(
+    #             self.cropped_data_folder_path, "chm", output_image_prefix
+    #         )
+    #         crop_image_array(
+    #             self.cropped_annotations_folder_path,
+    #             full_merged_chm,
+    #             chm=True,
+    #             output_folder_path=self.cropped_chm_folder_path,
+    #             clear_if_not_empty=False,
+    #             remove_unused=True,
+    #         )
+    #     else:
+    #         self.cropped_chm_folder_path = None
+
+    #     end_p_time = time.process_time()
+    #     print(f"{'Crop images P time':<20}: {end_p_time - start_p_time:.6f} seconds")
+    #     start_p_time = time.process_time()
+    #     end_time = time.time()
+    #     print(f"{'Crop images time':<20}: {end_time - start_time:.6f} seconds")
+    #     start_time = time.time()
+
+    #     remove_folder(temp_folder)
 
     def close(self):
         remove_folder(self.cropped_data_folder_path)
@@ -728,10 +847,10 @@ class ModelSession:
             "chm_z_layers": self.training_data.dataset_params.chm_z_layers,
             "class_names": self.training_data.dataset_params.class_names,
             "filter_lidar": self.training_data.dataset_params.filter_lidar,
-            "mean_rgb_cir": self.training_data.dataset_params._mean_rgb_cir,
-            "mean_chm": self.training_data.dataset_params._mean_chm,
-            "std_rgb_cir": self.training_data.dataset_params._std_rgb_cir,
-            "std_chm": self.training_data.dataset_params._std_chm,
+            "mean_rgb_cir": self.training_data.dataset_params.mean_rgb_cir,
+            "mean_chm": self.training_data.dataset_params.mean_chm,
+            "std_rgb_cir": self.training_data.dataset_params.std_rgb_cir,
+            "std_chm": self.training_data.dataset_params.std_chm,
             "no_data_new_value": self.training_data.dataset_params.no_data_new_value,
             "resolution": self.training_data.dataset_params.resolution,
             "split_random_seed": self.training_data.dataset_params.split_random_seed,

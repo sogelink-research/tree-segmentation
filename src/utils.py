@@ -8,7 +8,7 @@ import time
 import warnings
 from collections.abc import Sequence
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import tifffile
@@ -175,17 +175,32 @@ def download_file(url: str, save_path: str, no_ssl: bool = False, verbose: bool 
             print(f"Failed to download file from '{url}'. Status code: {response.status_code}")
 
 
-def measure_execution_time(func):
-    def wrapper(*args, **kwargs):
-        print(f"Running {func.__name__}...", end=" ", flush=True)
-        start_time = time.time()
-        result = func(*args, **kwargs)
-        end_time = time.time()
-        execution_time = end_time - start_time
-        print(f"Execution time: {execution_time:.4f} seconds")
-        return result
+def running_message(start_message: Optional[str] = None, end_message: Optional[str] = None):
+    def decorator(func: Callable):
+        def wrapper(*args, **kwargs):
+            # Set default messages if not provided
+            start_msg = (
+                start_message if start_message is not None else f"Running {func.__name__}..."
+            )
+            start_msg = " -> " + start_msg
+            end_msg = end_message if end_message is not None else "Done in {:.5f} seconds."
 
-    return wrapper
+            # Print the start message
+            print(start_msg, flush=True)
+
+            # Execute the function
+            start_time = time.time()
+            result = func(*args, **kwargs)
+            exec_time = time.time() - start_time
+
+            # Print the end message
+            print(end_msg.format(exec_time), flush=True)
+
+            return result
+
+        return wrapper
+
+    return decorator
 
 
 def get_file_base_name(file_path: str) -> str:

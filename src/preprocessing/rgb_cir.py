@@ -25,7 +25,7 @@ from utils import (
     get_coordinates_bbox_from_full_image_file_name,
     get_file_base_name,
     import_tqdm,
-    measure_execution_time,
+    running_message,
 )
 
 
@@ -236,7 +236,7 @@ def download_rgb_image_from_polygon(polygon: geojson.Polygon, verbose: bool = Tr
     return images_paths
 
 
-@measure_execution_time
+@running_message("Downloading Infrared data...")
 def download_cir(
     image_coords_box: Box,
     resolution: float,

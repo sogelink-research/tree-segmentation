@@ -13,8 +13,8 @@ from utils import (
     Folders,
     ImageData,
     create_random_temp_folder,
-    measure_execution_time,
     remove_folder,
+    running_message,
 )
 
 
@@ -221,7 +221,7 @@ def compute_chm(
         print(f"CHM calculation completed and saved to {output_tif_name}.")
 
 
-@measure_execution_time
+@running_message("Creating point cloud with flat ground...")
 def compute_laz_minus_ground_height(laz_file_name: str, verbose: bool = False):
     if verbose:
         print("Subtract ground height to point cloud... ", end="", flush=True)
@@ -251,7 +251,7 @@ def compute_laz_minus_ground_height(laz_file_name: str, verbose: bool = False):
     return output_laz_name
 
 
-@measure_execution_time
+@running_message("Creating point cloud with flat ground...")
 def compute_laz_minus_ground_height_with_dtm(
     laz_file_name: str, output_laz_name: str, dtm_file_name: str, verbose: bool = False
 ):
@@ -276,7 +276,7 @@ def compute_laz_minus_ground_height_with_dtm(
     return output_laz_name
 
 
-@measure_execution_time
+@running_message("Creating Digital Terrain Model...")
 def compute_full_dtm(
     las_file_name: str,
     output_tif_name: str,
@@ -474,7 +474,7 @@ def compute_slice_chm_from_hag_laz(
     pipeline.execute()
 
 
-@measure_execution_time
+@running_message("Creating slices of Canopy Height Model...")
 def compute_slices_chm(
     laz_file_name: str,
     output_tif_paths: List[str],

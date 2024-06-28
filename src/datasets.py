@@ -173,6 +173,7 @@ def quick_merge_chunk(
             last_channel = first_channel + array.shape[axis]
             slice_object = tuple(list(array_slice) + [slice(first_channel, last_channel)])
             merged_array[slice_object] = array[array_slice]
+            first_channel = last_channel
 
     # Get slices
     slices = generate_slices(
