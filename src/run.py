@@ -63,6 +63,8 @@ def main():
         "use_rgb": [True, False],
         "use_cir": [True, False],
         "use_chm": [True, False],
+        "lr": [1e-2, 3e-3, 1e-3],
+        "model_size": ["n", "s"],
     }
 
     forget_combinations = [
@@ -88,24 +90,15 @@ def main():
         )
     ]
 
-    # for combination in filtered_combinations:
-    #     # Training session
-    #     model_training_session = ModelTrainingSession(**combination)
-    #     model_training_session.train()
-    #     model_training_session.close()
+    for combination in filtered_combinations:
+        # Training session
+        model_training_session = ModelTrainingSession(**combination)
+        model_training_session.train()
+        model_training_session.close()
 
-    # args = {
-    #     "use_rgb": False,
-    #     "use_cir": False,
-    #     "use_chm": True,
-    # }
-    # model_training_session = ModelTrainingSession(**args)
-    # model_training_session.train()
+    # model_training_session = ModelSession.from_name("trained_model_1000ep_8")
+    # model_training_session.compute_metrics()
     # model_training_session.close()
-
-    model_training_session = ModelSession.from_name("trained_model_1000ep_8")
-    model_training_session.compute_metrics()
-    model_training_session.close()
 
 
 if __name__ == "__main__":
