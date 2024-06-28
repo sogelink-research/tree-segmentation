@@ -378,7 +378,7 @@ class AMF_GD_YOLOv8(nn.Module):
         name: str,
         scale: str = "n",
         r: int = 16,
-        loss_weights: Dict[str, float] = {"box": 20, "cls": 1, "dfl": 10},
+        loss_weights: Dict[str, float] = {"box": 20, "cls": 1, "dfl": 4},
         gd_config_file: Optional[str] = None,
     ) -> None:
         super().__init__()

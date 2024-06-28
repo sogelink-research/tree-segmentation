@@ -49,7 +49,11 @@ def get_transform_pixel_rgb(channels: int):
             A.GaussNoise(p=0.5),
             A.Emboss(p=0.5),
             A.RandomBrightnessContrast(p=1.0),
-            A.ChannelDropout(channel_drop_range=(1, channels - 1), p=0.5),
+            (
+                A.ChannelDropout(channel_drop_range=(1, channels - 1), p=0.5)
+                if channels > 1
+                else A.NoOp()
+            ),
         ],
     )
     return transform_pixel_rgb
