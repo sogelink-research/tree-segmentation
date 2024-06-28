@@ -332,6 +332,7 @@ class DatasetParams:
         end_time = time.time()
         print(f"{'Normalize time':<20}: {end_time - start_time:.6f} seconds")
         start_time = time.time()
+        start_p_time = time.process_time()
 
         # Crop the images
         crop_image_array(
@@ -342,6 +343,9 @@ class DatasetParams:
             clear_if_not_empty=False,
             remove_unused=True,
         )
+
+        end_p_time = time.process_time()
+        print(f"{'Crop P time':<20}: {end_p_time - start_p_time:.6f} seconds")
 
         end_time = time.time()
         print(f"{'Crop time':<20}: {end_time - start_time:.6f} seconds")
@@ -357,7 +361,15 @@ class DatasetParams:
         self._preprocess_annotations(annotations)
 
         output_image_prefix = self.image_data.base_name
+
         if self.use_rgb or self.use_cir:
+            self.cropped_rgb_cir_folder_path = os.path.join(
+                self.cropped_data_folder_path, "rgb_cir", output_image_prefix
+            )
+        else:
+            self.cropped_rgb_cir_folder_path = None
+
+        if self.cropped_rgb_cir_folder_path is not None:
             if self.use_rgb:
                 if self.use_cir:
                     message = "RGB and CIR"
@@ -366,34 +378,40 @@ class DatasetParams:
             else:
                 message = "CIR"
 
-            self.cropped_rgb_cir_folder_path = os.path.join(
-                self.cropped_data_folder_path, "rgb_cir", output_image_prefix
-            )
-
             @running_message(f"Pre-processing {message} data...")
-            def _preprocess_images_rgb_cir():
+            def _preprocess_images_rgb_cir(
+                full_images_paths: List[str], cropped_rgb_cir_folder_path: str
+            ):
                 self._preprocess_images(
-                    full_images_paths["rgb_cir"],
+                    full_images_paths,
                     chm=False,
-                    specific_cropped_folder_path=self.cropped_rgb_cir_folder_path,
+                    specific_cropped_folder_path=cropped_rgb_cir_folder_path,
                 )
 
-            _preprocess_images_rgb_cir()
+            _preprocess_images_rgb_cir(
+                full_images_paths["rgb_cir"], self.cropped_rgb_cir_folder_path
+            )
 
         if self.use_chm:
             self.cropped_chm_folder_path = os.path.join(
                 self.cropped_data_folder_path, "chm", output_image_prefix
             )
+        else:
+            self.cropped_chm_folder_path = None
+
+        if self.cropped_chm_folder_path is not None:
 
             @running_message("Pre-processing CHM data...")
-            def _preprocess_images_chm():
+            def _preprocess_images_chm(full_images_paths: List[str], cropped_chm_folder_path: str):
                 self._preprocess_images(
-                    full_images_paths["chm"],
+                    full_images_paths,
                     chm=True,
-                    specific_cropped_folder_path=self.cropped_chm_folder_path,
+                    specific_cropped_folder_path=cropped_chm_folder_path,
                 )
 
-            _preprocess_images_chm()
+            _preprocess_images_chm(full_images_paths["chm"], self.cropped_chm_folder_path)
+        else:
+            self.cropped_chm_folder_path = None
 
     # def _merge_and_crop_data(
     #     self, full_images_paths: Dict[str, List[str]], annotations: geojson.FeatureCollection
