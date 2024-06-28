@@ -28,6 +28,7 @@ from datasets import (
     create_and_save_splitted_datasets,
     load_tree_datasets_from_split,
     normalize,
+    quick_normalize_chunk,
 )
 from geojson_conversions import open_geojson_feature_collection
 from layers import AMF_GD_YOLOv8
@@ -321,19 +322,21 @@ class DatasetParams:
 
         # Normalize the full images
         if self.use_rgb or self.use_cir:
-            full_merged_rgb_cir = normalize(
+            quick_normalize_chunk(
                 full_merged_rgb_cir,
                 mean=self.mean_rgb_cir,
                 std=self.std_rgb_cir,
                 replace_no_data=False,
+                in_place=True,
             )
         if self.use_chm:
-            full_merged_chm = normalize(
+            quick_normalize_chunk(
                 full_merged_chm,
                 mean=self.mean_chm,
                 std=self.std_chm,
                 replace_no_data=True,
                 no_data_new_value=self.no_data_new_value,
+                in_place=True,
             )
 
         end_p_time = time.process_time()
@@ -428,6 +431,7 @@ class DatasetParams:
 class TrainingParams:
     def __init__(
         self,
+        model_size: str,
         lr: float,
         epochs: int,
         batch_size: int,
@@ -440,6 +444,7 @@ class TrainingParams:
         transform_pixel_rgb_training: A.Compose | None = None,
         transform_pixel_chm_training: A.Compose | None = None,
     ) -> None:
+        self.model_size = model_size
         self.lr = lr
         self.epochs = epochs
         self.batch_size = batch_size
@@ -451,6 +456,12 @@ class TrainingParams:
         self.transform_spatial_training = transform_spatial_training
         self.transform_pixel_rgb_training = transform_pixel_rgb_training
         self.transform_pixel_chm_training = transform_pixel_chm_training
+
+        available_model_sizes = ["n", "s", "m", "l"]
+        if model_size not in available_model_sizes:
+            raise ValueError(
+                f"The model size {self.model_size} is not in the available model sizes ({available_model_sizes})"
+            )
 
     def initialize(self) -> None:
         pass
@@ -548,7 +559,7 @@ class ModelSession:
             class_names=self.training_data.dataset_params.class_names,
             device=self.device,
             name=self.model_name,
-            scale="n",
+            scale=self.training_data.training_params.model_size,
         )
         if os.path.isfile(self.model_path):
             print("Loading the weights...")
@@ -730,6 +741,7 @@ class ModelSession:
             "batch_size": self.training_data.training_params.batch_size,
             "epochs": self.training_data.training_params.epochs,
             "lr": self.training_data.training_params.lr,
+            "model_size": self.training_data.training_params.model_size,
             "no_improvement_stop_epochs": self.training_data.training_params.no_improvement_stop_epochs,
             "num_workers": self.training_data.training_params.num_workers,
             "proba_drop_chm": self.training_data.training_params.proba_drop_chm,

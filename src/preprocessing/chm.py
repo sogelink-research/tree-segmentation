@@ -522,11 +522,13 @@ def get_full_chm_slice_path(
     image_data: ImageData, resolution: float, filtered: bool, z_limits: Tuple[float, float]
 ):
     filtering_str = "filtered" if filtered else "unfiltered"
+    low_limit = str(round(z_limits[0], 1)).replace("-", "M").replace(".", "p")
+    high_limit = str(round(z_limits[1], 1)).replace("-", "M").replace(".", "p")
     full_chm_slice_path = os.path.join(
         Folders.CHM.value,
         f"{round(resolution*100)}cm",
         filtering_str,
-        f"{round(z_limits[0], 1)}_{round(z_limits[1], 1)}",
+        f"{low_limit}_{high_limit}",
         "full",
         f"{image_data.coord_name}.tif",
     )

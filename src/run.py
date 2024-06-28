@@ -18,6 +18,7 @@ class ModelTrainingSession(ModelSession):
         chm_z_layers: Optional[Sequence[Tuple[float, float]]] = None,
         annotations_file_name: str = "122000_484000.geojson",
         agnostic: bool = False,
+        model_size: str = "n",
         lr: float = 1e-2,
         epochs: int = 1000,
         batch_size: int = 10,
@@ -42,6 +43,7 @@ class ModelTrainingSession(ModelSession):
             agnostic=agnostic,
         )
         training_params = TrainingParams(
+            model_size=model_size,
             lr=lr,
             epochs=epochs,
             batch_size=batch_size,
