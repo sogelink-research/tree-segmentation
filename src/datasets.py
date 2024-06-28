@@ -4,7 +4,7 @@ import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from math import ceil
-from typing import Callable, Dict, List, Mapping, Sequence, Tuple, TypeVar
+from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple, TypeVar
 
 import albumentations as A
 import numpy as np
@@ -148,8 +148,8 @@ def quick_where_chunk(
 
 def quick_merge_chunk(
     arrays: List[np.ndarray],
-    save_path: str,
     axis: int = 2,
+    memmap_save_path: Optional[str] = None,
     chunk_size: int = 1000,
     allow_modify_chunk_size: bool = True,
 ) -> np.ndarray:
@@ -160,21 +160,23 @@ def quick_merge_chunk(
     channels = sum([array.shape[2] for array in arrays])
     shape = (arrays[0].shape[0], arrays[0].shape[1], channels)
     dtye = arrays[0].dtype
-    mmapped_array = np.lib.format.open_memmap(save_path, mode="w+", shape=shape, dtype=dtye)
+    if memmap_save_path is not None:
+        merged_array = np.lib.format.open_memmap(
+            memmap_save_path, mode="w+", shape=shape, dtype=dtye
+        )
+    else:
+        merged_array = np.empty(shape)
 
     def process_chunk_merge(array_slice: Tuple[slice, ...]):
-        # mmapped_array[array_slice] = np.concatenate(
-        #     [array[array_slice] for array in arrays], axis=axis
-        # )
         first_channel = 0
         for array in arrays:
             last_channel = first_channel + array.shape[axis]
             slice_object = tuple(list(array_slice) + [slice(first_channel, last_channel)])
-            mmapped_array[slice_object] = array[array_slice]
+            merged_array[slice_object] = array[array_slice]
 
     # Get slices
     slices = generate_slices(
-        mmapped_array.shape[:-1], chunk_size, allow_modify_chunk_size=allow_modify_chunk_size
+        merged_array.shape[:-1], chunk_size, allow_modify_chunk_size=allow_modify_chunk_size
     )
 
     # Compute method on all chunks
@@ -185,8 +187,69 @@ def quick_merge_chunk(
         for future in as_completed(futures):
             future.result()
 
-    mmapped_array.flush()
-    return mmapped_array
+    if memmap_save_path is not None:
+        merged_array.flush()  # type: ignore
+    return merged_array
+
+
+def quick_normalize_chunk(
+    image: np.ndarray,
+    mean: np.ndarray,
+    std: np.ndarray,
+    replace_no_data: bool,
+    in_place: bool,
+    no_data_new_value: float = 0.0,
+    chunk_size: int = 1000,
+    allow_modify_chunk_size: bool = True,
+) -> np.ndarray:
+    # Preprocess the image
+    if replace_no_data:
+        quick_where_chunk(image, -9999, no_data_new_value, in_place=True)
+    if len(image.shape) == 2:
+        image = image[..., np.newaxis]
+
+    # Preprocess the mean and std to have the right shape
+    channels = image.shape[2]
+
+    def reshape(array: np.ndarray, name: str) -> np.ndarray:
+        if len(array.shape) == 0:
+            array = np.full((channels,), array.item())
+        elif len(array.shape) == 1 and array.shape[0] == 1:
+            array = np.full((channels,), array[0].item())
+        elif len(array.shape) == 1 and array.shape[0] == channels:
+            pass
+        else:
+            raise ValueError(
+                f"Unsupported shape for `{name}`. It should be an array or shape [], [1] or [{channels}]"
+            )
+        return array.reshape(1, 1, -1)
+
+    mean = reshape(mean, "mean").astype(dtype=image.dtype)
+    std = reshape(std, "std").astype(dtype=image.dtype)
+
+    def process_chunk_normalize(chunk: np.ndarray):
+        chunk[:] = (chunk[:] - mean) / std
+
+    # Get slices
+    slices = generate_slices(
+        image.shape, chunk_size, allow_modify_chunk_size=allow_modify_chunk_size
+    )
+
+    if not in_place:
+        image = np.copy(image)
+
+    # Compute method on all chunks
+    with ThreadPoolExecutor() as executor:
+        futures = [
+            executor.submit(process_chunk_normalize, image[current_slice])
+            for current_slice in slices
+        ]
+
+        # Wait for all tasks to complete
+        for future in as_completed(futures):
+            future.result()
+
+    return image
 
 
 def _compute_channels_mean_std_array(
@@ -669,7 +732,7 @@ class TreeDataset(Dataset):
         sample = self.get_not_normalized(idx)
         return sample
 
-    def get_rgb_image(self, idx: int) -> np.ndarray:
+    def get_rgb_image(self, idx: int) -> np.ndarray | None:
         """Returns the RGB image corresponding to the index.
 
         Args:
@@ -679,11 +742,14 @@ class TreeDataset(Dataset):
             np.ndarray: RGB image.
         """
         files_paths = self.files_paths_list[idx]
-        rgb_path = files_paths["rgb_cir"]
-        image_rgb = read_image(rgb_path, chm=False, mode="c")
+        if self.use_rgb:
+            rgb_path = files_paths["rgb_cir"]
+            image_rgb = read_image(rgb_path, chm=False, mode="c")
+        else:
+            image_rgb = None
         return image_rgb
 
-    def get_chm_image(self, idx: int) -> np.ndarray:
+    def get_chm_image(self, idx: int) -> np.ndarray | None:
         """Returns the CHM image corresponding to the index.
 
         Args:
@@ -693,8 +759,11 @@ class TreeDataset(Dataset):
             np.ndarray: CHM image.
         """
         files_paths = self.files_paths_list[idx]
-        chm_path = files_paths["chm"]
-        image_chm = read_image(chm_path, chm=True, mode="c")
+        if self.use_chm:
+            chm_path = files_paths["chm"]
+            image_chm = read_image(chm_path, chm=True, mode="c")
+        else:
+            image_chm = None
         return image_chm
 
     def get_full_coords_name(self, idx: int) -> str:
