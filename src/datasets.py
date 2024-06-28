@@ -805,7 +805,7 @@ class TreeDataset(Dataset):
             str: name of the full image (without any extension).
         """
         files_paths = self.files_paths_list[idx]
-        rgb_path = files_paths["rgb_cir"]
+        rgb_path = files_paths["annotations"]
         full_image_name = os.path.basename(os.path.dirname(rgb_path))
         return full_image_name
 
