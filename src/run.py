@@ -94,18 +94,18 @@ def main():
     #     model_training_session.train()
     #     model_training_session.close()
 
-    args = {
-        "use_rgb": False,
-        "use_cir": False,
-        "use_chm": True,
-    }
-    model_training_session = ModelTrainingSession(**args)
-    model_training_session.train()
-    model_training_session.close()
-
-    # model_training_session = ModelSession.from_name("trained_model_1000ep_3")
-    # model_training_session.compute_metrics()
+    # args = {
+    #     "use_rgb": False,
+    #     "use_cir": False,
+    #     "use_chm": True,
+    # }
+    # model_training_session = ModelTrainingSession(**args)
+    # model_training_session.train()
     # model_training_session.close()
+
+    model_training_session = ModelSession.from_name("trained_model_1000ep_8")
+    model_training_session.compute_metrics()
+    model_training_session.close()
 
 
 if __name__ == "__main__":
