@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -21,7 +22,7 @@ from box_cls import (
     box_pixels_to_coordinates,
     intersection_ratio,
 )
-from datasets import quick_merge_chunk
+from datasets import generate_slices, quick_merge_chunk
 from geojson_conversions import get_bbox_polygon
 from utils import (
     Folders,
@@ -431,6 +432,21 @@ def crop_image_from_box(image_path: str, chm: bool, crop_box: BoxInt, output_pat
     crop_image_array_from_box(array=image, chm=chm, crop_box=crop_box, output_path=output_path)
 
 
+def crop_image_array_from_boxes(
+    array: np.ndarray, chm: bool, crop_boxes: List[BoxInt], output_paths: List[str]
+) -> None:
+    # Compute method on all chunks
+    with ThreadPoolExecutor() as executor:
+        futures = [
+            executor.submit(crop_image_array_from_box, array, chm, crop_box, output_path)
+            for crop_box, output_path in zip(crop_boxes, output_paths)
+        ]
+
+        # Wait for all tasks to complete
+        for future in as_completed(futures):
+            future.result()
+
+
 def _get_cropped_image_name(cropped_annotations: Dict[Any, Any], extension: str) -> str:
     extension = extension if extension.startswith(".") else "." + extension
     supported_extensions = [".tif", ".npy"]
@@ -441,107 +457,6 @@ def _get_cropped_image_name(cropped_annotations: Dict[Any, Any], extension: str)
     image_box = get_image_box_from_cropped_annotations(cropped_annotations)
     cropped_image_file = f"{image_box.short_name()}{extension}"
     return cropped_image_file
-
-
-def crop_all_rgb_and_chm_images_from_annotations_folder(
-    annotations_folder_path: str,
-    resolution: float,
-    full_rgb_path: str,
-    clear_if_not_empty: bool,
-    remove_unused: bool,
-):
-    # Create the folders
-    image_prefix = get_file_base_name(full_rgb_path)
-    rgb_output_folder_path = os.path.join(Folders.CROPPED_RGB_IMAGES.value, image_prefix)
-    coord1, coord2 = get_coordinates_from_full_image_file_name(image_prefix)
-    chm_unfiltered_output_folder_path = os.path.join(
-        Folders.CHM.value,
-        f"{round(resolution*100)}cm",
-        "unfiltered",
-        "cropped",
-        f"{coord1}_{coord2}",
-    )
-    chm_filtered_output_folder_path = os.path.join(
-        Folders.CHM.value,
-        f"{round(resolution*100)}cm",
-        "filtered",
-        "cropped",
-        f"{coord1}_{coord2}",
-    )
-
-    if clear_if_not_empty:
-        remove_folder(rgb_output_folder_path)
-        remove_folder(chm_unfiltered_output_folder_path)
-        remove_folder(chm_filtered_output_folder_path)
-
-    create_folder(rgb_output_folder_path)
-    create_folder(chm_unfiltered_output_folder_path)
-    create_folder(chm_filtered_output_folder_path)
-
-    full_chm_unfiltered_path = os.path.join(
-        Folders.CHM.value,
-        f"{round(resolution*100)}cm",
-        "unfiltered",
-        "full",
-        f"{coord1}_{coord2}.tif",
-    )
-    full_chm_filtered_path = os.path.join(
-        Folders.CHM.value,
-        f"{round(resolution*100)}cm",
-        "filtered",
-        "full",
-        f"{coord1}_{coord2}.tif",
-    )
-
-    files_to_keep: List[str] = []
-
-    # Iterate over the cropped annotations
-    for file_name in tqdm(
-        os.listdir(annotations_folder_path),
-        leave=False,
-        desc="Cropping images: Cropped annotations",
-    ):
-        annotations_file_path = os.path.join(annotations_folder_path, file_name)
-        if os.path.splitext(annotations_file_path)[1] == ".json":
-            # Get the annotations
-            cropped_annotations = open_json(annotations_file_path)
-            output_file = _get_cropped_image_name(cropped_annotations, extension=".tif")
-            image_box = get_image_box_from_cropped_annotations(cropped_annotations)
-            files_to_keep.append(output_file)
-
-            # Create the cropped RGB image
-            rgb_output_path = os.path.join(rgb_output_folder_path, output_file)
-            if not os.path.exists(rgb_output_path):
-                crop_image_from_box(
-                    full_rgb_path, chm=False, crop_box=image_box, output_path=rgb_output_path
-                )
-
-            # Create the cropped unfiltered CHM image
-            chm_unfiltered_output_path = os.path.join(
-                chm_unfiltered_output_folder_path, output_file
-            )
-            if not os.path.exists(chm_unfiltered_output_path):
-                crop_image_from_box(
-                    full_chm_unfiltered_path,
-                    chm=True,
-                    crop_box=image_box,
-                    output_path=chm_unfiltered_output_path,
-                )
-
-            # Create the cropped filtered CHM image
-            chm_filtered_output_path = os.path.join(chm_filtered_output_folder_path, output_file)
-            if not os.path.exists(chm_filtered_output_path):
-                crop_image_from_box(
-                    full_chm_filtered_path,
-                    chm=True,
-                    crop_box=image_box,
-                    output_path=chm_filtered_output_path,
-                )
-
-    if remove_unused:
-        remove_all_files_but(rgb_output_folder_path, files_to_keep)
-        remove_all_files_but(chm_unfiltered_output_folder_path, files_to_keep)
-        remove_all_files_but(chm_filtered_output_folder_path, files_to_keep)
 
 
 def crop_image(
@@ -585,7 +500,7 @@ def crop_image(
         remove_all_files_but(output_folder_path, files_to_keep)
 
 
-def crop_image_array(
+def crop_image_array_old(
     cropped_annotations_folder_path: str,
     full_image_array: np.ndarray,
     chm: bool,
@@ -621,6 +536,49 @@ def crop_image_array(
                 crop_image_array_from_box(
                     full_image_array, chm=chm, crop_box=image_box, output_path=output_path
                 )
+
+    if remove_unused:
+        remove_all_files_but(output_folder_path, files_to_keep)
+
+
+def crop_image_array(
+    cropped_annotations_folder_path: str,
+    full_image_array: np.ndarray,
+    chm: bool,
+    output_folder_path: str,
+    clear_if_not_empty: bool,
+    remove_unused: bool,
+):
+
+    if clear_if_not_empty:
+        remove_folder(output_folder_path)
+
+    create_folder(output_folder_path)
+
+    files_to_keep: List[str] = []
+    image_boxes: List[BoxInt] = []
+    output_paths: List[str] = []
+
+    # Iterate over the cropped annotations
+    for file_name in os.listdir(cropped_annotations_folder_path):
+        annotations_file_path = os.path.join(cropped_annotations_folder_path, file_name)
+        if os.path.splitext(annotations_file_path)[1] == ".json":
+            # Get the annotations
+            cropped_annotations = open_json(annotations_file_path)
+            output_file = _get_cropped_image_name(cropped_annotations, extension=".npy")
+            image_box = get_image_box_from_cropped_annotations(cropped_annotations)
+            output_path = os.path.join(output_folder_path, output_file)
+
+            files_to_keep.append(output_file)
+            # Create the cropped image
+
+            if not os.path.exists(output_path):
+                image_boxes.append(image_box)
+                output_paths.append(output_path)
+
+    crop_image_array_from_boxes(
+        full_image_array, chm=chm, crop_boxes=image_boxes, output_paths=output_paths
+    )
 
     if remove_unused:
         remove_all_files_but(output_folder_path, files_to_keep)
