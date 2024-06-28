@@ -285,12 +285,12 @@ class DatasetParams:
         if self.use_rgb or self.use_cir:
             temp_path = os.path.join(temp_folder, "rgb_cir.npy")
             full_merged_rgb_cir = merge_tif(
-                full_images_paths["rgb_cir"], temp_path=temp_path, output_path=None, chm=False
+                full_images_paths["rgb_cir"], chm=False, output_path=temp_path, memmap=True
             )
         if self.use_chm:
             temp_path = os.path.join(temp_folder, "chm.npy")
             full_merged_chm = merge_tif(
-                full_images_paths["chm"], temp_path=temp_path, output_path=None, chm=True
+                full_images_paths["chm"], chm=True, output_path=temp_path, memmap=True
             )
 
         end_p_time = time.process_time()
@@ -650,7 +650,16 @@ class ModelSession:
         for folder in [predictions_folder, ap_iou_folder, sap_conf_folder]:
             create_folder(folder)
 
-        use_rgb_chm = [(True, True), (True, False), (False, True)]
+        if self.training_data.dataset_params.use_rgb or self.training_data.dataset_params.use_cir:
+            if self.training_data.dataset_params.use_chm:
+                use_rgb_chm = [(True, True), (True, False), (False, True)]
+            else:
+                use_rgb_chm = [(True, False)]
+        else:
+            if self.training_data.dataset_params.use_chm:
+                use_rgb_chm = [(False, True)]
+            else:
+                raise Exception("There must not be use_rgb, use_cir and use_chm all False.")
 
         for loader, loader_postfix, loader_legend in tqdm(loaders_zip, desc="Datasets"):
             ap_metrics_list = AP_Metrics_List()
