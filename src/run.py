@@ -94,15 +94,11 @@ def main():
         )
     ]
 
-    # for combination in filtered_combinations:
-    #     # Training session
-    #     model_training_session = ModelTrainingSession(**combination)
-    #     model_training_session.train()
-    #     model_training_session.close()
-
-    model_training_session = ModelTrainingSession()
-    model_training_session.train()
-    model_training_session.close()
+    for combination in filtered_combinations:
+        # Training session
+        model_training_session = ModelTrainingSession(**combination)
+        model_training_session.train()
+        model_training_session.close()
 
     # model_training_session = ModelSession.from_name("trained_model_1000ep_3")
     # model_training_session.compute_metrics()
