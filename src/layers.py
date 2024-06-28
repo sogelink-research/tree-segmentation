@@ -405,7 +405,7 @@ class AMF_GD_YOLOv8(nn.Module):
             self.use_right = True
 
         # AMFNet structure
-        self.amfnet = AMFNet(c_input_left, c_input_right, scale, r).to(device)
+        self.amfnet = AMFNet(self.c_input_left, self.c_input_right, scale, r).to(device)
 
         # Gather and Distribute structure
         if gd_config_file is None:
