@@ -791,7 +791,7 @@ class TreeDataset(Dataset):
             str: pixel coordinates name of the data.
         """
         files_paths = self.files_paths_list[idx]
-        rgb_path = files_paths["rgb_cir"]
+        rgb_path = files_paths["annotations"]
         coord_name = get_file_base_name(rgb_path)
         return coord_name
 
