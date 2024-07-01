@@ -389,7 +389,7 @@ class AMF_GD_YOLOv8(nn.Module):
         self.class_names = class_names
         self.class_indices = {value: key for key, value in class_names.items()}
         self.name = name
-        create_folder(self.folder_path)
+        self.init_folder()
 
         if self.c_input_left == 0 and self.c_input_right == 0:
             raise Exception("Input can't have both 0 channel.")
@@ -562,6 +562,9 @@ class AMF_GD_YOLOv8(nn.Module):
     def folder_path(self) -> str:
         model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(self.name)
         return model_folder_path
+
+    def init_folder(self) -> None:
+        create_folder(self.folder_path)
 
     def weights_path(self, best: bool = True, epoch: Optional[int] = None) -> str:
         model_weights_path = AMF_GD_YOLOv8.get_weights_path_from_name(

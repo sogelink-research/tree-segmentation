@@ -502,6 +502,7 @@ class ModelSession:
             self.model_name = AMF_GD_YOLOv8.get_new_name(
                 self.training_data.training_params.epochs, self.postfix
             )
+        create_folder(self.folder_path)
         self.model_path = AMF_GD_YOLOv8.get_weights_path_from_name(self.model_name)
         self.best_epoch = -1
 
