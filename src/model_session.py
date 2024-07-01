@@ -731,6 +731,10 @@ class ModelSession:
     def close(self):
         self.training_data.dataset_params.close()
 
+    @property
+    def folder_path(self) -> str:
+        return AMF_GD_YOLOv8.get_folder_path_from_name(self.model_name)
+
     @staticmethod
     def get_params_path(model_name: str) -> str:
         model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)

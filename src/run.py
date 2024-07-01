@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+import json
+import os
+import pickle
 from itertools import product
 from typing import Optional, Sequence, Tuple
 
@@ -31,6 +36,8 @@ class ModelTrainingSession(ModelSession):
         device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         postfix: Optional[str] = None,
     ) -> None:
+        self.args = locals()
+
         if chm_z_layers is None:
             z_tops = [1, 2, 3, 5, 7, 10, 15, 20, np.inf]
             chm_z_layers = [(-np.inf, z_top) for z_top in z_tops]
@@ -56,6 +63,33 @@ class ModelTrainingSession(ModelSession):
         )
         training_data = TrainingData(dataset_params=dataset_params, training_params=training_params)
         super().__init__(training_data=training_data, device=device, postfix=postfix)
+
+    @property
+    def init_params_path(self) -> str:
+        model_folder_path = self.folder_path
+        return os.path.join(self.folder_path, "model_init_params.json")
+
+    def save_init_params(self) -> None:
+        save_path = self.init_params_path
+        with open(save_path, "w") as fp:
+            json.dump(self.__dict__, fp, sort_keys=True, indent=4)
+
+    @staticmethod
+    def from_pickle(file_path: str, device: torch.device) -> ModelTrainingSession:
+        with open(file_path, "rb") as f:
+            model_session = pickle.load(f)
+            model_session.device = device
+        return model_session
+
+    @staticmethod
+    def from_name(
+        model_name: str,
+        device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    ) -> ModelTrainingSession:
+        if not ModelTrainingSession.already_exists(model_name):
+            raise Exception(f"There is no model called {model_name}.")
+        file_path = ModelTrainingSession.get_pickle_path(model_name)
+        return ModelTrainingSession.from_pickle(file_path, device)
 
 
 def main():
@@ -97,13 +131,14 @@ def main():
     #     model_training_session.train()
     #     model_training_session.close()
 
-    model_training_session = ModelTrainingSession(epochs=0)
-    model_training_session.train()
-    model_training_session.close()
-
-    # model_training_session = ModelSession.from_name("trained_model_1000ep_8")
-    # model_training_session.compute_metrics()
+    # model_training_session = ModelTrainingSession(epochs=0)
+    # model_training_session.train()
     # model_training_session.close()
+
+    model_training_session = ModelTrainingSession.from_name("trained_model_1000ep_0")
+    model_training_session.save_init_params()
+    # model_training_session.compute_metrics()
+    model_training_session.close()
 
 
 if __name__ == "__main__":
