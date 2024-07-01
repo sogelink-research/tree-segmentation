@@ -42,33 +42,54 @@ class ModelTrainingSession(ModelSession):
         device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         postfix: Optional[str] = None,
     ) -> None:
-        self.args = locals()
+        self.use_rgb = use_rgb
+        self.use_cir = use_cir
+        self.use_chm = use_chm
+        self.chm_z_layers = chm_z_layers
+        self.annotations_file_name = annotations_file_name
+        self.agnostic = agnostic
+        self.model_size = model_size
+        self.lr = lr
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.accumulate = accumulate
+        self.no_improvement_stop_epochs = no_improvement_stop_epochs
+        self.proba_drop_rgb = proba_drop_rgb
+        self.proba_drop_chm = proba_drop_chm
+        self.device = device
+        self.postfix = postfix
 
-        if chm_z_layers is None:
+        self.save_init_params()
+        self._init()
+
+    def _init(self) -> None:
+
+        if self.chm_z_layers is None:
             z_tops = [1, 2, 3, 5, 7, 10, 15, 20, np.inf]
             chm_z_layers = [(-np.inf, z_top) for z_top in z_tops]
 
         dataset_params = DatasetParams(
-            annotations_file_name=annotations_file_name,
-            use_rgb=use_rgb,
-            use_cir=use_cir,
-            use_chm=use_chm,
+            annotations_file_name=self.annotations_file_name,
+            use_rgb=self.use_rgb,
+            use_cir=self.use_cir,
+            use_chm=self.use_chm,
             chm_z_layers=chm_z_layers,
-            agnostic=agnostic,
+            agnostic=self.agnostic,
         )
         training_params = TrainingParams(
-            model_size=model_size,
-            lr=lr,
-            epochs=epochs,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            accumulate=accumulate,
-            no_improvement_stop_epochs=no_improvement_stop_epochs,
-            proba_drop_rgb=proba_drop_rgb,
-            proba_drop_chm=proba_drop_chm,
+            model_size=self.model_size,
+            lr=self.lr,
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            accumulate=self.accumulate,
+            no_improvement_stop_epochs=self.no_improvement_stop_epochs,
+            proba_drop_rgb=self.proba_drop_rgb,
+            proba_drop_chm=self.proba_drop_chm,
         )
         training_data = TrainingData(dataset_params=dataset_params, training_params=training_params)
-        super().__init__(training_data=training_data, device=device, postfix=postfix)
+        super().__init__(training_data=training_data, device=self.device, postfix=self.postfix)
 
     @property
     def init_params_path(self) -> str:
