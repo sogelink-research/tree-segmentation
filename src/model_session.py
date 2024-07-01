@@ -772,6 +772,8 @@ class FullJsonEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
+        elif isinstance(obj, torch.device):
+            return obj.type
         return json.JSONEncoder.default(self, obj)
 
 

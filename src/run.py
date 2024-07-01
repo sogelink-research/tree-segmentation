@@ -9,7 +9,13 @@ from typing import Optional, Sequence, Tuple
 import numpy as np
 import torch
 
-from model_session import DatasetParams, ModelSession, TrainingData, TrainingParams
+from model_session import (
+    DatasetParams,
+    FullJsonEncoder,
+    ModelSession,
+    TrainingData,
+    TrainingParams,
+)
 from utils import RICH_PRINTING
 
 
@@ -66,13 +72,12 @@ class ModelTrainingSession(ModelSession):
 
     @property
     def init_params_path(self) -> str:
-        model_folder_path = self.folder_path
         return os.path.join(self.folder_path, "model_init_params.json")
 
     def save_init_params(self) -> None:
         save_path = self.init_params_path
         with open(save_path, "w") as fp:
-            json.dump(self.__dict__, fp, sort_keys=True, indent=4)
+            json.dump(self.__dict__, fp, cls=FullJsonEncoder, sort_keys=True, indent=4)
 
     @staticmethod
     def from_pickle(file_path: str, device: torch.device) -> ModelTrainingSession:
