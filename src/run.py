@@ -60,8 +60,8 @@ class ModelTrainingSession(ModelSession):
         self.device = device
         self.postfix = postfix
 
-        self.save_init_params()
         self._init()
+        self.save_init_params()
 
     def _init(self) -> None:
 
