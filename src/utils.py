@@ -32,7 +32,15 @@ from PIL import Image
 from requests import get
 from rich.console import Console, RenderableType
 from rich.live import Live
-from rich.progress import Progress, TaskID
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TaskID,
+    TextColumn,
+    TimeRemainingColumn,
+)
 from rich.style import StyleType
 from rich.text import Text
 from rich.tree import Tree
@@ -541,9 +549,9 @@ class RichPrinting:
         self.live = Live(
             console=self.console,
             auto_refresh=False,
-            # refresh_per_second=1,
+            refresh_per_second=4,
             # vertical_overflow="visible",
-            # get_renderable=self.get_renderable,
+            get_renderable=self.get_renderable,
         )
 
         self._reset_attributes()
@@ -565,7 +573,10 @@ class RichPrinting:
             self._reset()
             self.root_id = new_uuid
         else:
-            parent_uuid = self.stack[self.current_level - 1]
+            if self.nodes_in_order[-1] in self.pbars_progress.keys() and kind == "pbar":
+                parent_uuid = self.nodes_in_order[-1]
+            else:
+                parent_uuid = self.stack[self.current_level - 1]
             self.trees[parent_uuid].children.append(new_node)
             self.children[parent_uuid].append(new_uuid)
             self.pos_as_child[new_uuid] = len(self.trees[parent_uuid].children) - 1
@@ -798,7 +809,13 @@ class RichPrinting:
         sequence = list(iterable)
         length = len(sequence)
 
-        progress = Progress()
+        progress = Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(compact=True, elapsed_when_finished=True),
+            SpinnerColumn(spinner_name="arrow"),
+        )
         task = progress.add_task(description, total=length)
 
         new_node = Tree(progress.get_renderable())
