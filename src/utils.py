@@ -33,6 +33,7 @@ from requests import get
 from rich.console import Console, RenderableType
 from rich.live import Live
 from rich.progress import Progress, TaskID
+from rich.style import StyleType
 from rich.text import Text
 from rich.tree import Tree
 from tqdm import tqdm
@@ -470,30 +471,48 @@ class PBarIterator(Iterator):
             raise StopIteration
 
 
-class RichPrinting:
-    class NodeFormat:
-        def __init__(
-            self,
-            label: str,
-            style: str = "tree",
-            guide_style: str = "tree.line",
-            expanded: bool = True,
-            highlight: bool = False,
-        ) -> None:
-            self.label = label
-            self.style = style
-            self.guide_style = guide_style
-            self.expanded = expanded
-            self.highlight = highlight
+class NodeFormat:
+    def __init__(
+        self,
+        label: RenderableType,
+        style: StyleType = "tree",
+        guide_style: StyleType = "tree.line",
+        expanded: bool = True,
+        highlight: bool = False,
+    ) -> None:
+        self.label = label
+        self.style = style
+        self.guide_style = guide_style
+        self.expanded = expanded
+        self.highlight = highlight
 
-        def to_tree(self) -> Tree:
-            return Tree(
-                label=self.label,
-                style=self.style,
-                guide_style=self.guide_style,
-                expanded=self.expanded,
-                highlight=self.highlight,
-            )
+    def to_tree(self) -> Tree:
+        return Tree(
+            label=self.label,
+            style=self.style,
+            guide_style=self.guide_style,
+            expanded=self.expanded,
+            highlight=self.highlight,
+        )
+
+    @staticmethod
+    def from_tree(tree: Tree) -> NodeFormat:
+        # print(f"{tree.label = }")
+        node_format = NodeFormat(
+            label=tree.label,
+            style=tree.style,
+            guide_style=tree.guide_style,
+            expanded=tree.expanded,
+            highlight=tree.highlight,
+        )
+        return node_format
+
+
+def tree_copy_without_children(tree: Tree) -> Tree:
+    return NodeFormat.from_tree(tree).to_tree()
+
+
+class RichPrinting:
 
     def __init__(self) -> None:
         self._reset_attributes()
@@ -503,8 +522,10 @@ class RichPrinting:
         self.trees: Dict[uuid.UUID, Tree] = {}
         self.parents: Dict[uuid.UUID, uuid.UUID] = {}
         self.children: Dict[uuid.UUID, List[uuid.UUID]] = defaultdict(list)
-        self.child_indices: Dict[uuid.UUID, int] = {}
+        self.pos_as_child: Dict[uuid.UUID, int] = {}
         self.stack: List[uuid.UUID] = []
+        self.stack_order_index: List[int] = []
+        self.nodes_in_order: List[uuid.UUID] = []
         self.pbars_tasks: Dict[uuid.UUID, TaskID] = {}
         self.pbars_progress: Dict[uuid.UUID, Progress] = {}
 
@@ -513,6 +534,7 @@ class RichPrinting:
 
     def _reset(self) -> None:
         if hasattr(self, "live"):
+            self.render(force_full=True)
             self.live.stop()
 
         self.console = Console()
@@ -533,7 +555,6 @@ class RichPrinting:
                 return new_uuid
 
     def _store_new_line(self, new_node: Tree, kind: str) -> uuid.UUID:
-        # time.sleep(1)
         available_kinds = ["start", "end", "pbar", "print"]
         if kind not in available_kinds:
             raise Exception(f"kind should be one of {available_kinds}, not {kind}.")
@@ -547,15 +568,11 @@ class RichPrinting:
             parent_uuid = self.stack[self.current_level - 1]
             self.trees[parent_uuid].children.append(new_node)
             self.children[parent_uuid].append(new_uuid)
-            self.child_indices[new_uuid] = len(self.trees[parent_uuid].children) - 1
+            self.pos_as_child[new_uuid] = len(self.trees[parent_uuid].children) - 1
             self.parents[new_uuid] = parent_uuid
 
         self.trees[new_uuid] = new_node
-
-        if kind == "start":
-            self.stack.append(new_uuid)
-        elif kind == "end":
-            self.stack.pop(-1)
+        self.nodes_in_order.append(new_uuid)
 
         return new_uuid
 
@@ -564,12 +581,12 @@ class RichPrinting:
             raise Exception("Cannot remove a line that is still in the stack")
 
         parent = self.parents.pop(id)
-        child_index = self.child_indices.pop(id)
+        child_index = self.pos_as_child.pop(id)
         self.trees[parent].children.pop(child_index)
 
         # Decrease the child index of nodes with the same parent
         for other_id in self.children[parent][child_index + 1 :]:
-            self.child_indices[other_id] -= 1
+            self.pos_as_child[other_id] -= 1
         self.children[parent].pop(child_index)
 
         if id in self.pbars_tasks:
@@ -577,16 +594,129 @@ class RichPrinting:
             self.pbars_progress.pop(id)
 
         self.trees.pop(id)
+        self.nodes_in_order.remove(id)
 
-    def get_renderable(self) -> RenderableType:
-        # for id, progress in self.pbars_progress.items():
-        #     parent_id = self.parents[id]
+    @property
+    def _get_terminal_height(self) -> int:
+        terminal_size = os.get_terminal_size()
+        terminal_height = terminal_size.lines
+        return terminal_height
 
-        #     new_node = Tree(progress.get_renderable())
-        #     child_index = self.child_indices[id]
-        #     self.trees[parent_id].children[child_index] = new_node
-        if hasattr(self, "root_id"):
+    def _extract_partial_tree(self) -> Tree:
+        terminal_height = self._get_terminal_height
+        if terminal_height > len(self.trees):
             return self.trees[self.root_id]
+
+        self.last_uuid = self.nodes_in_order[-1]
+
+        # Count the space of the stack
+        stack_height = len(self.stack)
+        for id in self.stack[1:]:
+            if self.pos_as_child[id] > 0:
+                stack_height += 1
+        if self.pos_as_child[self.last_uuid] > 0:
+            stack_height += 1
+
+        if stack_height >= terminal_height:
+            partial_tree = tree_copy_without_children(self.trees[self.root_id])
+            current_height = 1
+            last_node = partial_tree
+            for id in self.stack[1:]:
+                if self.pos_as_child[id] > 0:
+                    if terminal_height - current_height >= 4:
+                        last_node.add(" ··· ", style="yellow")
+                        current_height += 1
+                        still_place = True
+                    else:
+                        still_place = False
+                else:
+                    if terminal_height - current_height >= 3:
+                        still_place = True
+                    else:
+                        still_place = False
+
+                if still_place:
+                    last_node = last_node.add(tree_copy_without_children(self.trees[id]))
+                else:
+                    last_node = last_node.add(" ··· ", style="yellow")
+                    last_node.add(tree_copy_without_children(self.trees[self.last_uuid]))
+                    return partial_tree
+            return partial_tree
+
+        # Get the last lines to fill the space
+        remaining_height = terminal_height - stack_height
+
+        last_common_parent_order_index = (
+            bisect.bisect_right(self.stack_order_index, len(self.nodes_in_order) - remaining_height)
+            - 1
+        )
+        if last_common_parent_order_index == len(self.stack_order_index):
+            last_common_parent_id = self._get_new_uuid()
+        else:
+            last_common_parent_id = self.nodes_in_order[
+                self.stack_order_index[last_common_parent_order_index]
+            ]
+
+        # print(f"{remaining_height = }")
+        # print(f"{len(self.nodes_in_order) - remaining_height = }")
+        # print(f"{self.stack_order_index = }")
+        # print(f"{last_common_parent_order_index = }")
+
+        first_last_line_order_index = len(self.nodes_in_order) - remaining_height
+        while (
+            first_last_line_order_index < len(self.nodes_in_order) - 1
+            and self.parents[self.nodes_in_order[first_last_line_order_index]]
+            != last_common_parent_id
+        ):
+            first_last_line_order_index += 1
+
+        # print(f"{len(self.nodes_in_order) = }")
+        # print(f"{first_last_line_order_index = }")
+
+        # Build the tree
+        tree_equivs: Dict[uuid.UUID, Tree] = {}
+        partial_tree = tree_copy_without_children(self.trees[self.root_id])
+        tree_equivs[self.root_id] = partial_tree
+        # print(f"{tree_equivs[self.root_id].label = }")
+        for id in self.stack[1:]:
+            if self.pos_as_child[id] > 0:
+                tree_equivs[self.parents[id]].add(" ··· ", style="yellow")
+            tree_equivs[id] = tree_equivs[self.parents[id]].add(
+                tree_copy_without_children(self.trees[id])
+            )
+            # print(f"{tree_equivs[self.parents[id]].label = }")
+            # print(f"{tree_equivs[id].label = }")
+            if id == last_common_parent_id:
+                break
+
+        # print("Nodes in order")
+
+        first_last_line_id = self.nodes_in_order[first_last_line_order_index]
+        if self.pos_as_child[first_last_line_id] > 0:
+            tree_equivs[self.parents[first_last_line_id]].add(" ··· ", style="yellow")
+        tree_equivs[first_last_line_id] = tree_equivs[self.parents[first_last_line_id]].add(
+            tree_copy_without_children(self.trees[first_last_line_id])
+        )
+
+        for id in self.nodes_in_order[first_last_line_order_index + 1 :]:
+            # print(f"{self.trees[self.parents[id]].label = }")
+            # print(f"{self.trees[id].label = }")
+            tree_equivs[id] = tree_equivs[self.parents[id]].add(
+                tree_copy_without_children(self.trees[id])
+            )
+            # print(f"{tree_equivs[self.parents[id]].label = }")
+            # print(f"{tree_equivs[id].label = }")
+
+        return partial_tree
+
+    def get_renderable(self, force_full: bool = False) -> RenderableType:
+        if hasattr(self, "root_id"):
+            terminal_height = self._get_terminal_height
+            if force_full or terminal_height > len(self.trees):
+                return self.trees[self.root_id]
+            else:
+                tree = self._extract_partial_tree()
+                return tree
         else:
             return Text()
 
@@ -594,11 +724,10 @@ class RichPrinting:
         if hasattr(self, "live"):
             self.live.stop()
 
-    def render(self):
+    def render(self, force_full: bool = False):
         if not self.live.is_started:
             self.live.start()
-        # print(self.get_renderable())
-        self.live.update(self.get_renderable(), refresh=True)
+        self.live.update(self.get_renderable(force_full), refresh=True)
 
     def _format_message(self, message: str, kind: str) -> NodeFormat:
         label = message
@@ -613,14 +742,16 @@ class RichPrinting:
         else:
             raise Exception(f"Unsupported kind: {kind}")
 
-        node_format = self.NodeFormat(label=label, style=style)
+        node_format = NodeFormat(label=label, style=style)
 
         return node_format
 
     def log_start_message(self, message: str):
         node_format = self._format_message(message, kind="start")
         node = node_format.to_tree()
-        self._store_new_line(node, kind="start")
+        new_uuid = self._store_new_line(node, kind="start")
+        self.stack.append(new_uuid)
+        self.stack_order_index.append(len(self.nodes_in_order) - 1)
         self.render()
         self.current_level += 1
 
@@ -629,6 +760,8 @@ class RichPrinting:
         node = node_format.to_tree()
         self._store_new_line(node, kind="end")
         self.render()
+        self.stack.pop(-1)
+        self.stack_order_index.pop(-1)
         self.current_level -= 1
 
     def running_message(
@@ -697,7 +830,7 @@ class RichPrinting:
 
         parent_id = self.parents[id]
         new_node = Tree(progress.get_renderable())
-        child_index = self.child_indices[id]
+        child_index = self.pos_as_child[id]
         self.trees[parent_id].children[child_index] = new_node
         self.trees[id] = new_node
 

@@ -144,7 +144,7 @@ def main():
         "use_cir": [True, False],
         "use_chm": [True, False],
         "lr": [1e-2, 3e-3, 1e-3],
-        "model_size": ["n", "s"],
+        "model_size": ["n"],
     }
 
     forget_combinations = [
