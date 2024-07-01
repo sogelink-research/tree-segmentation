@@ -61,18 +61,14 @@ from training import (
     train_and_validate,
 )
 from utils import (
+    RICH_PRINTING,
     Folders,
     ImageData,
     create_all_folders,
     create_folder,
     create_random_temp_folder,
-    import_tqdm,
     remove_folder,
-    running_message,
 )
-
-
-tqdm = import_tqdm()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -226,30 +222,6 @@ class DatasetParams:
 
         return full_images_paths, annotations
 
-    # def _init_mean_std(
-    #     self,
-    #     image_file_path_or_tensor: str | np.ndarray,
-    #     mean: np.ndarray | None,
-    #     std: np.ndarray | None,
-    #     chm: bool,
-    # ) -> Tuple[np.ndarray, np.ndarray]:
-    #     if type(mean) != type(std):
-    #         raise ValueError(
-    #             f"You should either specify mean and std or none of them. Here we have type(mean)={type(mean)} and type(std)={type(std)}."
-    #         )
-
-    #     per_channel = not chm
-    #     replace_no_data = chm
-
-    #     # Compute mean and std if they are missing
-    #     if not isinstance(mean, np.ndarray) or not isinstance(std, np.ndarray):
-    #         mean, std = compute_mean_and_std(
-    #             image_file_path_or_tensor,
-    #             per_channel=per_channel,
-    #             replace_no_data=replace_no_data,
-    #         )
-    #     return mean, std
-
     def _preprocess_annotations(self, annotations: geojson.FeatureCollection):
         # Create the cropped data folder path
         self.cropped_data_folder_path = create_random_temp_folder()
@@ -292,7 +264,7 @@ class DatasetParams:
         full_merged = merge_tif(full_images_paths, chm=False, output_path=temp_path, memmap=True)
 
         end_time = time.time()
-        print(f"{'Merge time':<20}: {end_time - start_time:.6f} seconds")
+        RICH_PRINTING.print(f"{'Merge time':<20}: {end_time - start_time:.4f} seconds")
         start_time = time.time()
 
         # Compute mean and std
@@ -317,7 +289,7 @@ class DatasetParams:
             self.mean_rgb_cir, self.std_rgb_cir = mean, std
 
         end_time = time.time()
-        print(f"{'Mean std time':<20}: {end_time - start_time:.6f} seconds")
+        RICH_PRINTING.print(f"{'Mean std time':<20}: {end_time - start_time:.4f} seconds")
         start_time = time.time()
 
         # Normalize
@@ -330,7 +302,7 @@ class DatasetParams:
         )
 
         end_time = time.time()
-        print(f"{'Normalize time':<20}: {end_time - start_time:.6f} seconds")
+        RICH_PRINTING.print(f"{'Normalize time':<20}: {end_time - start_time:.4f} seconds")
         start_time = time.time()
         start_p_time = time.process_time()
 
@@ -345,10 +317,10 @@ class DatasetParams:
         )
 
         end_p_time = time.process_time()
-        print(f"{'Crop P time':<20}: {end_p_time - start_p_time:.6f} seconds")
+        RICH_PRINTING.print(f"{'Crop P time':<20}: {end_p_time - start_p_time:.4f} seconds")
 
         end_time = time.time()
-        print(f"{'Crop time':<20}: {end_time - start_time:.6f} seconds")
+        RICH_PRINTING.print(f"{'Crop time':<20}: {end_time - start_time:.4f} seconds")
         start_time = time.time()
 
         # Remove temporary folder
@@ -378,7 +350,7 @@ class DatasetParams:
             else:
                 message = "CIR"
 
-            @running_message(f"Pre-processing {message} data...")
+            @RICH_PRINTING.running_message(f"Pre-processing {message} data...")
             def _preprocess_images_rgb_cir(
                 full_images_paths: List[str], cropped_rgb_cir_folder_path: str
             ):
@@ -401,7 +373,7 @@ class DatasetParams:
 
         if self.cropped_chm_folder_path is not None:
 
-            @running_message("Pre-processing CHM data...")
+            @RICH_PRINTING.running_message("Pre-processing CHM data...")
             def _preprocess_images_chm(full_images_paths: List[str], cropped_chm_folder_path: str):
                 self._preprocess_images(
                     full_images_paths,
@@ -412,154 +384,6 @@ class DatasetParams:
             _preprocess_images_chm(full_images_paths["chm"], self.cropped_chm_folder_path)
         else:
             self.cropped_chm_folder_path = None
-
-    # def _merge_and_crop_data(
-    #     self, full_images_paths: Dict[str, List[str]], annotations: geojson.FeatureCollection
-    # ):
-    #     start_p_time = time.process_time()
-    #     start_time = time.time()
-    #     # Merge full images
-    #     temp_folder = create_random_temp_folder()
-    #     if self.use_rgb or self.use_cir:
-    #         temp_path = os.path.join(temp_folder, "rgb_cir.npy")
-    #         full_merged_rgb_cir = merge_tif(
-    #             full_images_paths["rgb_cir"], chm=False, output_path=temp_path, memmap=True
-    #         )
-    #     if self.use_chm:
-    #         temp_path = os.path.join(temp_folder, "chm.npy")
-    #         full_merged_chm = merge_tif(
-    #             full_images_paths["chm"], chm=True, output_path=temp_path, memmap=True
-    #         )
-
-    #     end_p_time = time.process_time()
-    #     print(f"{'Merge P time':<20}: {end_p_time - start_p_time:.6f} seconds")
-    #     start_p_time = time.process_time()
-    #     end_time = time.time()
-    #     print(f"{'Merge time':<20}: {end_time - start_time:.6f} seconds")
-    #     start_time = time.time()
-
-    #     # Compute mean and std of the full images
-    #     if self.use_rgb or self.use_cir:
-    #         self.mean_rgb_cir, self.std_rgb_cir = self._init_mean_std(
-    #             full_merged_rgb_cir, self._mean_rgb_cir, self._std_rgb_cir, chm=False
-    #         )
-    #         self._mean_rgb_cir, self._std_rgb_cir = self.mean_rgb_cir, self.std_rgb_cir
-    #     if self.use_chm:
-    #         self.mean_chm, self.std_chm = self._init_mean_std(
-    #             full_merged_chm, self._mean_chm, self._std_chm, chm=True
-    #         )
-    #         self._mean_chm, self._std_chm = self.mean_chm, self.std_chm
-
-    #     end_p_time = time.process_time()
-    #     print(f"{'Mean and std P time':<20}: {end_p_time - start_p_time:.6f} seconds")
-    #     start_p_time = time.process_time()
-    #     end_time = time.time()
-    #     print(f"{'Mean and std time':<20}: {end_time - start_time:.6f} seconds")
-    #     start_time = time.time()
-
-    #     # Normalize the full images
-    #     if self.use_rgb or self.use_cir:
-    #         quick_normalize_chunk(
-    #             full_merged_rgb_cir,
-    #             mean=self.mean_rgb_cir,
-    #             std=self.std_rgb_cir,
-    #             replace_no_data=False,
-    #             in_place=True,
-    #         )
-    #     if self.use_chm:
-    #         quick_normalize_chunk(
-    #             full_merged_chm,
-    #             mean=self.mean_chm,
-    #             std=self.std_chm,
-    #             replace_no_data=True,
-    #             no_data_new_value=self.no_data_new_value,
-    #             in_place=True,
-    #         )
-
-    #     end_p_time = time.process_time()
-    #     print(f"{'Normalize P time':<20}: {end_p_time - start_p_time:.6f} seconds")
-    #     start_p_time = time.process_time()
-    #     end_time = time.time()
-    #     print(f"{'Normalize time':<20}: {end_time - start_time:.6f} seconds")
-    #     start_time = time.time()
-
-    #     # Create the cropped data folder path
-    #     self.cropped_data_folder_path = create_random_temp_folder()
-
-    #     # Get tiles
-    #     cropping_limits_x, cropping_limits_y = get_cropping_limits(
-    #         self.full_image_path_tif, self.tile_size, self.tile_overlap
-    #     )
-
-    #     # Crop annotations into tiles
-    #     visibility_threshold = 0.2
-    #     annots_repartition = find_annots_repartition(
-    #         cropping_limits_x, cropping_limits_y, annotations, self.image_data, visibility_threshold
-    #     )
-    #     crop_annots_into_limits(annots_repartition)
-    #     annots_coordinates_to_local(annots_repartition)
-    #     if self.agnostic:
-    #         make_annots_agnostic(annots_repartition, self.class_names[0])
-
-    #     # Save cropped annotations
-    #     output_image_prefix = self.image_data.base_name
-    #     self.cropped_annotations_folder_path = os.path.join(
-    #         self.cropped_data_folder_path, "annotations", output_image_prefix
-    #     )
-    #     save_annots_per_image(
-    #         annots_repartition,
-    #         self.cropped_annotations_folder_path,
-    #         self.full_image_path_tif,
-    #         clear_if_not_empty=True,
-    #     )
-
-    #     end_p_time = time.process_time()
-    #     print(f"{'Crop annots P time':<20}: {end_p_time - start_p_time:.6f} seconds")
-    #     start_p_time = time.process_time()
-    #     end_time = time.time()
-    #     print(f"{'Crop annots time':<20}: {end_time - start_time:.6f} seconds")
-    #     start_time = time.time()
-
-    #     # Crop RGB/CIR images
-    #     if self.use_rgb or self.use_cir:
-    #         self.cropped_rgb_cir_folder_path = os.path.join(
-    #             self.cropped_data_folder_path, "rgb_cir", output_image_prefix
-    #         )
-    #         crop_image_array(
-    #             self.cropped_annotations_folder_path,
-    #             full_merged_rgb_cir,
-    #             chm=False,
-    #             output_folder_path=self.cropped_rgb_cir_folder_path,
-    #             clear_if_not_empty=False,
-    #             remove_unused=True,
-    #         )
-    #     else:
-    #         self.cropped_rgb_cir_folder_path = None
-
-    #     # Crop CHM images
-    #     if self.use_chm:
-    #         self.cropped_chm_folder_path = os.path.join(
-    #             self.cropped_data_folder_path, "chm", output_image_prefix
-    #         )
-    #         crop_image_array(
-    #             self.cropped_annotations_folder_path,
-    #             full_merged_chm,
-    #             chm=True,
-    #             output_folder_path=self.cropped_chm_folder_path,
-    #             clear_if_not_empty=False,
-    #             remove_unused=True,
-    #         )
-    #     else:
-    #         self.cropped_chm_folder_path = None
-
-    #     end_p_time = time.process_time()
-    #     print(f"{'Crop images P time':<20}: {end_p_time - start_p_time:.6f} seconds")
-    #     start_p_time = time.process_time()
-    #     end_time = time.time()
-    #     print(f"{'Crop images time':<20}: {end_time - start_time:.6f} seconds")
-    #     start_time = time.time()
-
-    #     remove_folder(temp_folder)
 
     def close(self):
         remove_folder(self.cropped_data_folder_path)
@@ -605,7 +429,7 @@ class TrainingParams:
 
 
 class TrainingData:
-    @running_message(start_message="Initializing the training parameters...")
+    @RICH_PRINTING.running_message(start_message="Initializing the training parameters...")
     def __init__(self, dataset_params: DatasetParams, training_params: TrainingParams) -> None:
         self.dataset_params = dataset_params
         self.training_params = training_params
@@ -681,14 +505,15 @@ class ModelSession:
         self.model_path = AMF_GD_YOLOv8.get_weights_path_from_name(self.model_name)
         self.best_epoch = -1
 
-    @running_message("Creating the dataset...")
+    @RICH_PRINTING.running_message("Creating the dataset...")
     def initialize(self) -> Tuple[Dict[str, TreeDataset], AMF_GD_YOLOv8]:
         self.training_data.initialize()
         datasets = self._load_datasets()
         model = self._load_model()
+        self.save_params()
         return datasets, model
 
-    @running_message("Loading the model...")
+    @RICH_PRINTING.running_message("Loading the model...")
     def _load_model(self) -> AMF_GD_YOLOv8:
         model = AMF_GD_YOLOv8(
             self.training_data.dataset_params.channels_rgb,
@@ -699,14 +524,12 @@ class ModelSession:
             scale=self.training_data.training_params.model_size,
         )
         if os.path.isfile(self.model_path):
-            print("Loading the weights...")
             state_dict = torch.load(self.model_path, map_location=self.device)
             model.load_state_dict(state_dict)
-            print("Done")
 
         return model
 
-    @running_message("Loading the dataset...")
+    @RICH_PRINTING.running_message("Loading the dataset...")
     def _load_datasets(self) -> Dict[str, TreeDataset]:
         if self.training_data.dataset_params.agnostic:
             only_label = self.training_data.dataset_params.class_names[0]
@@ -731,7 +554,7 @@ class ModelSession:
         )
         return datasets
 
-    @running_message("Running a training session...")
+    @RICH_PRINTING.running_message("Running a training session...")
     def train(self, overwrite: bool = False):
         # Check if a model with this name already exists
         if os.path.isfile(self.model_path):
@@ -767,11 +590,10 @@ class ModelSession:
 
         # Save the best model
         self.save_model(model)
-        self.save_params()
 
         self.compute_metrics()
 
-    @running_message("Computing metrics...")
+    @RICH_PRINTING.running_message("Computing metrics...")
     def compute_metrics(self):
         datasets, model = self.initialize()
 
@@ -809,9 +631,13 @@ class ModelSession:
             else:
                 raise Exception("There must not be use_rgb, use_cir and use_chm all False.")
 
-        for loader, loader_postfix, loader_legend in tqdm(loaders_zip, desc="Datasets"):
+        for loader, loader_postfix, loader_legend in RICH_PRINTING.pbar(
+            loaders_zip, description="Datasets"
+        ):
             ap_metrics_list = AP_Metrics_List()
-            for use_rgb, use_chm in tqdm(use_rgb_chm, desc="Type of input", leave=False):
+            for use_rgb, use_chm in RICH_PRINTING.pbar(
+                use_rgb_chm, description="Type of input", leave=False
+            ):
 
                 data_postfix = rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)
                 data_legend = rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)

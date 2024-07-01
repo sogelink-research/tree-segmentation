@@ -10,11 +10,11 @@ import pdal
 from osgeo import gdal
 
 from utils import (
+    RICH_PRINTING,
     Folders,
     ImageData,
     create_random_temp_folder,
     remove_folder,
-    running_message,
 )
 
 
@@ -28,7 +28,7 @@ def compute_laz_to_las(laz_file_name: str, verbose: bool = False):
     """
 
     if verbose:
-        print("Converting LAZ to LAS... ", end="", flush=True)
+        RICH_PRINTING.print("Converting LAZ to LAS... ", end="", flush=True)
     file_name = splitext(laz_file_name)[0]
     las_file_name = file_name + ".las"
     pipeline_json = [
@@ -43,9 +43,9 @@ def compute_laz_to_las(laz_file_name: str, verbose: bool = False):
     # Check if the pipeline execution was successful
     if verbose:
         if count == 0:
-            print("Conversion failed.")
+            RICH_PRINTING.print("Conversion failed.")
         else:
-            print("Conversion successful.")
+            RICH_PRINTING.print("Conversion successful.")
 
     return las_file_name
 
@@ -58,7 +58,7 @@ def compute_dsm(
     verbose: bool = False,
 ):
     if verbose:
-        print("Computing Surface Model... ", end="", flush=True)
+        RICH_PRINTING.print("Computing Surface Model... ", end="", flush=True)
     file_name = splitext(las_file_name)[0]
     output_tif_name = f"{file_name}_dsm.tif"
 
@@ -86,7 +86,7 @@ def compute_dsm(
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
     if verbose:
-        print(f"Done: {count} points found. Saved at {output_tif_name}")
+        RICH_PRINTING.print(f"Done: {count} points found. Saved at {output_tif_name}")
     return output_tif_name
 
 
@@ -98,7 +98,7 @@ def compute_dtm(
     verbose: bool = False,
 ):
     if verbose:
-        print("Computing Terrain Model... ", end="", flush=True)
+        RICH_PRINTING.print("Computing Terrain Model... ", end="", flush=True)
     file_name = splitext(las_file_name)[0]
     output_tif_name = f"{file_name}_dtm.tif"
     output_tif_name_temp = f"{file_name}_dtm_temp.tif"
@@ -146,7 +146,7 @@ def compute_dtm(
     os.remove(output_tif_name_temp)
 
     if verbose:
-        print(f"Done: {count} points found. Saved at {output_tif_name}.")
+        RICH_PRINTING.print(f"Done: {count} points found. Saved at {output_tif_name}.")
     return output_tif_name
 
 
@@ -159,7 +159,7 @@ def compute_chm(
     verbose: bool = False,
 ):
     if os.path.exists(output_tif_name):
-        print(f"The file {os.path.abspath(output_tif_name)} already exists.")
+        RICH_PRINTING.print(f"The file {os.path.abspath(output_tif_name)} already exists.")
         return
     las_file_name = compute_laz_to_las(laz_file_name, verbose)
 
@@ -168,7 +168,7 @@ def compute_chm(
     dsm_file_name = compute_dsm(las_file_name, width, height, resolution, verbose)
 
     if verbose:
-        print("Computing Canopy Height Model... ", end="", flush=True)
+        RICH_PRINTING.print("Computing Canopy Height Model... ", end="", flush=True)
 
     # Open DTM and DSM files
     dtm_ds = gdal.Open(dtm_file_name)
@@ -218,13 +218,13 @@ def compute_chm(
     os.remove(dsm_file_name)
 
     if verbose:
-        print(f"CHM calculation completed and saved to {output_tif_name}.")
+        RICH_PRINTING.print(f"CHM calculation completed and saved to {output_tif_name}.")
 
 
-@running_message("Creating point cloud with flat ground...")
+@RICH_PRINTING.running_message("Creating point cloud with flat ground...")
 def compute_laz_minus_ground_height(laz_file_name: str, verbose: bool = False):
     if verbose:
-        print("Subtract ground height to point cloud... ", end="", flush=True)
+        RICH_PRINTING.print("Subtract ground height to point cloud... ", end="", flush=True)
 
     # las_file_name = compute_laz_to_las(laz_file_name, verbose)
 
@@ -246,17 +246,17 @@ def compute_laz_minus_ground_height(laz_file_name: str, verbose: bool = False):
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
     if verbose:
-        print(f"Done: {count} points found.")
+        RICH_PRINTING.print(f"Done: {count} points found.")
 
     return output_laz_name
 
 
-@running_message("Creating point cloud with flat ground...")
+@RICH_PRINTING.running_message("Creating point cloud with flat ground...")
 def compute_laz_minus_ground_height_with_dtm(
     laz_file_name: str, output_laz_name: str, dtm_file_name: str, verbose: bool = False
 ):
     if verbose:
-        print("Subtract ground height to point cloud... ", end="", flush=True)
+        RICH_PRINTING.print("Subtract ground height to point cloud... ", end="", flush=True)
 
     pipeline_json = [
         {"type": "readers.las", "filename": laz_file_name},
@@ -271,12 +271,12 @@ def compute_laz_minus_ground_height_with_dtm(
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
     if verbose:
-        print(f"Done: {count} points found.")
+        RICH_PRINTING.print(f"Done: {count} points found.")
 
     return output_laz_name
 
 
-@running_message("Creating Digital Terrain Model...")
+@RICH_PRINTING.running_message("Creating Digital Terrain Model...")
 def compute_full_dtm(
     las_file_name: str,
     output_tif_name: str,
@@ -284,7 +284,7 @@ def compute_full_dtm(
     verbose: bool = False,
 ):
     if verbose:
-        print("Computing Terrain Model... ", end="", flush=True)
+        RICH_PRINTING.print("Computing Terrain Model... ", end="", flush=True)
 
     # Create temporary folder
     temp_folder = create_random_temp_folder()
@@ -332,7 +332,7 @@ def compute_full_dtm(
         old_ds = None
         new_ds = None
         if verbose:
-            print(f"Done: {count} points found. Saved at {output_tif_name}.")
+            RICH_PRINTING.print(f"Done: {count} points found. Saved at {output_tif_name}.")
     except Exception as e:
         raise e
     finally:
@@ -414,7 +414,7 @@ def slow_compute_slices_chm(
             rsh.write("".join(bash_script))
 
         subprocess.run(["chmod", "+x", shell_run_path])
-        print(subprocess.run([shell_run_path], shell=True))
+        RICH_PRINTING.print(subprocess.run([shell_run_path], shell=True))
 
     except Exception as e:
         raise e
@@ -474,7 +474,7 @@ def compute_slice_chm_from_hag_laz(
     pipeline.execute()
 
 
-@running_message("Creating slices of Canopy Height Model...")
+@RICH_PRINTING.running_message("Creating slices of Canopy Height Model...")
 def compute_slices_chm(
     laz_file_name: str,
     output_tif_paths: List[str],

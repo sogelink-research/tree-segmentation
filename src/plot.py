@@ -152,11 +152,7 @@ def add_label_to_image(
             lineType=cv2.LINE_AA,
         )
     else:
-        print(f"{bbox = }")
-        print(f"{(w, h), baseline = }")
-        print(f"{sub_img.shape = }")
-        print(f"{p1 = }")
-        print(f"{p2 = }")
+        raise Exception("The sub image is empty")
 
 
 def create_bboxes_image(

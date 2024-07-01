@@ -19,18 +19,16 @@ from shapely.wkt import dumps
 from box_cls import Box, BoxInt, box_pixels_to_coordinates
 from geojson_conversions import get_bbox_polygon
 from utils import (
+    RICH_PRINTING,
     Folders,
     create_folder,
     download_file,
     get_coordinates_bbox_from_full_image_file_name,
     get_file_base_name,
-    import_tqdm,
-    running_message,
 )
 
 
 gdal.UseExceptions()
-tqdm = import_tqdm()
 
 
 def _get_rgb_download_url(image_name_with_ext: str) -> str:
@@ -236,7 +234,7 @@ def download_rgb_image_from_polygon(polygon: geojson.Polygon, verbose: bool = Tr
     return images_paths
 
 
-@running_message("Downloading Infrared data...")
+@RICH_PRINTING.running_message("Downloading Infrared data...")
 def download_cir(
     image_coords_box: Box,
     resolution: float,
@@ -386,13 +384,15 @@ def download_cir(
         for k, (fut, pixels_box) in enumerate(zip(futures, iter_pixels_boxes), 1):
             full_image = paste_tile(full_image, fut.result(), pixels_box, image_pixels_box)
             if verbose:
-                print(f"Downloaded image {str(k).zfill(len(str(total_iters)))}/{total_iters}")
+                RICH_PRINTING.print(
+                    f"Downloaded image {str(k).zfill(len(str(total_iters)))}/{total_iters}"
+                )
     if full_image is None:
-        print("Nothing was found at these coordinates.")
+        RICH_PRINTING.print("Nothing was found at these coordinates.")
         return
 
     if verbose:
-        print("Saving GeoTIFF. Please wait...")
+        RICH_PRINTING.print("Saving GeoTIFF. Please wait...")
     final_image = finish_picture(full_image, image_pixels_box)
 
     # real_total_pixels_x = math.ceil(coord_size_x / resolution)
@@ -443,4 +443,4 @@ def download_cir(
         g_tiff = None
 
     if verbose:
-        print(f"Image saved to {save_path}")
+        RICH_PRINTING.print(f"Image saved to {save_path}")

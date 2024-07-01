@@ -1,41 +1,26 @@
 import bisect
 import json
 import os
-import random
-import re
-import time
 from collections import defaultdict
 from math import ceil
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
-import albumentations as A
 import geojson
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn as nn
 from IPython import display
 from ipywidgets import Output
 from matplotlib.ticker import MaxNLocator
-from ultralytics.utils.tal import make_anchors
 
-from dataloaders import (
-    TreeDataLoader,
-    convert_ground_truth_from_tensors,
-    initialize_dataloaders,
-)
-from dataset_constants import DatasetConst
+from dataloaders import TreeDataLoader, initialize_dataloaders
 from datasets import TreeDataset
 from geojson_conversions import merge_geojson_feature_collections, save_geojson
 from layers import AMF_GD_YOLOv8
 from metrics import AP_Metrics
-from plot import create_bboxes_training_image, create_geojson_output
-from preprocessing.data import ImageData
-from utils import Folders, import_tqdm
-
-
-tqdm = import_tqdm()
+from plot import create_geojson_output
+from utils import RICH_PRINTING
 
 
 class TrainingMetrics:
@@ -247,9 +232,9 @@ def print_current_memory():
     if torch.cuda.is_available():
         current_memory_usage_bytes = torch.cuda.memory_allocated()
         current_memory_usage_megabytes = current_memory_usage_bytes / (1024 * 1024)
-        print(f"Current GPU memory usage: {current_memory_usage_megabytes:.2f} MB")
+        RICH_PRINTING.print(f"Current GPU memory usage: {current_memory_usage_megabytes:.2f} MB")
     else:
-        print("CUDA is not available.")
+        RICH_PRINTING.print("CUDA is not available.")
 
 
 def train(
@@ -272,7 +257,7 @@ def train(
         ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
 
     model.train()
-    stream = tqdm(train_loader, leave=False, desc="Training")
+    stream = RICH_PRINTING.pbar(train_loader, leave=False, description="Training")
     for data in stream:
         # Get the data
         image_rgb: torch.Tensor | None = data["image_rgb"]
@@ -353,7 +338,7 @@ def validate(
         ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
 
     model.eval()
-    stream = tqdm(val_loader, leave=False, desc="Validation")
+    stream = RICH_PRINTING.pbar(val_loader, leave=False, description="Validation")
     with torch.no_grad():
         for data in stream:
             # Get the data
@@ -475,7 +460,9 @@ def evaluate_model(
 
     model.eval()
     with torch.no_grad():
-        for data in tqdm(data_loader, leave=False, desc="Evaluating the model"):
+        for data in RICH_PRINTING.pbar(
+            data_loader, leave=False, description="Evaluating the model"
+        ):
             # Get the data
             image_rgb: torch.Tensor | None = data["image_rgb"]
             image_chm: torch.Tensor | None = data["image_chm"]
@@ -585,7 +572,7 @@ def train_and_validate(
     best_loss = np.inf
     skip_until = 3
 
-    for epoch in tqdm(range(1, epochs + 1), desc="Epoch"):
+    for epoch in RICH_PRINTING.pbar(range(1, epochs + 1), description="Epoch"):
         # training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
         training_metrics.save_metrics(
             os.path.join(

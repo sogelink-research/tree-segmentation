@@ -5,6 +5,7 @@ import numpy as np
 import torch
 
 from model_session import DatasetParams, ModelSession, TrainingData, TrainingParams
+from utils import RICH_PRINTING
 
 
 class ModelTrainingSession(ModelSession):
@@ -90,11 +91,15 @@ def main():
         )
     ]
 
-    for combination in filtered_combinations:
-        # Training session
-        model_training_session = ModelTrainingSession(**combination)
-        model_training_session.train()
-        model_training_session.close()
+    # for combination in filtered_combinations:
+    #     # Training session
+    #     model_training_session = ModelTrainingSession(**combination)
+    #     model_training_session.train()
+    #     model_training_session.close()
+
+    model_training_session = ModelTrainingSession(epochs=0)
+    model_training_session.train()
+    model_training_session.close()
 
     # model_training_session = ModelSession.from_name("trained_model_1000ep_8")
     # model_training_session.compute_metrics()
@@ -103,3 +108,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    RICH_PRINTING.close()

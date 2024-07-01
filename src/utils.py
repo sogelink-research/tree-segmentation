@@ -1,14 +1,28 @@
+from __future__ import annotations
+
+import bisect
 import json
 import os
 import random
 import shutil
 import string
-import sys
+import threading
 import time
+import uuid
 import warnings
-from collections.abc import Sequence
+from collections import defaultdict
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Tuple,
+    TypeVar,
+)
 
 import numpy as np
 import tifffile
@@ -16,6 +30,12 @@ import urllib3
 from osgeo import gdal
 from PIL import Image
 from requests import get
+from rich.console import Console, RenderableType
+from rich.live import Live
+from rich.progress import Progress, TaskID
+from rich.text import Text
+from rich.tree import Tree
+from tqdm import tqdm
 
 from box_cls import Box
 from dataset_constants import DatasetConst
@@ -102,7 +122,7 @@ def remove_folder(folder_path: str) -> bool:
             shutil.rmtree(folder_path)
             return True
         except OSError as e:
-            print("Error: %s - %s." % (e.filename, e.strerror))
+            RICH_PRINTING.print("Error: %s - %s." % (e.filename, e.strerror))
             return False
     return False
 
@@ -121,7 +141,7 @@ def remove_all_files_but(folder_path: str, files_to_keep: List[str]) -> None:
                 try:
                     os.remove(file_path)
                 except OSError as e:
-                    print("Error: %s - %s." % (e.filename, e.strerror))
+                    RICH_PRINTING.print("Error: %s - %s." % (e.filename, e.strerror))
 
 
 def get_files_in_folders(folders_paths: List[str]) -> List[str]:
@@ -153,11 +173,13 @@ def download_file(url: str, save_path: str, no_ssl: bool = False, verbose: bool 
     """
     if os.path.exists(save_path):
         if verbose:
-            print(f"Download skipped: there is already a file at '{os.path.abspath(save_path)}'.")
+            RICH_PRINTING.print(
+                f"Download skipped: there is already a file at '{os.path.abspath(save_path)}'."
+            )
         return
     # Send a GET request to the URL
     if verbose:
-        print(f"Downloading {url}...", end=" ", flush=True)
+        RICH_PRINTING.print(f"Downloading {url}... ")
     if no_ssl:
         response = get(url, verify=False)
     else:
@@ -169,38 +191,533 @@ def download_file(url: str, save_path: str, no_ssl: bool = False, verbose: bool 
         with open(save_path, "wb") as f:
             f.write(response.content)
         if verbose:
-            print(f"Done.\nSaved at '{os.path.abspath(save_path)}'.")
+            RICH_PRINTING.print(f"Done.\nSaved at '{os.path.abspath(save_path)}'.")
     else:
         if verbose:
-            print(f"Failed to download file from '{url}'. Status code: {response.status_code}")
-
-
-def running_message(start_message: Optional[str] = None, end_message: Optional[str] = None):
-    def decorator(func: Callable):
-        def wrapper(*args, **kwargs):
-            # Set default messages if not provided
-            start_msg = (
-                start_message if start_message is not None else f"Running {func.__name__}..."
+            RICH_PRINTING.print(
+                f"Failed to download file from '{url}'. Status code: {response.status_code}"
             )
-            start_msg = " -> " + start_msg
-            end_msg = end_message if end_message is not None else "Done in {:.5f} seconds."
 
-            # Print the start message
-            print(start_msg, flush=True)
 
-            # Execute the function
-            start_time = time.time()
-            result = func(*args, **kwargs)
-            exec_time = time.time() - start_time
+class RunningMessage:
+    def __init__(self) -> None:
+        self.messages: List[str] = []
+        self.levels: List[int] = []
+        self.kinds: List[str] = []
+        self.current_level = 0
+        self.last_calls_line_per_level = []
+        self.pbars: Dict[int, tqdm] = {}
 
-            # Print the end message
-            print(end_msg.format(exec_time), flush=True)
+    def _store_new_line(self, message: str, kind: str, pbar: Optional[tqdm] = None) -> None:
+        available_kinds = ["start", "end", "pbar", "print"]
+        if kind not in available_kinds:
+            raise Exception(f"kind should be one of {available_kinds}, not {kind}.")
 
-            return result
+        current_line = len(self.messages)
+        self.messages.append(message)
+        self.levels.append(self.current_level)
+        self.kinds.append(kind)
 
-        return wrapper
+        if kind == "start":
+            self.last_calls_line_per_level.append(current_line)
+        elif kind == "end":
+            self.last_calls_line_per_level.pop(-1)
+        elif kind == "pbar":
+            if pbar is None:
+                raise Exception("The tqdm progress bar should be stored as well.")
+            self.pbars[current_line] = pbar
 
-    return decorator
+    def _remove_line(self, line: int) -> None:
+        self.messages.pop(line)
+        self.levels.pop(line)
+        kind = self.kinds.pop(line)
+        if kind == "pbar":
+            self.pbars.pop(line)
+
+    def _get_message_indentation(self, line: int) -> str:
+        level = self.levels[line]
+        vertical_indent_level = bisect.bisect_left(self.last_calls_line_per_level, line)
+        empty_indent_length = 0 if level == 0 else max(vertical_indent_level, 1)
+        indent_spaces = (empty_indent_length) * "   " + (level - empty_indent_length) * "│  "
+        return indent_spaces
+
+    def _get_arrow_first_char(self, line: int) -> str:
+        level = self.levels[line]
+        kind = self.kinds[line]
+        last_line = len(self.messages) - 1
+        # Level 0
+        if level == 0:
+            return "─"
+        else:  # level > 0
+            if kind == "start":
+                # If the function is still running
+                if (
+                    len(self.last_calls_line_per_level) > level
+                    and self.last_calls_line_per_level[level] == line
+                ):
+                    return "└"
+                # If the function has ended
+                else:
+                    return "├"
+            else:  # kind in ["end", "print", "pbar"]:
+                next_line = line + 1
+                # while True:
+                #     next_line += 1
+                #     if next_line >= len(self.kinds) or self.kinds[next_line] in ["start", "end"]:
+                #         break
+
+                # If nothing after
+                if line == last_line:
+                    return "└"
+                # If the message after is on a lower level
+                elif self.levels[next_line] < level:
+                    return "└"
+                # If the message after is on the same level
+                else:
+                    return "├"
+
+    def _get_full_message(self, line: int) -> str:
+        message = self.messages[line]
+        level = self.levels[line]
+        kind = self.kinds[line]
+        last_line = len(self.messages) - 1
+
+        indentation_spaces = self._get_message_indentation(line)
+
+        # First character
+        first_char = self._get_arrow_first_char(line)
+
+        # First connection
+        if kind == "end":
+            first_connection = ""
+        else:  # kind in ["start", "pbar", "print"]
+            first_connection = "──"
+
+        ### Second character
+        next_line = line + 1
+        # Message of higher level below
+        if line < last_line and self.levels[next_line] > level:
+            second_char = "┬"
+        else:
+            second_char = "─"
+
+        # Second connection
+        if kind == "end":
+            second_connection = ""
+        else:  # kind in ["start", "pbar", "print"]
+            second_connection = "─"
+
+        # Arrow char
+        if kind == "start":
+            arrow_char = "►"
+        elif kind == "end":
+            arrow_char = "◄"
+        elif kind == "print":
+            arrow_char = "☛"
+        elif kind == "pbar":
+            arrow_char = "↻"
+
+        full_message = (
+            indentation_spaces
+            + first_char
+            + first_connection
+            + second_char
+            + second_connection
+            + arrow_char
+            + " "
+            + message
+        )
+        return full_message
+
+    def _write_lines(self, start: int, end: int):
+        total_lines = len(self.messages)
+        tqdm.write("\033[F" * (total_lines - start))
+        for line in range(start, end):
+            if self.kinds[line] == "pbar":
+                if line != 4:
+                    indentation = self._get_message_indentation(line)
+                    arrow_first_char = self._get_arrow_first_char(line)
+                    tqdm.write(indentation + arrow_first_char + "\033[E", end="")
+            else:
+                full_message = self._get_full_message(line)
+                tqdm.write(
+                    "\033[K" + full_message,
+                )
+        if (total_lines - end) > 0:
+            tqdm.write("\033[E" * (total_lines - end))
+
+        # sys.stdout.flush()
+
+    def log_start_message(self, message: str):
+        self._store_new_line(message, kind="start")
+        self._write_lines(0, len(self.messages))
+        self.current_level += 1
+
+    def log_end_message(self, message: str):
+        self._store_new_line(message, kind="end")
+        self._write_lines(0, len(self.messages))
+        self.current_level -= 1
+
+    def running_message(
+        self, start_message: Optional[str] = None, end_message: Optional[str] = None
+    ):
+        def decorator(func: Callable):
+            def wrapper(*args, **kwargs):
+                # Set default messages if not provided
+                start_msg = (
+                    start_message if start_message is not None else f"Running {func.__name__}..."
+                )
+                end_msg = end_message if end_message is not None else "Done in {:.4f} seconds."
+
+                # Print the start message
+                self.log_start_message(start_msg)
+
+                # Execute the function
+                start_time = time.time()
+                result = func(*args, **kwargs)
+                exec_time = time.time() - start_time
+
+                # Print the end message
+                self.log_end_message(end_msg.format(exec_time))
+
+                return result
+
+            return wrapper
+
+        return decorator
+
+    def tqdm(self, *args, desc: str | None = None, leave: bool = False, **kwargs):
+        pbar = tqdm(*args, desc=desc, leave=leave, **kwargs)
+        current_line = len(self.messages)
+
+        self._store_new_line("", kind="pbar", pbar=pbar)
+
+        indentation = self._get_full_message(current_line)
+
+        def new_set_description(desc: str | None = None, refresh: bool | None = True) -> None:
+            pbar.desc = indentation + desc + ": " if desc else indentation
+            if refresh:
+                pbar.refresh()
+
+        # time.sleep(4)
+
+        pbar.set_description = new_set_description
+        pbar.set_description(desc)
+
+        time.sleep(4)
+
+        self._write_lines(0, current_line)
+
+        time.sleep(4)
+
+        tqdm.write("\033[F\033[F")
+
+        if not leave:
+            self._remove_line(current_line)
+        return pbar
+
+    def print(
+        self,
+        *values: str,
+        sep: str = " ",
+    ):
+        self._store_new_line(sep.join(values), kind="print")
+        self._write_lines(0, len(self.messages))
+
+
+RUNNING_MESSAGE = RunningMessage()
+
+
+class PBarList(list):
+    T = TypeVar("T")
+
+    def __init__(
+        self, sequence: List[T], callback_iter: Callable[[],], callback_end_iter: Callable[[],]
+    ) -> None:
+        super().__init__(sequence)
+        self.length = len(sequence)
+        self.progress = 0
+        self.callback_iter = callback_iter
+        self.callback_end_iter = callback_end_iter
+
+    def __iter__(self):
+        return PBarIterator(
+            self, callback_iter=self.callback_iter, callback_end_iter=self.callback_end_iter
+        )
+
+
+class PBarIterator(Iterator):
+    T = TypeVar("T")
+
+    def __init__(
+        self, sequence: PBarList, callback_iter: Callable[[],], callback_end_iter: Callable[[],]
+    ):
+        self.sequence = sequence
+        self.index = 0
+        self.callback_iter = callback_iter
+        self.callback_end_iter = callback_end_iter
+
+    def __next__(self):
+        if self.index > 0:
+            self.callback_iter()
+
+        if self.index < len(self.sequence):
+            item = self.sequence[self.index]
+            self.index += 1
+            return item
+        else:
+            self.callback_end_iter()
+            raise StopIteration
+
+
+class RichPrinting:
+    class NodeFormat:
+        def __init__(
+            self,
+            label: str,
+            style: str = "tree",
+            guide_style: str = "tree.line",
+            expanded: bool = True,
+            highlight: bool = False,
+        ) -> None:
+            self.label = label
+            self.style = style
+            self.guide_style = guide_style
+            self.expanded = expanded
+            self.highlight = highlight
+
+        def to_tree(self) -> Tree:
+            return Tree(
+                label=self.label,
+                style=self.style,
+                guide_style=self.guide_style,
+                expanded=self.expanded,
+                highlight=self.highlight,
+            )
+
+    def __init__(self) -> None:
+        self._reset_attributes()
+        self._reset()
+
+    def _reset_attributes(self) -> None:
+        self.trees: Dict[uuid.UUID, Tree] = {}
+        self.parents: Dict[uuid.UUID, uuid.UUID] = {}
+        self.children: Dict[uuid.UUID, List[uuid.UUID]] = defaultdict(list)
+        self.child_indices: Dict[uuid.UUID, int] = {}
+        self.stack: List[uuid.UUID] = []
+        self.pbars_tasks: Dict[uuid.UUID, TaskID] = {}
+        self.pbars_progress: Dict[uuid.UUID, Progress] = {}
+
+        self.current_level = 0
+        self.leave = True
+
+    def _reset(self) -> None:
+        if hasattr(self, "live"):
+            self.live.stop()
+
+        self.console = Console()
+        self.live = Live(
+            console=self.console,
+            auto_refresh=False,
+            # refresh_per_second=1,
+            # vertical_overflow="visible",
+            # get_renderable=self.get_renderable,
+        )
+
+        self._reset_attributes()
+
+    def _get_new_uuid(self) -> uuid.UUID:
+        while True:
+            new_uuid = uuid.uuid4()
+            if new_uuid not in self.trees.keys():
+                return new_uuid
+
+    def _store_new_line(self, new_node: Tree, kind: str) -> uuid.UUID:
+        # time.sleep(1)
+        available_kinds = ["start", "end", "pbar", "print"]
+        if kind not in available_kinds:
+            raise Exception(f"kind should be one of {available_kinds}, not {kind}.")
+
+        new_uuid = self._get_new_uuid()
+
+        if self.current_level == 0:
+            self._reset()
+            self.root_id = new_uuid
+        else:
+            parent_uuid = self.stack[self.current_level - 1]
+            self.trees[parent_uuid].children.append(new_node)
+            self.children[parent_uuid].append(new_uuid)
+            self.child_indices[new_uuid] = len(self.trees[parent_uuid].children) - 1
+            self.parents[new_uuid] = parent_uuid
+
+        self.trees[new_uuid] = new_node
+
+        if kind == "start":
+            self.stack.append(new_uuid)
+        elif kind == "end":
+            self.stack.pop(-1)
+
+        return new_uuid
+
+    def _remove_line(self, id: uuid.UUID) -> None:
+        if id in self.stack:
+            raise Exception("Cannot remove a line that is still in the stack")
+
+        parent = self.parents.pop(id)
+        child_index = self.child_indices.pop(id)
+        self.trees[parent].children.pop(child_index)
+
+        # Decrease the child index of nodes with the same parent
+        for other_id in self.children[parent][child_index + 1 :]:
+            self.child_indices[other_id] -= 1
+        self.children[parent].pop(child_index)
+
+        if id in self.pbars_tasks:
+            self.pbars_tasks.pop(id)
+            self.pbars_progress.pop(id)
+
+        self.trees.pop(id)
+
+    def get_renderable(self) -> RenderableType:
+        # for id, progress in self.pbars_progress.items():
+        #     parent_id = self.parents[id]
+
+        #     new_node = Tree(progress.get_renderable())
+        #     child_index = self.child_indices[id]
+        #     self.trees[parent_id].children[child_index] = new_node
+        if hasattr(self, "root_id"):
+            return self.trees[self.root_id]
+        else:
+            return Text()
+
+    def close(self):
+        if hasattr(self, "live"):
+            self.live.stop()
+
+    def render(self):
+        if not self.live.is_started:
+            self.live.start()
+        # print(self.get_renderable())
+        self.live.update(self.get_renderable(), refresh=True)
+
+    def _format_message(self, message: str, kind: str) -> NodeFormat:
+        label = message
+
+        # Text style
+        if kind == "start":
+            style = "green"
+        elif kind == "end":
+            style = "blue"
+        elif kind == "print":
+            style = "purple"
+        else:
+            raise Exception(f"Unsupported kind: {kind}")
+
+        node_format = self.NodeFormat(label=label, style=style)
+
+        return node_format
+
+    def log_start_message(self, message: str):
+        node_format = self._format_message(message, kind="start")
+        node = node_format.to_tree()
+        self._store_new_line(node, kind="start")
+        self.render()
+        self.current_level += 1
+
+    def log_end_message(self, message: str):
+        node_format = self._format_message(message, kind="end")
+        node = node_format.to_tree()
+        self._store_new_line(node, kind="end")
+        self.render()
+        self.current_level -= 1
+
+    def running_message(
+        self, start_message: Optional[str] = None, end_message: Optional[str] = None
+    ):
+        def decorator(func: Callable):
+            def wrapper(*args, **kwargs):
+                # Set default messages if not provided
+                start_msg = (
+                    start_message if start_message is not None else f"Running {func.__name__}..."
+                )
+                end_msg = end_message if end_message is not None else "Done in {:.4f} seconds."
+
+                # Print the start message
+                self.log_start_message(start_msg)
+
+                # Execute the function
+                start_time = time.time()
+                result = func(*args, **kwargs)
+                exec_time = time.time() - start_time
+
+                # Print the end message
+                self.log_end_message(end_msg.format(exec_time))
+
+                return result
+
+            return wrapper
+
+        return decorator
+
+    T = TypeVar("T")
+
+    def pbar(self, iterable: Iterable[T], description: str = "", leave: bool = False) -> List[T]:
+        sequence = list(iterable)
+        length = len(sequence)
+
+        progress = Progress()
+        task = progress.add_task(description, total=length)
+
+        new_node = Tree(progress.get_renderable())
+        new_uuid = self._store_new_line(new_node, kind="pbar")
+        self.pbars_tasks[new_uuid] = task
+        self.pbars_progress[new_uuid] = progress
+
+        if leave:
+
+            def callback_end_iter():
+                pass
+
+        else:
+
+            def callback_end_iter():
+                self._remove_line(new_uuid)
+
+        pbar_sequence = PBarList(
+            sequence,
+            callback_iter=lambda: self._pbar_update(new_uuid),
+            callback_end_iter=callback_end_iter,
+        )
+        return pbar_sequence
+
+    def _pbar_update(self, id: uuid.UUID) -> None:
+        progress = self.pbars_progress[id]
+        task = self.pbars_tasks[id]
+        progress.update(task, advance=1)
+
+        parent_id = self.parents[id]
+        new_node = Tree(progress.get_renderable())
+        child_index = self.child_indices[id]
+        self.trees[parent_id].children[child_index] = new_node
+        self.trees[id] = new_node
+
+        self.render()
+
+    def print(
+        self,
+        *values: object,
+        sep: str = " ",
+    ):
+        str_values = [value.__str__() for value in values]
+        message = sep.join(str_values)
+        node_format = self._format_message(message, kind="print")
+        node = node_format.to_tree()
+        self._store_new_line(node, kind="print")
+
+        self.render()
+
+
+RICH_PRINTING = RichPrinting()
 
 
 def get_file_base_name(file_path: str) -> str:
@@ -255,14 +772,6 @@ class ImageData:
         self.pixel_box = Box(x_min=0, y_min=0, x_max=self.width_pixel, y_max=self.height_pixel)
 
         ds = None
-
-
-def import_tqdm():
-    if "ipykernel" in sys.modules:
-        from tqdm.notebook import tqdm
-    else:
-        from tqdm import tqdm
-    return tqdm
 
 
 def generate_random_name(length: int = 8):
@@ -326,11 +835,13 @@ def read_tif(file_path: str, mode: str) -> np.ndarray:
         image = tifffile.memmap(file_path)
     except ValueError as e:
         if str(e) == "image data are not memory-mappable":
-            mmaped_path = file_path.replace(".tif", "_memmap.tif")
-            if not os.path.isfile(mmaped_path):
-                print(f"Warning: {e}. Converting the image to a memory-mappable format.")
-                convert_tif_to_memmappable(file_path, mmaped_path)
-            image = tifffile.memmap(mmaped_path, mode=mode)  # type: ignore
+            memmaped_path = file_path.replace(".tif", "_memmap.tif")
+            if not os.path.isfile(memmaped_path):
+                RICH_PRINTING.print(
+                    f"Warning: {e}. Converting the image to a memory-mappable format."
+                )
+                convert_tif_to_memmappable(file_path, memmaped_path)
+            image = tifffile.memmap(memmaped_path, mode=mode)  # type: ignore
         else:
             raise
     return image

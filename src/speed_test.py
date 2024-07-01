@@ -1,8 +1,6 @@
 import time
-import timeit
-from itertools import combinations, product
 from random import shuffle
-from typing import Callable, List, Optional, Sequence, Tuple, Union
+from typing import Callable, List, Optional, Sequence, Tuple
 
 import h5py
 import matplotlib.pyplot as plt
@@ -13,10 +11,6 @@ import seaborn as sns
 import tifffile
 import torch
 
-from utils import import_tqdm
-
-
-tqdm = import_tqdm()
 
 # from layers import AMF_GD_YOLOv8
 
@@ -76,7 +70,7 @@ def write_hdf5(images: List[np.ndarray], save_path: str) -> None:
 
 
 def write_netCDF4(images: List[np.ndarray], save_path: str) -> None:
-    with nc.Dataset(save_path, "w") as f:
+    with nc.Dataset(save_path, "w") as f:  # type: ignore
         f.createDimension("height", images[0].shape[0])
         f.createDimension("width", images[0].shape[1])
         height = f.createVariable("height", np.uint16, ("height",))
@@ -132,7 +126,7 @@ def read_hdf5(file_path: str) -> List[np.ndarray]:
 
 
 def read_netCDF4(file_path: str) -> List[np.ndarray]:
-    with nc.Dataset(file_path, "r") as f:
+    with nc.Dataset(file_path, "r") as f:  # type: ignore
         idx = 0
         images = []
         while f"image{idx}" in f.variables:
@@ -255,24 +249,24 @@ def test(
     print(f"{read_func.__name__}: ")
     print("Process time:   ")
     print(
-        f"'load':      mean={np.mean(total_load_process_times):.5f} seconds, std={np.std(total_load_process_times):.5f}"
+        f"'load':      mean={np.mean(total_load_process_times):.4f} seconds, std={np.std(total_load_process_times):.4f}"
     )
     # print(
-    #     f"'to tensor': mean={np.mean(total_to_tensor_process_times):.5f} seconds, std={np.std(total_to_tensor_process_times):.5f}"
+    #     f"'to tensor': mean={np.mean(total_to_tensor_process_times):.4f} seconds, std={np.std(total_to_tensor_process_times):.4f}"
     # )
     # print(
-    #     f"'output':    mean={np.mean(total_output_process_times):.5f} seconds, std={np.std(total_output_process_times):.5f}"
+    #     f"'output':    mean={np.mean(total_output_process_times):.4f} seconds, std={np.std(total_output_process_times):.4f}"
     # )
-    print(f"Entire time per iteration: {entire_process_time:.5f}")
+    print(f"Entire time per iteration: {entire_process_time:.4f}")
     print("Execution time: ")
     print(
-        f"'load':      mean={np.mean(total_load_times):.5f} seconds, std={np.std(total_load_times):.5f}"
+        f"'load':      mean={np.mean(total_load_times):.4f} seconds, std={np.std(total_load_times):.4f}"
     )
     # print(
-    #     f"'to tensor': mean={np.mean(total_to_tensor_times):.5f} seconds, std={np.std(total_to_tensor_times):.5f}"
+    #     f"'to tensor': mean={np.mean(total_to_tensor_times):.4f} seconds, std={np.std(total_to_tensor_times):.4f}"
     # )
     # print(
-    #     f"'output':    mean={np.mean(total_output_times):.5f} seconds, std={np.std(total_output_times):.5f}"
+    #     f"'output':    mean={np.mean(total_output_times):.4f} seconds, std={np.std(total_output_times):.4f}"
     # )
 
     return (
@@ -416,7 +410,7 @@ def main():
         ax1.text(
             i,
             mean + 0.01,
-            f"Mean: {mean:.5f}",
+            f"Mean: {mean:.4f}",
             horizontalalignment="center",
             verticalalignment="bottom",
             fontsize=10,
@@ -425,7 +419,7 @@ def main():
         ax1.text(
             i,
             mean - 0.01,
-            f"Std: {std:.5f}",
+            f"Std: {std:.4f}",
             horizontalalignment="center",
             verticalalignment="top",
             fontsize=10,
@@ -460,11 +454,11 @@ if __name__ == "__main__":
     #     lambda: torch.cat([t.unsqueeze(0) for t in tensors]), number=iterations
     # )
 
-    # print(f"np.stack time:                 {numpy_stack_time:.6f} seconds")
-    # print(f"np.cstack time:                {numpy_vstack_time:.6f} seconds")
-    # print(f"custom function time:          {custom_time:.6f} seconds")
-    # print(f"torch.stack time:              {stack_time:.6f} seconds")
-    # print(f"torch.cat with unsqueeze time: {cat_time:.6f} seconds")
+    # print(f"np.stack time:                 {numpy_stack_time:.4f} seconds")
+    # print(f"np.cstack time:                {numpy_vstack_time:.4f} seconds")
+    # print(f"custom function time:          {custom_time:.4f} seconds")
+    # print(f"torch.stack time:              {stack_time:.4f} seconds")
+    # print(f"torch.cat with unsqueeze time: {cat_time:.4f} seconds")
 
     # types = [
     #     np.float16,

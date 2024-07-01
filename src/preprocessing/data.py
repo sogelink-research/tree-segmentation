@@ -1,16 +1,14 @@
 import json
 import os
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import geojson
 import numpy as np
 import numpy.typing as npt
 import rasterio
 import shapely.geometry as shp_geom
-from osgeo import gdal
 from PIL import Image
 
 from box_cls import (
@@ -22,29 +20,18 @@ from box_cls import (
     box_pixels_to_coordinates,
     intersection_ratio,
 )
-from datasets import generate_slices, quick_merge_chunk
+from datasets import quick_merge_chunk
 from geojson_conversions import get_bbox_polygon
 from utils import (
-    Folders,
+    RICH_PRINTING,
     ImageData,
     create_folder,
-    crop_dtype_type_precision_image,
-    get_coordinates_from_full_image_file_name,
-    get_file_base_name,
-    get_files_in_folders,
-    import_tqdm,
     open_json,
     read_image,
-    read_numpy,
     remove_all_files_but,
     remove_folder,
     write_image,
-    write_numpy,
 )
-
-
-gdal.UseExceptions()
-tqdm = import_tqdm()
 
 
 def _old_get_image_path_from_full_annotation_path(annotations: Dict[Any, Any]) -> str:
@@ -164,7 +151,9 @@ def _old_find_annots_repartition(
     )
 
     # Iterate over each bounding box
-    for annot_info in tqdm(annots, leave=False, desc="Placing: Bounding boxes:"):
+    for annot_info in RICH_PRINTING.pbar(
+        annots, leave=False, description="Placing: Bounding boxes:"
+    ):
         annot_value = annot_info["value"]
         x_min = int(round(annot_value["x"] * image_width_factor))
         y_min = int(round(annot_value["y"] * image_height_factor))
@@ -249,7 +238,9 @@ def find_annots_repartition(
     image_coord_box = image_data.coord_box
 
     # Iterate over each polygon
-    for annot_info in tqdm(annots, leave=False, desc="Placing: Bounding boxes:"):
+    for annot_info in RICH_PRINTING.pbar(
+        annots, leave=False, description="Placing: Bounding boxes:"
+    ):
         label = annot_info["properties"]["label"]
         # If it is a polygon showing non labeled space, remove the image if it intersects with it
         if label == "Not_labeled":
@@ -300,8 +291,8 @@ def crop_annots_into_limits(annots_repartition: Dict[Box, List[Annotation]]) -> 
         annots_repartition (Dict[Box, List[Box]]): dictionary associating the
         bounding box of each image with the list of tree bounding boxes that fit in.
     """
-    for limits_box, annots in tqdm(
-        annots_repartition.items(), leave=False, desc="Cropping: Bounding boxes"
+    for limits_box, annots in RICH_PRINTING.pbar(
+        annots_repartition.items(), leave=False, description="Cropping: Bounding boxes"
     ):
         for i, annot in enumerate(annots):
             annots[i].box = box_crop_in_box(annot.box, limits_box)
@@ -317,8 +308,8 @@ def annots_coordinates_to_local(
         annots_repartition (Dict[Box, List[Box]]): dictionary associating the
         bounding box of each image with the list of tree bounding boxes that fit in.
     """
-    for limits_box, annots in tqdm(
-        annots_repartition.items(), leave=False, desc="To local: Bounding boxes"
+    for limits_box, annots in RICH_PRINTING.pbar(
+        annots_repartition.items(), leave=False, description="To local: Bounding boxes"
     ):
         for i, annot in enumerate(annots):
             annots[i].box = box_pixels_full_to_cropped(annot.box, limits_box)
@@ -332,8 +323,8 @@ def make_annots_agnostic(annots_repartition: Dict[Box, List[Annotation]], only_l
         bounding box of each image with the list of tree bounding boxes that fit in.
         only_label (str): the label to give to all bounding boxes.
     """
-    for annots in tqdm(
-        annots_repartition.values(), leave=False, desc="To agnostic: Bounding boxes"
+    for annots in RICH_PRINTING.pbar(
+        annots_repartition.values(), leave=False, description="To agnostic: Bounding boxes"
     ):
         for i, annot in enumerate(annots):
             annots[i].label = only_label
@@ -359,10 +350,10 @@ def save_annots_per_image(
         remove_folder(output_folder_path)
     create_folder(output_folder_path)
 
-    for image_box, annots in tqdm(
+    for image_box, annots in RICH_PRINTING.pbar(
         annots_repartition.items(),
         leave=False,
-        desc="Saving annotations: Bounding boxes",
+        description="Saving annotations: Bounding boxes",
     ):
         annots_dict = {
             "full_image": {
@@ -476,10 +467,10 @@ def crop_image(
     files_to_keep: List[str] = []
 
     # Iterate over the cropped annotations
-    for file_name in tqdm(
+    for file_name in RICH_PRINTING.pbar(
         os.listdir(cropped_annotations_folder_path),
         leave=True,
-        desc="Cropping images: Cropped annotations",
+        description="Cropping images: Cropped annotations",
     ):
         annotations_file_path = os.path.join(cropped_annotations_folder_path, file_name)
         if os.path.splitext(annotations_file_path)[1] == ".json":
@@ -517,10 +508,10 @@ def crop_image_array_old(
     files_to_keep: List[str] = []
 
     # Iterate over the cropped annotations
-    for file_name in tqdm(
+    for file_name in RICH_PRINTING.pbar(
         os.listdir(cropped_annotations_folder_path),
         leave=True,
-        desc="Cropping images: Cropped annotations",
+        description="Cropping images: Cropped annotations",
     ):
         annotations_file_path = os.path.join(cropped_annotations_folder_path, file_name)
         if os.path.splitext(annotations_file_path)[1] == ".json":
