@@ -96,6 +96,25 @@ class ModelTrainingSession(ModelSession):
         return os.path.join(self.folder_path, "model_init_params.json")
 
     def save_init_params(self) -> None:
+        params_to_save = {
+            "use_rgb": self.use_rgb,
+            "use_cir": self.use_cir,
+            "use_chm": self.use_chm,
+            "chm_z_layers": self.chm_z_layers,
+            "annotations_file_name": self.annotations_file_name,
+            "agnostic": self.agnostic,
+            "model_size": self.model_size,
+            "lr": self.lr,
+            "epochs": self.epochs,
+            "batch_size": self.batch_size,
+            "num_workers": self.num_workers,
+            "accumulate": self.accumulate,
+            "no_improvement_stop_epochs": self.no_improvement_stop_epochs,
+            "proba_drop_rgb": self.proba_drop_rgb,
+            "proba_drop_chm": self.proba_drop_chm,
+            "device": self.device,
+            "postfix": self.postfix,
+        }
         save_path = self.init_params_path
         with open(save_path, "w") as fp:
             json.dump(self.__dict__, fp, cls=FullJsonEncoder, sort_keys=True, indent=4)
