@@ -15,7 +15,7 @@ from ultralytics.utils.tal import make_anchors
 
 from box_cls import Box
 from cbam import CBAM
-from utils import Folders, create_folder, download_file
+from utils import RICH_PRINTING, Folders, create_folder, download_file
 
 
 # To import anything from GoldYolo
@@ -650,11 +650,9 @@ class TrainingLoss(v8DetectionLoss):
         """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
         loss = torch.empty(3, device=self.device)  # box, cls, dfl
         feats = output
-        pred_distri, pred_scores = (
-            torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2)
-            .to(self.device)
-            .split((self.reg_max * 4, self.nc), 1)
-        )
+        pred_distri, pred_scores = torch.cat(
+            [xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2
+        ).split((self.reg_max * 4, self.nc), 1)
 
         pred_scores = pred_scores.permute(0, 2, 1).contiguous()
         pred_distri = pred_distri.permute(0, 2, 1).contiguous()
@@ -665,8 +663,12 @@ class TrainingLoss(v8DetectionLoss):
             torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]
         )  # image size (h,w)
         anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
+        RICH_PRINTING.print(f"{anchor_points.device = }")
+        RICH_PRINTING.print(f"{stride_tensor.device = }")
         anchor_points = anchor_points.to(self.device)
         stride_tensor = stride_tensor.to(self.device)
+        RICH_PRINTING.print(f"{anchor_points.device = }")
+        RICH_PRINTING.print(f"{stride_tensor.device = }")
 
         # Targets
         targets = torch.cat(
