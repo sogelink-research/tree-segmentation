@@ -278,7 +278,7 @@ def train(
         image_indices = image_indices.to(device, non_blocking=True)
 
         # Compute the model output
-        output = model.forward(image_rgb, image_chm, device)
+        output = model.forward(image_rgb, image_chm)
 
         # Compute the AP metrics
         with torch.no_grad():
@@ -360,7 +360,7 @@ def validate(
             image_indices = image_indices.to(device, non_blocking=True)
 
             # Compute the model output
-            output = model.forward(image_rgb, image_chm, device)
+            output = model.forward(image_rgb, image_chm)
 
             # Compute the loss
             total_loss, loss_dict = model.compute_loss(output, gt_bboxes, gt_classes, gt_indices)
@@ -483,7 +483,7 @@ def evaluate_model(
 
             # Compute the model output
             output = model.forward(
-                image_rgb, image_chm, use_left_temp=use_rgb, use_right_temp=use_chm, device=device
+                image_rgb, image_chm, use_left_temp=use_rgb, use_right_temp=use_chm
             )
             preds = model.preds_from_output(output)
 
@@ -592,7 +592,7 @@ def get_batch_size(
                     image_indices = image_indices.to(device, non_blocking=True)
 
                     # Compute the model output
-                    output = model.forward(image_rgb, image_chm, device)
+                    output = model.forward(image_rgb, image_chm)
                     RICH_PRINTING.print(f"{device = }")
                     RICH_PRINTING.print(f"{output[0].device = }")
                     RICH_PRINTING.print(f"{gt_bboxes.device = }")

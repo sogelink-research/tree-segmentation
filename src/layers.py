@@ -441,6 +441,16 @@ class AMF_GD_YOLOv8(nn.Module):
         self.args = Args()
         self.criterion = TrainingLoss(self)
 
+    def to_device(self, device):
+        # Move each module to the specified device
+        for module in self.model:
+            module.to(device)
+        return self
+
+    @property
+    def device(self) -> torch.device:
+        return next(self.model.parameters()).device
+
     def _open_image(self, image_path: str) -> torch.Tensor:
         to_tensor_transform = transforms.ToTensor()
 
@@ -452,7 +462,6 @@ class AMF_GD_YOLOv8(nn.Module):
         self,
         x_left: torch.Tensor | str | None,
         x_right: torch.Tensor | str | None,
-        device: torch.device,
         use_left_temp: bool = True,
         use_right_temp: bool = True,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -469,7 +478,7 @@ class AMF_GD_YOLOv8(nn.Module):
             else:
                 x_left = torch.zeros(
                     (x_right.shape[0], self.c_input_left, x_right.shape[2], x_right.shape[3])
-                ).to(device)
+                ).to(self.device)
         if x_right is None:
             if self.use_right and use_right_temp:
                 raise Exception("The input of the left channel shouldn't be None.")
@@ -478,7 +487,7 @@ class AMF_GD_YOLOv8(nn.Module):
             else:
                 x_right = torch.zeros(
                     (x_left.shape[0], self.c_input_right, x_left.shape[2], x_left.shape[3])
-                ).to(device)
+                ).to(self.device)
 
         return x_left, x_right
 
@@ -486,14 +495,12 @@ class AMF_GD_YOLOv8(nn.Module):
         self,
         x_left: torch.Tensor | str | None,
         x_right: torch.Tensor | str | None,
-        device: torch.device,
         use_left_temp: bool = True,
         use_right_temp: bool = True,
     ) -> List[torch.Tensor]:
         x_left, x_right = self._pre_process(
             x_left=x_left,
             x_right=x_right,
-            device=device,
             use_left_temp=use_left_temp,
             use_right_temp=use_right_temp,
         )
@@ -528,12 +535,11 @@ class AMF_GD_YOLOv8(nn.Module):
         self,
         x_left: torch.Tensor | str | None,
         x_right: torch.Tensor | str | None,
-        device: torch.device,
         iou_threshold: float = 0.5,
         conf_threshold: Optional[float] = None,
         number_best: Optional[int] = None,
     ) -> Tuple[List[List[Box]], List[List[float]], List[List[int]]]:
-        output = self.forward(x_left, x_right, device)
+        output = self.forward(x_left, x_right)
         preds = self.preds_from_output(output)
         return self.predict_from_preds(
             preds,
@@ -663,12 +669,6 @@ class TrainingLoss(v8DetectionLoss):
             torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]
         )  # image size (h,w)
         anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
-        RICH_PRINTING.print(f"{anchor_points.device = }")
-        RICH_PRINTING.print(f"{stride_tensor.device = }")
-        anchor_points = anchor_points.to(self.device)
-        stride_tensor = stride_tensor.to(self.device)
-        RICH_PRINTING.print(f"{anchor_points.device = }")
-        RICH_PRINTING.print(f"{stride_tensor.device = }")
 
         # Targets
         targets = torch.cat(
