@@ -663,7 +663,6 @@ class TrainingLoss(v8DetectionLoss):
         self, output: List[torch.Tensor], batch: Dict[str, torch.Tensor]
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
-        print(f"{self.device = }")
         loss = torch.empty(3, device=self.device)  # box, cls, dfl
         feats = output
         pred_distri, pred_scores = torch.cat(
@@ -673,17 +672,12 @@ class TrainingLoss(v8DetectionLoss):
         pred_scores = pred_scores.permute(0, 2, 1).contiguous()
         pred_distri = pred_distri.permute(0, 2, 1).contiguous()
 
-        print(f"{pred_distri.device = }")
-        print(f"{pred_scores.device = }")
-
         dtype = pred_scores.dtype
         batch_size = pred_scores.shape[0]
         imgsz = (
             torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]
         )  # image size (h,w)
         anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
-        print(f"{anchor_points.device = }")
-        print(f"{stride_tensor.device = }")
 
         # Targets
         targets = torch.cat(
