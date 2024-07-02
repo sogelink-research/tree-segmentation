@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import sys
 from typing import Dict, List, Optional, Tuple
@@ -440,12 +442,12 @@ class AMF_GD_YOLOv8(nn.Module):
 
         self.args = Args()
         self.criterion = TrainingLoss(self)
-        self.criterion.device = self.device
 
-    def to_device(self, device):
-        # Move each module to the specified device
+    def to_device(self, device: torch.device) -> AMF_GD_YOLOv8:
         for module in self.model:
             module.to(device)
+
+        self.criterion.device = device
         return self
 
     @property
