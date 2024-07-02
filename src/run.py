@@ -33,7 +33,7 @@ class ModelTrainingSession(ModelSession):
         model_size: str = "n",
         lr: float = 1e-2,
         epochs: int = 1000,
-        batch_size: int = 10,
+        batch_size: Optional[int] = None,
         num_workers: int = 0,
         accumulate: int = 12,
         no_improvement_stop_epochs: int = 50,

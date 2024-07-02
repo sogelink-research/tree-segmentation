@@ -7,7 +7,7 @@ import pickle
 import time
 import warnings
 from collections import defaultdict
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import albumentations as A
 import geojson
@@ -396,15 +396,15 @@ class TrainingParams:
         model_size: str,
         lr: float,
         epochs: int,
-        batch_size: int,
         num_workers: int,
         accumulate: int,
         no_improvement_stop_epochs: int,
         proba_drop_rgb: float,
         proba_drop_chm: float,
-        transform_spatial_training: A.Compose | None = None,
-        transform_pixel_rgb_training: A.Compose | None = None,
-        transform_pixel_chm_training: A.Compose | None = None,
+        batch_size: Optional[int] = None,
+        transform_spatial_training: Optional[A.Compose] = None,
+        transform_pixel_rgb_training: Optional[A.Compose] | None = None,
+        transform_pixel_chm_training: Optional[A.Compose] | None = None,
     ) -> None:
         self.model_size = model_size
         self.lr = lr
@@ -510,6 +510,7 @@ class ModelSession:
     @RICH_PRINTING.running_message("Creating the dataset...")
     def initialize(self) -> Tuple[Dict[str, TreeDataset], AMF_GD_YOLOv8]:
         self.training_data.initialize()
+        self._init_batch_size()
         datasets = self._load_datasets()
         model = self._load_model()
         return datasets, model
@@ -554,6 +555,19 @@ class ModelSession:
         )
         return datasets
 
+    @RICH_PRINTING.running_message("Finding the best batch size...")
+    def _init_batch_size(self) -> None:
+        datasets = self._load_datasets()
+        model = self._load_model()
+        # Find best batch size
+        self.batch_size = get_batch_size(
+            model,
+            self.device,
+            datasets["training"],
+            accumulate=self.training_data.training_params.accumulate,
+            num_workers=self.training_data.training_params.num_workers,
+        )
+
     @RICH_PRINTING.running_message("Running a training session...")
     def train(self, overwrite: bool = False):
         # Check if a model with this name already exists
@@ -574,18 +588,6 @@ class ModelSession:
         # Load data and model
         datasets, model = self.initialize()
 
-        # Find best batch size
-        self.training_data.training_params.batch_size = get_batch_size(
-            model,
-            self.device,
-            datasets["training"],
-            accumulate=self.training_data.training_params.accumulate,
-            num_workers=self.training_data.training_params.num_workers,
-        )
-
-        # Initialize real model
-        model = self._load_model()
-
         # Save params
         self.save_params()
 
@@ -595,7 +597,7 @@ class ModelSession:
             datasets=datasets,
             lr=self.training_data.training_params.lr,
             epochs=self.training_data.training_params.epochs,
-            batch_size=self.training_data.training_params.batch_size,
+            batch_size=self.batch_size,
             num_workers=self.training_data.training_params.num_workers,
             accumulate=self.training_data.training_params.accumulate,
             device=self.device,
@@ -614,7 +616,7 @@ class ModelSession:
 
         train_loader, val_loader, test_loader = initialize_dataloaders(
             datasets=datasets,
-            batch_size=self.training_data.training_params.batch_size,
+            batch_size=self.batch_size,
             num_workers=self.training_data.training_params.num_workers,
         )
 
@@ -716,7 +718,7 @@ class ModelSession:
             "tile_overlap": self.training_data.dataset_params.tile_overlap,
             "tile_size": self.training_data.dataset_params.tile_size,
             "accumulate": self.training_data.training_params.accumulate,
-            "batch_size": self.training_data.training_params.batch_size,
+            "batch_size": self.batch_size,
             "epochs": self.training_data.training_params.epochs,
             "lr": self.training_data.training_params.lr,
             "model_size": self.training_data.training_params.model_size,

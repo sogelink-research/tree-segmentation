@@ -856,49 +856,55 @@ class RichPrinting:
         if last_uuid not in self.pbars_progress:
             progress = Progress(
                 TextColumn("[progress.description]{task.description}"),
+                "•",
                 BarColumn(),
-                MofNCompleteColumn(),
+                "•",
+                "{task.completed:{task.fields[max_digits]}}/{task.total:{task.fields[max_digits]}}",
+                "•",
                 TimeRemainingColumn(compact=False, elapsed_when_finished=True),
+                "•",
                 SpinnerColumn(spinner_name="arrow"),
-                auto_refresh=False,
             )
         else:
             progress = self.pbars_progress[last_uuid]
 
-        task = progress.add_task(description, total=length)
+        taskID = progress.add_task(description, total=length, max_digits=len(str(length)))
         new_node = Tree(progress.get_renderable())
         new_uuid = self._store_new_line(new_node, kind="pbar")
         self.pbars_progress[new_uuid] = progress
+
+        self._pbar_update_max_digits(new_uuid)
 
         if last_uuid == new_uuid:
             if leave:
 
                 def callback_end_iter(by_break: bool):
                     if by_break:
-                        self._pbar_break(new_uuid, task)
+                        self._pbar_break(new_uuid, taskID)
 
             else:
 
                 def callback_end_iter(by_break: bool):
-                    progress.remove_task(task)
+                    progress.remove_task(taskID)
                     self.heights[new_uuid] -= 1
+                    self._pbar_update_max_digits(new_uuid)
 
         else:
             if leave:
 
                 def callback_end_iter(by_break: bool):
                     if by_break:
-                        self._pbar_break(new_uuid, task)
+                        self._pbar_break(new_uuid, taskID)
 
             else:
 
                 def callback_end_iter(by_break: bool):
-                    progress.remove_task(task)
+                    progress.remove_task(taskID)
                     self._remove_line(new_uuid)
 
         pbar_sequence = PBarList(
             sequence,
-            callback_iter=lambda: self._pbar_update(new_uuid, task),
+            callback_iter=lambda: self._pbar_update(new_uuid, taskID),
             callback_end_iter=callback_end_iter,
         )
         return pbar_sequence
@@ -925,6 +931,14 @@ class RichPrinting:
         self.trees[id] = new_node
 
         self.render()
+
+    def _pbar_update_max_digits(self, id: uuid.UUID) -> None:
+        progress = self.pbars_progress[id]
+        max_digits = max(map(lambda task: len(str(task.total)), progress.tasks))
+        for task in progress.tasks:
+            task.fields["max_digits"] = max_digits
+
+        self._pbar_node_update(id)
 
     def print(
         self,
