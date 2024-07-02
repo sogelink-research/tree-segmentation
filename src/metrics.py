@@ -1,3 +1,4 @@
+import json
 import os
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple, TypeVar, cast
@@ -568,3 +569,43 @@ class AP_Metrics_List:
             title=title,
             save_path=save_path,
         )
+
+    def save_data(self, save_path: str) -> None:
+        best_sorted_ious_list = []
+        best_aps_list = []
+        best_sorted_ap_list = []
+        best_conf_threshold_list = []
+
+        sorted_ious_lists = []
+        aps_lists = []
+        sorted_ap_lists = []
+        conf_threshold_lists = []
+
+        for ap_metrics in self.ap_metrics_list:
+            best_sorted_ious, best_aps, best_sorted_ap, best_conf_threshold = (
+                ap_metrics.get_best_sorted_ap()
+            )
+            best_sorted_ious_list.append(best_sorted_ious)
+            best_aps_list.append(best_aps)
+            best_sorted_ap_list.append(best_sorted_ap)
+            best_conf_threshold_list.append(best_conf_threshold)
+
+            ap_metrics.compute_sorted_ap()
+            sorted_ious_lists.append(ap_metrics.sorted_ious_list)
+            aps_lists.append(ap_metrics.aps_list)
+            sorted_ap_lists.append(ap_metrics.sorted_ap_list)
+            conf_threshold_lists.append(ap_metrics.conf_threshold_list)
+
+        results = {
+            "best_sorted_ious_list": best_sorted_ious_list,
+            "best_aps_list": best_aps_list,
+            "best_sorted_ap_list": best_sorted_ap_list,
+            "best_conf_threshold_list": best_conf_threshold_list,
+            "sorted_ious_lists": sorted_ious_lists,
+            "aps_lists": aps_lists,
+            "sorted_ap_lists": sorted_ap_lists,
+            "conf_threshold_lists": conf_threshold_lists,
+            "legend_list": self.legend_list,
+        }
+        with open(save_path, "w") as fp:
+            json.dump(results, fp, sort_keys=True)

@@ -597,14 +597,23 @@ def get_batch_size(
                     gt_indices = gt_indices.to(device, non_blocking=True)
                     image_indices = image_indices.to(device, non_blocking=True)
 
+                    RICH_PRINTING.print("After data to device")
+                    print_current_memory()
+
                     # Compute the model output
                     output = model.forward(image_rgb, image_chm)
+
+                    RICH_PRINTING.print("After forward")
+                    print_current_memory()
 
                     # Compute the loss
                     total_loss, loss_dict = model.compute_loss(
                         output, gt_bboxes, gt_classes, gt_indices
                     )
                     total_loss.backward()
+
+                    RICH_PRINTING.print("After backward")
+                    print_current_memory()
 
                     # Gradient accumulation
 
@@ -626,7 +635,7 @@ def get_batch_size(
             RICH_PRINTING.print(f"\tOOM at batch size {batch_size}")
             break
 
-        except Exception as e:
+        except BaseException as e:
             raise e
 
     # Select best batch size

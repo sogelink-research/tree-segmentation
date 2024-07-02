@@ -669,19 +669,17 @@ class ModelSession:
                     use_chm=use_chm,
                     ap_conf_thresholds=conf_thresholds,
                     output_geojson_save_path=os.path.join(
-                        model_folder_path, "predictions", f"predictions_{full_postfix}.geojson"
+                        predictions_folder, f"predictions_{full_postfix}.geojson"
                     ),
                 )
 
                 ap_metrics.plot_ap_iou_per_label(
-                    save_path=os.path.join(
-                        model_folder_path, "ap_iou", f"ap_iou_per_label_{full_postfix}.png"
-                    ),
+                    save_path=os.path.join(ap_iou_folder, f"ap_iou_per_label_{full_postfix}.png"),
                     title=f"Sorted AP curve per class on the {full_legend}",
                 )
                 ap_metrics.plot_sap_conf_per_label(
                     save_path=os.path.join(
-                        model_folder_path, "sap_conf", f"sap_conf_per_label_{full_postfix}.png"
+                        sap_conf_folder, f"sap_conf_per_label_{full_postfix}.png"
                     ),
                     title=f"Sorted AP w.r.t the confidence threshold per class on the {full_legend}",
                 )
@@ -689,14 +687,15 @@ class ModelSession:
                 ap_metrics_list.add_ap_metrics(ap_metrics, legend=data_legend)
 
             ap_metrics_list.plot_ap_iou(
-                save_path=os.path.join(model_folder_path, "ap_iou", f"ap_iou_{loader_postfix}.png"),
+                save_path=os.path.join(ap_iou_folder, f"ap_iou_{loader_postfix}.png"),
                 title=f"Sorted AP curve on the {loader_legend}",
             )
             ap_metrics_list.plot_sap_conf(
-                save_path=os.path.join(
-                    model_folder_path, "sap_conf", f"sap_conf_{loader_postfix}.png"
-                ),
+                save_path=os.path.join(sap_conf_folder, f"sap_conf_{loader_postfix}.png"),
                 title=f"Sorted AP w.r.t the confidence threshold on the {loader_legend}",
+            )
+            ap_metrics_list.save_data(
+                save_path=os.path.join(model_folder_path, f"ap_results_{loader_postfix}.json")
             )
 
     def save_params(self):
