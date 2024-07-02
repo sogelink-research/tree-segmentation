@@ -535,7 +535,7 @@ def evaluate_model(
 
 @RICH_PRINTING.running_message("Finding the optimal batch size...")
 def get_batch_size(
-    model: torch.nn.Module,
+    model: AMF_GD_YOLOv8,
     device: torch.device,
     train_dataset: TreeDataset,
     accumulate: int,
@@ -543,7 +543,7 @@ def get_batch_size(
     max_batch_size: Optional[int] = None,
     num_iterations: int = 2,
 ) -> int:
-    model.to(device)
+    model = model.to(device)
     model.train()
     optimizer = torch.optim.Adam(model.parameters())
 
