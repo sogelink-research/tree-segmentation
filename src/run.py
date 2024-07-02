@@ -35,7 +35,7 @@ class ModelTrainingSession(ModelSession):
         epochs: int = 1000,
         batch_size: int = 10,
         num_workers: int = 0,
-        accumulate: int = 10,
+        accumulate: int = 12,
         no_improvement_stop_epochs: int = 50,
         proba_drop_rgb: float = 1 / 3,
         proba_drop_chm: float = 1 / 3,

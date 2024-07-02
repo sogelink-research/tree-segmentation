@@ -1,6 +1,7 @@
 import bisect
 import json
 import os
+import time
 from collections import defaultdict
 from math import ceil
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -532,6 +533,115 @@ def evaluate_model(
     return ap_metrics
 
 
+@RICH_PRINTING.running_message("Finding the optimal batch size...")
+def get_batch_size(
+    model: torch.nn.Module,
+    device: torch.device,
+    train_dataset: TreeDataset,
+    accumulate: int,
+    num_workers: int,
+    max_batch_size: Optional[int] = None,
+    num_iterations: int = 2,
+) -> int:
+    model.to(device)
+    model.train()
+    optimizer = torch.optim.Adam(model.parameters())
+
+    batch_sizes = list(set([accumulate // i for i in range(1, accumulate + 1)]))
+    if max_batch_size is not None:
+        batch_sizes = [batch_size for batch_size in batch_sizes if batch_size < max_batch_size]
+    exec_times = [np.inf] * len(batch_sizes)
+    for idx, batch_size in RICH_PRINTING.pbar(
+        enumerate(batch_sizes), leave=True, description="Simulate training with different epochs"
+    ):
+        try:
+            train_loader = TreeDataLoader(
+                train_dataset,
+                batch_size=batch_size,
+                shuffle=True,
+                num_workers=num_workers,
+                pin_memory=True,
+            )
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+            start_time = time.time()
+            for _ in RICH_PRINTING.pbar(
+                range(num_iterations), leave=False, description=f"Batch size = {batch_size}"
+            ):
+                accumulation_steps = max(round(accumulate / batch_size), 1)
+                running_accumulation_step = 1
+                stream = RICH_PRINTING.pbar(
+                    train_loader, leave=False, description="Epochs to accumulate"
+                )
+                for data in stream:
+                    # Get the data
+                    image_rgb: torch.Tensor | None = data["image_rgb"]
+                    image_chm: torch.Tensor | None = data["image_chm"]
+                    gt_bboxes: torch.Tensor = data["bboxes"]
+                    gt_classes: torch.Tensor = data["labels"]
+                    gt_indices: torch.Tensor = data["indices"]
+                    image_indices: torch.Tensor = data["image_indices"]
+
+                    if image_rgb is not None:
+                        image_rgb = image_rgb.to(device, non_blocking=True)
+                    if image_chm is not None:
+                        image_chm = image_chm.to(device, non_blocking=True)
+                    gt_bboxes = gt_bboxes.to(device, non_blocking=True)
+                    gt_classes = gt_classes.to(device, non_blocking=True)
+                    gt_indices = gt_indices.to(device, non_blocking=True)
+                    image_indices = image_indices.to(device, non_blocking=True)
+
+                    # Compute the model output
+                    output = model.forward(image_rgb, image_chm, device)
+
+                    # Compute the loss
+                    total_loss, loss_dict = model.compute_loss(
+                        output, gt_bboxes, gt_classes, gt_indices
+                    )
+                    total_loss.backward()
+
+                    # Gradient accumulation
+
+                    if running_accumulation_step % accumulation_steps == 0:
+                        optimizer.step()
+                        optimizer.zero_grad()
+                        break
+
+                    running_accumulation_step += 1
+
+            end_time = time.time()
+            total_processed = accumulation_steps * batch_size
+            exec_times[idx] = (end_time - start_time) / total_processed
+            time.sleep(3)
+
+        except torch.cuda.OutOfMemoryError:
+            RICH_PRINTING.print(f"\tOOM at batch size {batch_size}")
+            break
+
+        except Exception as e:
+            raise e
+
+    # Select best batch size
+    best_index = min(enumerate(exec_times), key=lambda x: x[1])[0]
+    best_batch_size = batch_sizes[best_index]
+
+    exec_times_str = [f"{exec_time:.3f}" for exec_time in exec_times]
+    exec_times_width = max(len(exec_time_str) for exec_time_str in exec_times_str)
+    batch_sizes_width = max(len(str(batch_size)) for batch_size in batch_sizes)
+    width = max(exec_times_width, batch_sizes_width)
+    exec_times_full_str = ", ".join(map(lambda s: f"{s:>{width}}", exec_times_str))
+    batch_sizes_full_str = ", ".join(map(lambda i: f"{i:>{width}}", batch_sizes))
+    RICH_PRINTING.print(f"Batch sizes: {batch_sizes_full_str}")
+    RICH_PRINTING.print(f"Total times: {exec_times_full_str}")
+
+    del model, optimizer
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    RICH_PRINTING.print(f"Final batch size: {best_batch_size}")
+    return best_batch_size
+
+
+@RICH_PRINTING.running_message("Training a model...")
 def train_and_validate(
     model: AMF_GD_YOLOv8,
     datasets: Dict[str, TreeDataset],

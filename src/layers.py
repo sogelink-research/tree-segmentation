@@ -374,7 +374,6 @@ class AMF_GD_YOLOv8(nn.Module):
         c_input_left: int,
         c_input_right: int,
         class_names: Dict[int, str],
-        device: torch.device,
         name: str,
         scale: str = "n",
         r: int = 16,
@@ -405,12 +404,12 @@ class AMF_GD_YOLOv8(nn.Module):
             self.use_right = True
 
         # AMFNet structure
-        self.amfnet = AMFNet(self.c_input_left, self.c_input_right, scale, r).to(device)
+        self.amfnet = AMFNet(self.c_input_left, self.c_input_right, scale, r)
 
         # Gather and Distribute structure
         if gd_config_file is None:
             gd_config_file = os.path.join(Folders.GD_CONFIGS.value, f"gold_yolo-{scale}.py")
-        self.gd = GD(gd_config_file).to(device)
+        self.gd = GD(gd_config_file)
 
         # Detection structure
         depth, width, ratio = get_scale_constants(scale)
@@ -422,7 +421,7 @@ class AMF_GD_YOLOv8(nn.Module):
             )
         ]
         out_channels = (channels_list[6], channels_list[8], channels_list[10])
-        self.detect = DetectCustom(len(class_names), out_channels).to(device)
+        self.detect = DetectCustom(len(class_names), out_channels)
         self.detect.stride = torch.tensor([8, 16, 32])
 
         # Whole model

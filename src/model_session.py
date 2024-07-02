@@ -56,6 +56,7 @@ from training import (
     TrainingMetrics,
     TreeDataset,
     evaluate_model,
+    get_batch_size,
     rgb_chm_usage_legend,
     rgb_chm_usage_postfix,
     train_and_validate,
@@ -511,7 +512,6 @@ class ModelSession:
         self.training_data.initialize()
         datasets = self._load_datasets()
         model = self._load_model()
-        self.save_params()
         return datasets, model
 
     @RICH_PRINTING.running_message("Loading the model...")
@@ -520,7 +520,6 @@ class ModelSession:
             self.training_data.dataset_params.channels_rgb,
             self.training_data.dataset_params.channels_chm,
             class_names=self.training_data.dataset_params.class_names,
-            device=self.device,
             name=self.model_name,
             scale=self.training_data.training_params.model_size,
         )
@@ -574,6 +573,21 @@ class ModelSession:
 
         # Load data and model
         datasets, model = self.initialize()
+
+        # Find best batch size
+        self.training_data.training_params.batch_size = get_batch_size(
+            model,
+            self.device,
+            datasets["training"],
+            accumulate=self.training_data.training_params.accumulate,
+            num_workers=self.training_data.training_params.num_workers,
+        )
+
+        # Initialize real model
+        model = self._load_model()
+
+        # Save params
+        self.save_params()
 
         # Train and extract the best model
         model, self.best_epoch = train_and_validate(
@@ -784,10 +798,10 @@ def simple_test():
         3,
         1,
         class_names=DatasetConst.CLASS_NAMES.value,
-        device=device,
         name="simple_test",
         scale="n",
     )
+    model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer, lambda i: 1 / np.sqrt(i + 2), last_epoch=-1
