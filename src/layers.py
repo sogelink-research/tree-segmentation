@@ -438,8 +438,9 @@ class AMF_GD_YOLOv8(nn.Module):
                 self.cls = loss_weights["cls"]
                 self.dfl = loss_weights["dfl"]
 
-        self.model.args = Args()  # type: ignore
-        self.criterion = TrainingLoss(self.model)
+        self.args = Args()
+        self.criterion = TrainingLoss(self)
+        self.criterion.device = self.device
 
     def to_device(self, device):
         # Move each module to the specified device
