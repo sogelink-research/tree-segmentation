@@ -95,7 +95,7 @@ class MyModule(nn.Module):
         super(MyModule, self).__init__()
 
         # Define a ModuleList to hold your modules
-        self.module_list = nn.ModuleList(
+        self.model = nn.ModuleList(
             [
                 nn.Linear(10, 20),  # Example Linear layer
                 nn.ReLU(),  # Example ReLU activation
@@ -104,15 +104,19 @@ class MyModule(nn.Module):
         )
 
     def forward(self, x):
-        for module in self.module_list:
+        for module in self.model:
             x = module(x)
         return x
 
     def to_device(self, device):
         # Move each module to the specified device
-        for module in self.module_list:
+        for module in self.model:
             module.to(device)
         return self
+
+    @property
+    def device(self) -> torch.device:
+        return next(self.model.parameters()).device
 
 
 # Usage example:
@@ -125,8 +129,12 @@ print(model)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Device:", device)
 
+print(model.device)
+
 # Move the model to the GPU
-model.to(device)
+model.to_device(device)
+
+print(model.device)
 
 # Example input tensor
 input_tensor = torch.randn(32, 10).to(device)  # Move input tensor to GPU
