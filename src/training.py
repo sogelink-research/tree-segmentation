@@ -595,6 +595,9 @@ def get_batch_size(
                     output = model.forward(image_rgb, image_chm, device)
                     RICH_PRINTING.print(f"{device = }")
                     RICH_PRINTING.print(f"{output[0].device = }")
+                    RICH_PRINTING.print(f"{gt_bboxes.device = }")
+                    RICH_PRINTING.print(f"{gt_classes.device = }")
+                    RICH_PRINTING.print(f"{gt_indices.device = }")
 
                     # Compute the loss
                     total_loss, loss_dict = model.compute_loss(
