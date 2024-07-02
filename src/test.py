@@ -95,9 +95,6 @@ from layers import AMF_GD_YOLOv8
 # Usage example:
 model = AMF_GD_YOLOv8(1, 1, {}, "")
 
-# Print the model architecture
-print(model)
-
 # Check if CUDA (GPU support) is available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
