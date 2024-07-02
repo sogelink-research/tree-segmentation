@@ -6,7 +6,6 @@ import os
 import random
 import shutil
 import string
-import threading
 import time
 import uuid
 import warnings
@@ -534,24 +533,29 @@ class RichPrinting:
         self.stack: List[uuid.UUID] = []
         self.stack_order_index: List[int] = []
         self.nodes_in_order: List[uuid.UUID] = []
-        self.pbars_tasks: Dict[uuid.UUID, TaskID] = {}
         self.pbars_progress: Dict[uuid.UUID, Progress] = {}
 
         self.current_level = 0
         self.leave = True
+        self.renderable_up_to_date = False
+        self.renderable: RenderableType = Text()
 
-    def _reset(self) -> None:
+    def _print_all_end(self):
         if hasattr(self, "live"):
             self.render(force_full=True)
+
+    def _reset(self) -> None:
+        self._print_all_end()
+        if hasattr(self, "live"):
             self.live.stop()
 
         self.console = Console()
         self.live = Live(
             console=self.console,
             auto_refresh=False,
-            refresh_per_second=4,
+            # refresh_per_second=4,
             # vertical_overflow="visible",
-            get_renderable=self.get_renderable,
+            # get_renderable=self.get_renderable,
         )
 
         self._reset_attributes()
@@ -572,18 +576,22 @@ class RichPrinting:
         if self.current_level == 0:
             self._reset()
             self.root_id = new_uuid
+            self.nodes_in_order.append(new_uuid)
         else:
+            # TODO: improve nested pbars
             if self.nodes_in_order[-1] in self.pbars_progress.keys() and kind == "pbar":
-                parent_uuid = self.nodes_in_order[-1]
+                new_uuid = self.nodes_in_order[-1]
             else:
                 parent_uuid = self.stack[self.current_level - 1]
-            self.trees[parent_uuid].children.append(new_node)
-            self.children[parent_uuid].append(new_uuid)
-            self.pos_as_child[new_uuid] = len(self.trees[parent_uuid].children) - 1
-            self.parents[new_uuid] = parent_uuid
+                self.trees[parent_uuid].children.append(new_node)
+                self.children[parent_uuid].append(new_uuid)
+                self.pos_as_child[new_uuid] = len(self.trees[parent_uuid].children) - 1
+                self.parents[new_uuid] = parent_uuid
+                self.nodes_in_order.append(new_uuid)
 
         self.trees[new_uuid] = new_node
-        self.nodes_in_order.append(new_uuid)
+
+        self.renderable_up_to_date = False
 
         return new_uuid
 
@@ -600,8 +608,7 @@ class RichPrinting:
             self.pos_as_child[other_id] -= 1
         self.children[parent].pop(child_index)
 
-        if id in self.pbars_tasks:
-            self.pbars_tasks.pop(id)
+        if id in self.pbars_progress:
             self.pbars_progress.pop(id)
 
         self.trees.pop(id)
@@ -613,25 +620,30 @@ class RichPrinting:
         terminal_height = terminal_size.lines
         return terminal_height
 
-    def _extract_partial_tree(self) -> Tree:
+    def _update_renderable(self) -> None:
+        if self.renderable_up_to_date:
+            return
+        self.renderable_up_to_date = True
+
         terminal_height = self._get_terminal_height
         if terminal_height > len(self.trees):
-            return self.trees[self.root_id]
+            self.renderable = self.trees[self.root_id]
+            return
 
-        self.last_uuid = self.nodes_in_order[-1]
+        last_uuid = self.nodes_in_order[-1]
 
         # Count the space of the stack
         stack_height = len(self.stack)
         for id in self.stack[1:]:
             if self.pos_as_child[id] > 0:
                 stack_height += 1
-        if self.pos_as_child[self.last_uuid] > 0:
+        if self.pos_as_child[last_uuid] > 0:
             stack_height += 1
 
         if stack_height >= terminal_height:
-            partial_tree = tree_copy_without_children(self.trees[self.root_id])
+            self.renderable = tree_copy_without_children(self.trees[self.root_id])
             current_height = 1
-            last_node = partial_tree
+            last_node = self.renderable
             for id in self.stack[1:]:
                 if self.pos_as_child[id] > 0:
                     if terminal_height - current_height >= 4:
@@ -650,28 +662,22 @@ class RichPrinting:
                     last_node = last_node.add(tree_copy_without_children(self.trees[id]))
                 else:
                     last_node = last_node.add(" ··· ", style="yellow")
-                    last_node.add(tree_copy_without_children(self.trees[self.last_uuid]))
-                    return partial_tree
-            return partial_tree
+                    last_node.add(tree_copy_without_children(self.trees[last_uuid]))
+                    return
+            return
 
         # Get the last lines to fill the space
         remaining_height = terminal_height - stack_height
-
         last_common_parent_order_index = (
             bisect.bisect_right(self.stack_order_index, len(self.nodes_in_order) - remaining_height)
             - 1
         )
-        if last_common_parent_order_index == len(self.stack_order_index):
-            last_common_parent_id = self._get_new_uuid()
+        if last_common_parent_order_index == -1:
+            raise Exception("This should not happen.")
         else:
             last_common_parent_id = self.nodes_in_order[
                 self.stack_order_index[last_common_parent_order_index]
             ]
-
-        # print(f"{remaining_height = }")
-        # print(f"{len(self.nodes_in_order) - remaining_height = }")
-        # print(f"{self.stack_order_index = }")
-        # print(f"{last_common_parent_order_index = }")
 
         first_last_line_order_index = len(self.nodes_in_order) - remaining_height
         while (
@@ -681,58 +687,74 @@ class RichPrinting:
         ):
             first_last_line_order_index += 1
 
-        # print(f"{len(self.nodes_in_order) = }")
-        # print(f"{first_last_line_order_index = }")
-
         # Build the tree
         tree_equivs: Dict[uuid.UUID, Tree] = {}
-        partial_tree = tree_copy_without_children(self.trees[self.root_id])
-        tree_equivs[self.root_id] = partial_tree
-        # print(f"{tree_equivs[self.root_id].label = }")
+        self.renderable = tree_copy_without_children(self.trees[self.root_id])
+        tree_equivs[self.root_id] = self.renderable
         for id in self.stack[1:]:
             if self.pos_as_child[id] > 0:
                 tree_equivs[self.parents[id]].add(" ··· ", style="yellow")
             tree_equivs[id] = tree_equivs[self.parents[id]].add(
                 tree_copy_without_children(self.trees[id])
             )
-            # print(f"{tree_equivs[self.parents[id]].label = }")
-            # print(f"{tree_equivs[id].label = }")
             if id == last_common_parent_id:
                 break
 
-        # print("Nodes in order")
-
         first_last_line_id = self.nodes_in_order[first_last_line_order_index]
+        first_last_line_parent_id = self.parents[first_last_line_id]
+        if first_last_line_parent_id not in tree_equivs:
+            if self.pos_as_child[first_last_line_parent_id] > 0:
+                tree_equivs[self.parents[first_last_line_parent_id]].add(" ··· ", style="yellow")
+            tree_equivs[first_last_line_parent_id] = tree_equivs[
+                self.parents[first_last_line_parent_id]
+            ].add(tree_copy_without_children(self.trees[first_last_line_parent_id]))
         if self.pos_as_child[first_last_line_id] > 0:
             tree_equivs[self.parents[first_last_line_id]].add(" ··· ", style="yellow")
         tree_equivs[first_last_line_id] = tree_equivs[self.parents[first_last_line_id]].add(
             tree_copy_without_children(self.trees[first_last_line_id])
         )
+        # except Exception as e:
+        #     print(f"{remaining_height = }")
+        #     print(f"{len(self.nodes_in_order) - remaining_height = }")
+        #     print(f"{self.stack_order_index = }")
+        #     print(f"{last_common_parent_order_index = }")
+        #     print(f"{first_last_line_order_index = }")
+        #     print(f"{len(self.nodes_in_order) = }")
+        #     print(f"{first_last_line_order_index = }")
+        #     print(f"{tree_equivs[self.root_id].label = }")
+
+        #     for key in tree_equivs:
+        #         print(f"{self.trees[key].label = }")
+        #         print(f"{tree_equivs[key].label = }")
+        #     print(f"{remaining_height = }")
+        #     print(f"{len(self.nodes_in_order) - remaining_height = }")
+        #     print(f"{self.stack_order_index = }")
+        #     print(f"{last_common_parent_order_index = }")
+        #     print(f"{len(self.nodes_in_order) = }")
+        #     print(f"{first_last_line_order_index = }")
+        #     print(f"{self.trees[first_last_line_id].label = }")
+        #     print(f"{self.trees[self.parents[first_last_line_id]].label = }")
+        #     raise e
 
         for id in self.nodes_in_order[first_last_line_order_index + 1 :]:
-            # print(f"{self.trees[self.parents[id]].label = }")
-            # print(f"{self.trees[id].label = }")
             tree_equivs[id] = tree_equivs[self.parents[id]].add(
                 tree_copy_without_children(self.trees[id])
             )
-            # print(f"{tree_equivs[self.parents[id]].label = }")
-            # print(f"{tree_equivs[id].label = }")
 
-        return partial_tree
+        return
 
     def get_renderable(self, force_full: bool = False) -> RenderableType:
         if hasattr(self, "root_id"):
-            terminal_height = self._get_terminal_height
-            if force_full or terminal_height > len(self.trees):
+            if force_full:
                 return self.trees[self.root_id]
-            else:
-                tree = self._extract_partial_tree()
-                return tree
+            self._update_renderable()
+            return self.renderable
         else:
             return Text()
 
     def close(self):
         if hasattr(self, "live"):
+            self._print_all_end()
             self.live.stop()
 
     def render(self, force_full: bool = False):
@@ -809,41 +831,52 @@ class RichPrinting:
         sequence = list(iterable)
         length = len(sequence)
 
-        progress = Progress(
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            MofNCompleteColumn(),
-            TimeRemainingColumn(compact=True, elapsed_when_finished=True),
-            SpinnerColumn(spinner_name="arrow"),
-        )
-        task = progress.add_task(description, total=length)
+        last_uuid = self.nodes_in_order[-1]
+        if last_uuid not in self.pbars_progress:
+            progress = Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TimeRemainingColumn(compact=True, elapsed_when_finished=True),
+                SpinnerColumn(spinner_name="arrow"),
+                auto_refresh=False,
+            )
+        else:
+            progress = self.pbars_progress[last_uuid]
 
+        task = progress.add_task(description, total=length)
         new_node = Tree(progress.get_renderable())
         new_uuid = self._store_new_line(new_node, kind="pbar")
-        self.pbars_tasks[new_uuid] = task
         self.pbars_progress[new_uuid] = progress
 
         if leave:
 
             def callback_end_iter():
+                progress.remove_task(task)
                 pass
 
         else:
+            if last_uuid == new_uuid:
 
-            def callback_end_iter():
-                self._remove_line(new_uuid)
+                def callback_end_iter():
+                    progress.remove_task(task)
+
+            else:
+
+                def callback_end_iter():
+                    progress.remove_task(task)
+                    self._remove_line(new_uuid)
 
         pbar_sequence = PBarList(
             sequence,
-            callback_iter=lambda: self._pbar_update(new_uuid),
+            callback_iter=lambda: self._pbar_update(new_uuid, task),
             callback_end_iter=callback_end_iter,
         )
         return pbar_sequence
 
-    def _pbar_update(self, id: uuid.UUID) -> None:
+    def _pbar_update(self, id: uuid.UUID, taskID: TaskID) -> None:
         progress = self.pbars_progress[id]
-        task = self.pbars_tasks[id]
-        progress.update(task, advance=1)
+        progress.update(taskID, advance=1)
 
         parent_id = self.parents[id]
         new_node = Tree(progress.get_renderable())
