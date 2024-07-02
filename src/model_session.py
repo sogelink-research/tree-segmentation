@@ -524,7 +524,7 @@ class ModelSession:
             name=self.model_name,
             scale=self.training_data.training_params.model_size,
         )
-        model.to_device(self.device)
+        model.to(self.device)
         if os.path.isfile(self.model_path):
             state_dict = torch.load(self.model_path, map_location=self.device)
             model.load_state_dict(state_dict)
@@ -804,7 +804,7 @@ def simple_test():
         name="simple_test",
         scale="n",
     )
-    model = model.to_device(device)
+    model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer, lambda i: 1 / np.sqrt(i + 2), last_epoch=-1

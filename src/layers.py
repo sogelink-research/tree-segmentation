@@ -443,11 +443,11 @@ class AMF_GD_YOLOv8(nn.Module):
         self.args = Args()
         self.criterion = TrainingLoss(self)
 
-    def to_device(self, device: torch.device) -> AMF_GD_YOLOv8:
+    def to(self, device: torch.device) -> AMF_GD_YOLOv8:
         for module in self.model:
             module.to(device)
 
-        self.criterion.device = device
+        self.criterion.to(device)
         return self
 
     @property
@@ -635,6 +635,12 @@ class TrainingLoss(v8DetectionLoss):
     """Loss used for the training of the model. Based on v8DetectionLoss from ultralytics,
     with a few small tweaks regarding data format.
     """
+
+    def to(self, device: torch.device) -> TrainingLoss:
+        self.device = device
+        self.bbox_loss = self.bbox_loss.to(device)
+        self.proj = self.proj.to(device)
+        return self
 
     def preprocess(self, targets, batch_size, scale_tensor):
         """Pre-processes the target counts and matches with the input batch size to output a tensor."""

@@ -97,17 +97,11 @@ model = AMF_GD_YOLOv8(1, 1, {}, "")
 
 # Check if CUDA (GPU support) is available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda")
 
 print(model.device)
 
 # Move the model to the GPU
-model.to_device(device)
+model.to(device)
 
 print(model.device)
-
-# Example input tensor
-input_tensor = torch.randn(32, 10).to(device)  # Move input tensor to GPU
-
-# Forward pass through the model
-output_tensor = model(input_tensor)
-print("Output shape:", output_tensor.shape)
