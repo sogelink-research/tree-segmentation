@@ -543,7 +543,7 @@ def get_batch_size(
     max_batch_size: Optional[int] = None,
     num_iterations: int = 2,
 ) -> int:
-    model = model.to(device)
+    model = model.to_device(device)
     model.train()
     optimizer = torch.optim.Adam(model.parameters())
 
@@ -593,11 +593,6 @@ def get_batch_size(
 
                     # Compute the model output
                     output = model.forward(image_rgb, image_chm)
-                    RICH_PRINTING.print(f"{device = }")
-                    RICH_PRINTING.print(f"{output[0].device = }")
-                    RICH_PRINTING.print(f"{gt_bboxes.device = }")
-                    RICH_PRINTING.print(f"{gt_classes.device = }")
-                    RICH_PRINTING.print(f"{gt_indices.device = }")
 
                     # Compute the loss
                     total_loss, loss_dict = model.compute_loss(
