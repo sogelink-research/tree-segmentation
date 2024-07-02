@@ -89,45 +89,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
-class MyModule(nn.Module):
-    def __init__(self):
-        super(MyModule, self).__init__()
-
-        # Define a ModuleList to hold your modules
-        self.model = nn.ModuleList(
-            [
-                nn.Linear(10, 20),  # Example Linear layer
-                nn.ReLU(),  # Example ReLU activation
-                nn.Linear(20, 5),  # Another Linear layer
-            ]
-        )
-
-    def forward(self, x):
-        for module in self.model:
-            x = module(x)
-        return x
-
-    def to_device(self, device):
-        # Move each module to the specified device
-        for module in self.model:
-            module.to(device)
-        return self
-
-    @property
-    def device(self) -> torch.device:
-        return next(self.model.parameters()).device
+from layers import AMF_GD_YOLOv8
 
 
 # Usage example:
-model = MyModule()
+model = AMF_GD_YOLOv8(1, 1, {}, "")
 
 # Print the model architecture
 print(model)
 
 # Check if CUDA (GPU support) is available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("Device:", device)
 
 print(model.device)
 

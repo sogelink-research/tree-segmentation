@@ -543,7 +543,7 @@ def get_batch_size(
     max_batch_size: Optional[int] = None,
     num_iterations: int = 2,
 ) -> int:
-    model = model.to_device(device)
+    model.to_device(device)
     model.train()
     optimizer = torch.optim.Adam(model.parameters())
 
