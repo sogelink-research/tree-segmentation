@@ -8,7 +8,7 @@ from utils import RICH_PRINTING
 
 wait_time = 0.0
 iters = 100
-iters_total_wait_time = 5
+iters_total_wait_time = 0.0
 iters_wait_time = iters_total_wait_time / iters
 
 
@@ -73,35 +73,14 @@ def main():
 # install(show_locals=True)
 
 if __name__ == "__main__":
+    main()
+    time.sleep(wait_time)
+    main()
+    # time.sleep(wait_time)
     # main()
     # time.sleep(wait_time)
     # main()
-    # # time.sleep(wait_time)
-    # # main()
-    # # time.sleep(wait_time)
-    # # main()
-    # # time.sleep(wait_time)
-    # # main()
-    # RICH_PRINTING.close()
+    # time.sleep(wait_time)
+    # main()
+    RICH_PRINTING.close()
     pass
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-from layers import AMF_GD_YOLOv8
-
-
-# Usage example:
-model = AMF_GD_YOLOv8(1, 1, {}, "")
-
-# Check if CUDA (GPU support) is available
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cuda")
-
-print(model.device)
-
-# Move the model to the GPU
-model.to(device)
-
-print(model.device)

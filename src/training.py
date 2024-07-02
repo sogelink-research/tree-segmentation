@@ -85,7 +85,7 @@ class TrainingMetrics:
 
     def save_metrics(self, save_path: str) -> None:
         with open(save_path, "w") as fp:
-            json.dump(self.metrics, fp, sort_keys=True, indent=4)
+            json.dump(self.metrics, fp, sort_keys=True)
 
     def visualize(
         self,
@@ -555,6 +555,8 @@ def get_batch_size(
         enumerate(batch_sizes), leave=True, description="Simulate training with different epochs"
     ):
         try:
+            RICH_PRINTING.print("Beginning")
+            print_current_memory()
             train_loader = TreeDataLoader(
                 train_dataset,
                 batch_size=batch_size,
@@ -564,10 +566,14 @@ def get_batch_size(
             )
             if device.type == "cuda":
                 torch.cuda.empty_cache()
+            RICH_PRINTING.print("After torch.cuda.empty_cache()")
+            print_current_memory()
             start_time = time.time()
             for _ in RICH_PRINTING.pbar(
                 range(num_iterations), leave=False, description=f"Batch size = {batch_size}"
             ):
+                RICH_PRINTING.print("Loop start")
+                print_current_memory()
                 accumulation_steps = max(round(accumulate / batch_size), 1)
                 running_accumulation_step = 1
                 stream = RICH_PRINTING.pbar(
@@ -610,6 +616,8 @@ def get_batch_size(
                     running_accumulation_step += 1
 
             end_time = time.time()
+            RICH_PRINTING.print("End")
+            print_current_memory()
             total_processed = accumulation_steps * batch_size
             exec_times[idx] = (end_time - start_time) / total_processed
             time.sleep(3)

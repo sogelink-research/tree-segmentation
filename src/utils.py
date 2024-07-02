@@ -545,10 +545,11 @@ class RichPrinting:
         self.leave = True
         self.renderable_up_to_date = False
         self.renderable: RenderableType = Text()
+        self.last_render_time = -np.inf
 
     def _print_all_end(self):
         if hasattr(self, "live"):
-            self.render(force_full=True)
+            self.render(force_full=True, force_render=True)
 
     def _reset(self) -> None:
         self._print_all_end()
@@ -778,10 +779,13 @@ class RichPrinting:
             self._print_all_end()
             self.live.stop()
 
-    def render(self, force_full: bool = False):
+    def render(self, force_full: bool = False, force_render: bool = False) -> None:
+        if not force_render and time.time() - self.last_render_time < 0.1:
+            return
         if not self.live.is_started:
             self.live.start()
         self.live.update(self.get_renderable(force_full), refresh=True)
+        self.last_render_time = time.time()
 
     def _format_message(self, message: str, kind: str) -> NodeFormat:
         label = message
@@ -806,14 +810,14 @@ class RichPrinting:
         new_uuid = self._store_new_line(node, kind="start")
         self.stack.append(new_uuid)
         self.stack_order_index.append(len(self.nodes_in_order) - 1)
-        self.render()
+        self.render(force_render=True)
         self.current_level += 1
 
     def log_end_message(self, message: str):
         node_format = self._format_message(message, kind="end")
         node = node_format.to_tree()
         self._store_new_line(node, kind="end")
-        self.render()
+        self.render(force_render=True)
         self.stack.pop(-1)
         self.stack_order_index.pop(-1)
         self.current_level -= 1
@@ -951,7 +955,7 @@ class RichPrinting:
         node = node_format.to_tree()
         self._store_new_line(node, kind="print")
 
-        self.render()
+        self.render(force_render=True)
 
 
 RICH_PRINTING = RichPrinting()
