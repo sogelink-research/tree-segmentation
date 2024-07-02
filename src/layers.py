@@ -665,6 +665,8 @@ class TrainingLoss(v8DetectionLoss):
             torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]
         )  # image size (h,w)
         anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
+        anchor_points = anchor_points.to(self.device)
+        stride_tensor = stride_tensor.to(self.device)
 
         # Targets
         targets = torch.cat(
