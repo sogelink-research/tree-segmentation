@@ -652,8 +652,8 @@ class TrainingLoss(v8DetectionLoss):
         feats = output
         pred_distri, pred_scores = (
             torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2)
-            .split((self.reg_max * 4, self.nc), 1)
             .to(self.device)
+            .split((self.reg_max * 4, self.nc), 1)
         )
 
         pred_scores = pred_scores.permute(0, 2, 1).contiguous()
