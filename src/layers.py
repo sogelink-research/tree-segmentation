@@ -438,7 +438,7 @@ class AMF_GD_YOLOv8(nn.Module):
                 self.cls = loss_weights["cls"]
                 self.dfl = loss_weights["dfl"]
 
-        self.args = Args()
+        self.model.args = Args()  # type: ignore
         self.criterion = TrainingLoss(self.model)
 
     def to_device(self, device):
