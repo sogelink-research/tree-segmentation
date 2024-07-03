@@ -174,15 +174,12 @@ def main():
         # Training session
         model_training_session = ModelTrainingSession(**combination)
         model_training_session.train()
-        model_training_session.close()
 
     # model_training_session = ModelTrainingSession(epochs=0)
     # model_training_session.train()
-    # model_training_session.close()
 
     # model_training_session = ModelTrainingSession.from_name("trained_model_1000ep_0")
     # model_training_session.compute_metrics()
-    # model_training_session.close()
 
 
 if __name__ == "__main__":

@@ -580,8 +580,8 @@ def get_batch_size(
         enumerate(batch_sizes), leave=True, description="Simulate training with different epochs"
     ):
         try:
-            RICH_PRINTING.print("Beginning")
-            print_current_memory()
+            # RICH_PRINTING.print("Beginning")
+            # print_current_memory()
             train_loader = TreeDataLoader(
                 train_dataset,
                 batch_size=batch_size,
@@ -591,14 +591,14 @@ def get_batch_size(
             )
             if device.type == "cuda":
                 torch.cuda.empty_cache()
-            RICH_PRINTING.print("After torch.cuda.empty_cache()")
-            print_current_memory()
+            # RICH_PRINTING.print("After torch.cuda.empty_cache()")
+            # print_current_memory()
             start_time = time.time()
             for _ in RICH_PRINTING.pbar(
                 range(num_iterations), leave=False, description=f"Batch size = {batch_size}"
             ):
-                RICH_PRINTING.print("Loop start")
-                print_current_memory()
+                # RICH_PRINTING.print("Loop start")
+                # print_current_memory()
                 accumulation_steps = max(round(accumulate / batch_size), 1)
                 running_accumulation_step = 1
                 stream = RICH_PRINTING.pbar(
@@ -622,14 +622,14 @@ def get_batch_size(
                     gt_indices = gt_indices.to(device, non_blocking=True)
                     image_indices = image_indices.to(device, non_blocking=True)
 
-                    RICH_PRINTING.print("After data to device")
-                    print_current_memory()
+                    # RICH_PRINTING.print("After data to device")
+                    # print_current_memory()
 
                     # Compute the model output
                     output = model.forward(image_rgb, image_chm)
 
-                    RICH_PRINTING.print("After forward")
-                    print_current_memory()
+                    # RICH_PRINTING.print("After forward")
+                    # print_current_memory()
 
                     # Compute the loss
                     total_loss, loss_dict = model.compute_loss(
@@ -637,26 +637,30 @@ def get_batch_size(
                     )
                     total_loss.backward()
 
-                    RICH_PRINTING.print("After backward")
-                    print_current_memory()
+                    # RICH_PRINTING.print("After backward")
+                    # print_current_memory()
 
                     # Gradient accumulation
 
                     if running_accumulation_step % accumulation_steps == 0:
                         optimizer.step()
                         optimizer.zero_grad()
+                        del stream
                         break
 
                     running_accumulation_step += 1
 
             end_time = time.time()
-            RICH_PRINTING.print("End")
-            print_current_memory()
+
+            del train_loader
+
+            # RICH_PRINTING.print("End")
+            # print_current_memory()
             total_processed = accumulation_steps * batch_size
             exec_times[idx] = (end_time - start_time) / total_processed
             time.sleep(3)
 
-        except torch.cuda.OutOfMemoryError:
+        except RuntimeError:
             RICH_PRINTING.print(f"\tOOM at batch size {batch_size}")
             break
 
