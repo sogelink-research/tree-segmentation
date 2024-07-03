@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import atexit
 import bisect
 import json
 import os
-import random
 import shutil
-import string
+import tempfile
 import time
 import uuid
 import warnings
@@ -33,7 +33,6 @@ from rich.console import Console, RenderableType
 from rich.live import Live
 from rich.progress import (
     BarColumn,
-    MofNCompleteColumn,
     Progress,
     SpinnerColumn,
     TaskID,
@@ -647,12 +646,13 @@ class RichPrinting:
         last_uuid = self.nodes_in_order[-1]
 
         # Count the space of the stack
-        stack_height = len(self.stack)
+        stack_height = 0
         for id in self.stack[1:]:
             if self.pos_as_child[id] > 0:
                 stack_height += 1
-        if self.pos_as_child[last_uuid] > 0:
             stack_height += self.heights[id]
+        if self.pos_as_child[last_uuid] > 0:
+            stack_height += self.heights[last_uuid]
 
         if stack_height >= terminal_height:
             self.renderable = tree_copy_without_children(self.trees[self.root_id])
@@ -714,13 +714,13 @@ class RichPrinting:
         self.renderable = tree_copy_without_children(self.trees[self.root_id])
         tree_equivs[self.root_id] = self.renderable
         for id in self.stack[1:]:
+            if id == last_common_parent_id:
+                break
             if self.pos_as_child[id] > 0:
                 tree_equivs[self.parents[id]].add(" ··· ", style="yellow")
             tree_equivs[id] = tree_equivs[self.parents[id]].add(
                 tree_copy_without_children(self.trees[id])
             )
-            if id == last_common_parent_id:
-                break
 
         first_last_line_id = self.nodes_in_order[first_last_line_order_index]
         first_last_line_parent_id = self.parents[first_last_line_id]
@@ -730,11 +730,13 @@ class RichPrinting:
             tree_equivs[first_last_line_parent_id] = tree_equivs[
                 self.parents[first_last_line_parent_id]
             ].add(tree_copy_without_children(self.trees[first_last_line_parent_id]))
-        if self.pos_as_child[first_last_line_id] > 0:
-            tree_equivs[self.parents[first_last_line_id]].add(" ··· ", style="yellow")
-        tree_equivs[first_last_line_id] = tree_equivs[self.parents[first_last_line_id]].add(
-            tree_copy_without_children(self.trees[first_last_line_id])
-        )
+
+        if first_last_line_id not in tree_equivs:
+            if self.pos_as_child[first_last_line_id] > 0:
+                tree_equivs[self.parents[first_last_line_id]].add(" ··· ", style="yellow")
+            tree_equivs[first_last_line_id] = tree_equivs[self.parents[first_last_line_id]].add(
+                tree_copy_without_children(self.trees[first_last_line_id])
+            )
         # except Exception as e:
         #     print(f"{remaining_height = }")
         #     print(f"{len(self.nodes_in_order) - remaining_height = }")
@@ -856,6 +858,7 @@ class RichPrinting:
         sequence = list(iterable)
         length = len(sequence)
 
+        # Improve by looking instead at the progress bars still running to find out if we're inside one
         last_uuid = self.nodes_in_order[-1]
         if last_uuid not in self.pbars_progress:
             progress = Progress(
@@ -1015,22 +1018,21 @@ class ImageData:
         ds = None
 
 
-def generate_random_name(length: int = 8):
-    characters = string.ascii_letters + string.digits
-    return "".join(random.choice(characters) for _ in range(length))
+class TempFolderManager:
+    def __init__(self):
+        self.temp_folder = tempfile.mkdtemp()
+        atexit.register(self.cleanup_temp_folder)
 
+    def new_temp_file_path(self, suffix="", prefix=""):
+        filename = prefix + str(uuid.uuid4()) + suffix
+        file_path = os.path.join(self.temp_folder, filename)
+        return file_path
 
-def create_random_temp_folder(length: int = 8) -> str:
-    def get_folder_name(random_name: str) -> str:
-        return os.path.join(Folders.TEMP.value, random_name)
+    def cleanup_temp_folder(self):
+        remove_folder(self.temp_folder)
 
-    temp_folder_path = get_folder_name(generate_random_name(length))
-    while os.path.isdir(temp_folder_path):
-        temp_folder_path = get_folder_name(generate_random_name(length))
-
-    create_folder(temp_folder_path)
-
-    return temp_folder_path
+    def get_temp_folder(self):
+        return self.temp_folder
 
 
 def is_tif_file(file_path: str) -> bool:

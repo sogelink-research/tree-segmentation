@@ -65,10 +65,9 @@ from utils import (
     RICH_PRINTING,
     Folders,
     ImageData,
+    TempFolderManager,
     create_all_folders,
     create_folder,
-    create_random_temp_folder,
-    remove_folder,
 )
 
 
@@ -225,7 +224,8 @@ class DatasetParams:
 
     def _preprocess_annotations(self, annotations: geojson.FeatureCollection):
         # Create the cropped data folder path
-        self.cropped_data_folder_path = create_random_temp_folder()
+        temp_folder_manager = TempFolderManager()
+        self.cropped_data_folder_path = temp_folder_manager.get_temp_folder()
 
         # Get tiles
         cropping_limits_x, cropping_limits_y = get_cropping_limits(
@@ -260,7 +260,8 @@ class DatasetParams:
         start_time = time.time()
 
         # Merge files
-        temp_folder = create_random_temp_folder()
+        temp_folder_manager = TempFolderManager()
+        temp_folder = temp_folder_manager.get_temp_folder()
         temp_path = os.path.join(temp_folder, "temp.npy")
         full_merged = merge_tif(full_images_paths, chm=False, output_path=temp_path, memmap=True)
 
@@ -326,7 +327,7 @@ class DatasetParams:
 
         # Remove temporary folder
         del full_merged
-        remove_folder(temp_folder)
+        temp_folder_manager.cleanup_temp_folder()
 
     def _preprocess_all_data(
         self, full_images_paths: Dict[str, List[str]], annotations: geojson.FeatureCollection
@@ -385,9 +386,6 @@ class DatasetParams:
             _preprocess_images_chm(full_images_paths["chm"], self.cropped_chm_folder_path)
         else:
             self.cropped_chm_folder_path = None
-
-    def close(self):
-        remove_folder(self.cropped_data_folder_path)
 
 
 class TrainingParams:
@@ -508,9 +506,10 @@ class ModelSession:
         self.best_epoch = -1
 
     @RICH_PRINTING.running_message("Creating the dataset...")
-    def initialize(self) -> Tuple[Dict[str, TreeDataset], AMF_GD_YOLOv8]:
-        self.training_data.initialize()
-        self._init_batch_size()
+    def initialize(self, full_initialize: bool) -> Tuple[Dict[str, TreeDataset], AMF_GD_YOLOv8]:
+        if full_initialize:
+            self.training_data.initialize()
+            self._init_batch_size()
         datasets = self._load_datasets()
         model = self._load_model()
         return datasets, model
@@ -587,7 +586,7 @@ class ModelSession:
         warnings.filterwarnings("ignore", category=UserWarning, module="torch.autograd.graph")
 
         # Load data and model
-        datasets, model = self.initialize()
+        datasets, model = self.initialize(full_initialize=True)
 
         # Save params
         self.save_params()
@@ -609,11 +608,11 @@ class ModelSession:
         # Save the best model
         self.save_model(model)
 
-        self.compute_metrics()
+        self.compute_metrics(initialize=False)
 
     @RICH_PRINTING.running_message("Computing metrics...")
-    def compute_metrics(self):
-        datasets, model = self.initialize()
+    def compute_metrics(self, initialize: bool = True):
+        datasets, model = self.initialize(full_initialize=initialize)
 
         train_loader, val_loader, test_loader = initialize_dataloaders(
             datasets=datasets,
@@ -744,9 +743,6 @@ class ModelSession:
         pickle_path = ModelSession.get_pickle_path(self.model_name)
         with open(pickle_path, "wb") as f:
             pickle.dump(self, f)
-
-    def close(self):
-        self.training_data.dataset_params.close()
 
     @property
     def folder_path(self) -> str:

@@ -9,26 +9,18 @@ import numpy as np
 import pdal
 from osgeo import gdal
 
-from utils import (
-    RICH_PRINTING,
-    Folders,
-    ImageData,
-    create_random_temp_folder,
-    remove_folder,
-)
+from utils import RICH_PRINTING, Folders, ImageData, TempFolderManager
 
 
 gdal.UseExceptions()
 
 
+@RICH_PRINTING.running_message("Converting LAZ to LAS...")
 def compute_laz_to_las(laz_file_name: str, verbose: bool = False):
     """Decompress LAZ files to LAS and save the new file.
 
     Return the name of the new LAS file.
     """
-
-    if verbose:
-        RICH_PRINTING.print("Converting LAZ to LAS... ", end="", flush=True)
     file_name = splitext(laz_file_name)[0]
     las_file_name = file_name + ".las"
     pipeline_json = [
@@ -50,6 +42,7 @@ def compute_laz_to_las(laz_file_name: str, verbose: bool = False):
     return las_file_name
 
 
+@RICH_PRINTING.running_message("Computing Surface Model...")
 def compute_dsm(
     las_file_name: str,
     width: int,
@@ -57,8 +50,6 @@ def compute_dsm(
     resolution: float,
     verbose: bool = False,
 ):
-    if verbose:
-        RICH_PRINTING.print("Computing Surface Model... ", end="", flush=True)
     file_name = splitext(las_file_name)[0]
     output_tif_name = f"{file_name}_dsm.tif"
 
@@ -90,6 +81,7 @@ def compute_dsm(
     return output_tif_name
 
 
+@RICH_PRINTING.running_message("Computing Terrain Model...")
 def compute_dtm(
     las_file_name: str,
     width: int,
@@ -97,8 +89,6 @@ def compute_dtm(
     resolution: float,
     verbose: bool = False,
 ):
-    if verbose:
-        RICH_PRINTING.print("Computing Terrain Model... ", end="", flush=True)
     file_name = splitext(las_file_name)[0]
     output_tif_name = f"{file_name}_dtm.tif"
     output_tif_name_temp = f"{file_name}_dtm_temp.tif"
@@ -150,6 +140,7 @@ def compute_dtm(
     return output_tif_name
 
 
+@RICH_PRINTING.running_message("Computing Canopy Height Model...")
 def compute_chm(
     laz_file_name: str,
     output_tif_name: str,
@@ -166,9 +157,6 @@ def compute_chm(
     # Compute DTM and DSM
     dtm_file_name = compute_dtm(las_file_name, width, height, resolution, verbose)
     dsm_file_name = compute_dsm(las_file_name, width, height, resolution, verbose)
-
-    if verbose:
-        RICH_PRINTING.print("Computing Canopy Height Model... ", end="", flush=True)
 
     # Open DTM and DSM files
     dtm_ds = gdal.Open(dtm_file_name)
@@ -223,11 +211,6 @@ def compute_chm(
 
 @RICH_PRINTING.running_message("Creating point cloud with flat ground...")
 def compute_laz_minus_ground_height(laz_file_name: str, verbose: bool = False):
-    if verbose:
-        RICH_PRINTING.print("Subtract ground height to point cloud... ", end="", flush=True)
-
-    # las_file_name = compute_laz_to_las(laz_file_name, verbose)
-
     # Create new file name
     file_name = splitext(laz_file_name)[0]
     output_laz_name = f"{file_name}_minus_gh.LAZ"
@@ -255,9 +238,6 @@ def compute_laz_minus_ground_height(laz_file_name: str, verbose: bool = False):
 def compute_laz_minus_ground_height_with_dtm(
     laz_file_name: str, output_laz_name: str, dtm_file_name: str, verbose: bool = False
 ):
-    if verbose:
-        RICH_PRINTING.print("Subtract ground height to point cloud... ", end="", flush=True)
-
     pipeline_json = [
         {"type": "readers.las", "filename": laz_file_name},
         {"type": "filters.hag_dem", "raster": dtm_file_name},
@@ -270,8 +250,6 @@ def compute_laz_minus_ground_height_with_dtm(
 
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
     count = pipeline.execute()
-    if verbose:
-        RICH_PRINTING.print(f"Done: {count} points found.")
 
     return output_laz_name
 
@@ -283,60 +261,55 @@ def compute_full_dtm(
     resolution: float,
     verbose: bool = False,
 ):
-    if verbose:
-        RICH_PRINTING.print("Computing Terrain Model... ", end="", flush=True)
-
     # Create temporary folder
-    temp_folder = create_random_temp_folder()
+    temp_folder_manager = TempFolderManager()
+    temp_folder = temp_folder_manager.get_temp_folder()
 
     output_tif_name_temp = os.path.join(temp_folder, "dtm.tif")
 
-    try:
-        pipeline_json = [
-            las_file_name,
-            {"type": "filters.range", "limits": "Classification[2:2]"},
-            {
-                "type": "writers.gdal",
-                "filename": output_tif_name_temp,
-                "output_type": "min",
-                "gdaldriver": "GTiff",
-                "window_size": 4,
-                "resolution": resolution,
-            },
-        ]
-        pipeline = pdal.Pipeline(json.dumps(pipeline_json))
-        count = pipeline.execute()
+    pipeline_json = [
+        las_file_name,
+        {"type": "filters.range", "limits": "Classification[2:2]"},
+        {
+            "type": "writers.gdal",
+            "filename": output_tif_name_temp,
+            "output_type": "min",
+            "gdaldriver": "GTiff",
+            "window_size": 4,
+            "resolution": resolution,
+        },
+    ]
+    pipeline = pdal.Pipeline(json.dumps(pipeline_json))
+    count = pipeline.execute()
 
-        old_ds = gdal.Open(output_tif_name_temp)
+    old_ds = gdal.Open(output_tif_name_temp)
 
-        # Create output raster file
-        driver = gdal.GetDriverByName("GTiff")
-        new_ds = driver.CreateCopy(output_tif_name, old_ds)
+    # Create output raster file
+    driver = gdal.GetDriverByName("GTiff")
+    new_ds = driver.CreateCopy(output_tif_name, old_ds)
 
-        band = new_ds.GetRasterBand(1)
+    band = new_ds.GetRasterBand(1)
 
-        # Fill small NO_DATA areas
-        gdal.FillNodata(targetBand=band, maskBand=None, maxSearchDist=200, smoothingIterations=20)
+    # Fill small NO_DATA areas
+    gdal.FillNodata(targetBand=band, maskBand=None, maxSearchDist=200, smoothingIterations=20)
 
-        # Replace NO_DATA values with 0
-        nodata_value = band.GetNoDataValue()
-        data = band.ReadAsArray()
-        data[data == nodata_value] = 0
+    # Replace NO_DATA values with 0
+    nodata_value = band.GetNoDataValue()
+    data = band.ReadAsArray()
+    data[data == nodata_value] = 0
 
-        band.WriteArray(data)
+    band.WriteArray(data)
 
-        # Close all datasets
-        band.FlushCache()
-        old_ds.FlushCache()
-        new_ds.FlushCache()
-        old_ds = None
-        new_ds = None
-        if verbose:
-            RICH_PRINTING.print(f"Done: {count} points found. Saved at {output_tif_name}.")
-    except Exception as e:
-        raise e
-    finally:
-        remove_folder(temp_folder)
+    # Close all datasets
+    band.FlushCache()
+    old_ds.FlushCache()
+    new_ds.FlushCache()
+    old_ds = None
+    new_ds = None
+    if verbose:
+        RICH_PRINTING.print(f"Done: {count} points found. Saved at {output_tif_name}.")
+
+    temp_folder_manager.cleanup_temp_folder()
 
     return output_tif_name
 
@@ -386,40 +359,37 @@ def slow_compute_slices_chm(
 ) -> None:
 
     # Create temporary folder
-    temp_folder = create_random_temp_folder()
+    temp_folder_manager = TempFolderManager()
+    temp_folder = temp_folder_manager.get_temp_folder()
 
-    try:
-        slices_pipelines_paths = []
-        for i, (z_limits, output_path) in enumerate(zip(z_limits_list, output_tif_paths)):
-            pipeline_json = get_slice_dsm_from_stdin_pipeline(output_path, resolution, z_limits)
-            slice_pipeline_path = os.path.join(temp_folder, f"{i}.json")
-            slices_pipelines_paths.append(slice_pipeline_path)
-            with open(slice_pipeline_path, "w") as pipeline_file:
-                json.dump(pipeline_json, pipeline_file)
+    slices_pipelines_paths = []
+    for i, (z_limits, output_path) in enumerate(zip(z_limits_list, output_tif_paths)):
+        pipeline_json = get_slice_dsm_from_stdin_pipeline(output_path, resolution, z_limits)
+        slice_pipeline_path = os.path.join(temp_folder, f"{i}.json")
+        slices_pipelines_paths.append(slice_pipeline_path)
+        with open(slice_pipeline_path, "w") as pipeline_file:
+            json.dump(pipeline_json, pipeline_file)
 
-        reading_pipeline_json = get_read_las_to_stdout_pipeline(laz_file_name)
-        reading_pipeline_path = os.path.join(temp_folder, "reading_pipeline.json")
-        with open(reading_pipeline_path, "w") as file:
-            json.dump(reading_pipeline_json, file)
+    reading_pipeline_json = get_read_las_to_stdout_pipeline(laz_file_name)
+    reading_pipeline_path = os.path.join(temp_folder, "reading_pipeline.json")
+    with open(reading_pipeline_path, "w") as file:
+        json.dump(reading_pipeline_json, file)
 
-        # Create the bash script
-        # "#!/bin/bash\n"
-        bash_script = ["#!/usr/bin/env bash\n", f"pdal pipeline {reading_pipeline_path} | ", "tee"]
-        for slice_pipeline_path in slices_pipelines_paths:
-            bash_script.append(f" >(pdal pipeline {slice_pipeline_path})")
-        bash_script.append(" >/dev/null")
+    # Create the bash script
+    # "#!/bin/bash\n"
+    bash_script = ["#!/usr/bin/env bash\n", f"pdal pipeline {reading_pipeline_path} | ", "tee"]
+    for slice_pipeline_path in slices_pipelines_paths:
+        bash_script.append(f" >(pdal pipeline {slice_pipeline_path})")
+    bash_script.append(" >/dev/null")
 
-        shell_run_path = "data/tests/run.sh"
-        with open(shell_run_path, "w") as rsh:
-            rsh.write("".join(bash_script))
+    shell_run_path = "data/tests/run.sh"
+    with open(shell_run_path, "w") as rsh:
+        rsh.write("".join(bash_script))
 
-        subprocess.run(["chmod", "+x", shell_run_path])
-        RICH_PRINTING.print(subprocess.run([shell_run_path], shell=True))
+    subprocess.run(["chmod", "+x", shell_run_path])
+    RICH_PRINTING.print(subprocess.run([shell_run_path], shell=True))
 
-    except Exception as e:
-        raise e
-    finally:
-        remove_folder(temp_folder)
+    temp_folder_manager.cleanup_temp_folder()
 
 
 def compute_slices_chm_from_hag_laz(
@@ -486,36 +456,32 @@ def compute_slices_chm(
         return
 
     # Create temporary folder
-    temp_folder = create_random_temp_folder()
+    temp_folder_manager = TempFolderManager()
+    temp_folder = temp_folder_manager.get_temp_folder()
 
-    try:
-        full_dtm_path = os.path.join(temp_folder, "dtm.tif")
-        hag_path = os.path.join(temp_folder, "hag.las")
+    full_dtm_path = os.path.join(temp_folder, "dtm.tif")
+    hag_path = os.path.join(temp_folder, "hag.las")
 
-        compute_full_dtm(
-            laz_file_name,
-            output_tif_name=full_dtm_path,
+    compute_full_dtm(
+        laz_file_name,
+        output_tif_name=full_dtm_path,
+        resolution=resolution,
+    )
+
+    compute_laz_minus_ground_height_with_dtm(
+        laz_file_name, output_laz_name=hag_path, dtm_file_name=full_dtm_path
+    )
+
+    for z_limits, output_path in zip(z_limits_list, output_tif_paths):
+        compute_slice_chm_from_hag_laz(
+            hag_path,
+            output_tif_path=output_path,
             resolution=resolution,
+            z_limits=z_limits,
+            skip_if_file_exists=skip_if_file_exists,
         )
 
-        compute_laz_minus_ground_height_with_dtm(
-            laz_file_name, output_laz_name=hag_path, dtm_file_name=full_dtm_path
-        )
-
-        for z_limits, output_path in zip(z_limits_list, output_tif_paths):
-            compute_slice_chm_from_hag_laz(
-                hag_path,
-                output_tif_path=output_path,
-                resolution=resolution,
-                z_limits=z_limits,
-                skip_if_file_exists=skip_if_file_exists,
-            )
-
-    except Exception as e:
-        raise e
-    finally:
-        pass
-        # remove_folder(temp_folder)
+    temp_folder_manager.cleanup_temp_folder()
 
 
 def get_full_chm_slice_path(
