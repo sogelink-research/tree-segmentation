@@ -423,6 +423,31 @@ def rgb_chm_usage_legend(use_rgb: bool, use_chm: bool):
             return "No data"
 
 
+def rgb_cir_chm_usage_legend(use_rgb: bool, use_cir: bool, use_chm: bool):
+    if use_rgb:
+        if use_cir:
+            if use_chm:
+                return "RGB, CIR and CHM"
+            else:
+                return "RGB and CIR"
+        else:
+            if use_chm:
+                return "RGB and CHM"
+            else:
+                return "RGB only"
+    else:
+        if use_cir:
+            if use_chm:
+                return "CIR and CHM"
+            else:
+                return "CIR only"
+        else:
+            if use_chm:
+                return "CHM only"
+            else:
+                return "No data"
+
+
 def evaluate_model(
     model: AMF_GD_YOLOv8,
     data_loader: TreeDataLoader,
