@@ -105,3 +105,56 @@ if __name__ == "__main__":
     # main()
     RICH_PRINTING.close()
     pass
+
+# from typing import Callable, Iterable, TypeVar
+
+# T = TypeVar("T")
+
+# class PBarIterator:
+    # def __init__(
+        # self, iterable: Iterable[T], callback_iter: Callable[[], None], callback_end_iter: Callable[[bool], None]
+    # ):
+        # self.iterator = iter(iterable)
+        # self.index = 0
+        # self.callback_iter = callback_iter
+        # self.callback_end_iter = callback_end_iter
+        # self._done = False
+
+    # def __iter__(self):
+        # return self
+
+    # def __next__(self):
+        # try:
+            # if self.index > 0:
+                # self.callback_iter()
+
+            # item = next(self.iterator)
+            # self.index += 1
+            # return item
+        # except StopIteration:
+            # if not self._done:
+                # self.callback_end_iter(False)
+                # self._done = True
+            # raise StopIteration
+
+    # def __del__(self):
+        # if not self._done:
+            # self.callback_end_iter(True)
+            # self._done = True
+
+
+# # Example usage
+# def iter_callback():
+    # print("Item processed.")
+
+# def end_callback(interrupted):
+    # if interrupted:
+        # print("Iteration was interrupted.")
+    # else:
+        # print("Iteration completed.")
+
+# iterable = [1, 2, 3, 4, 5]
+# pbar_iter = PBarIterator(iterable, iter_callback, end_callback)
+
+# for item in pbar_iter:
+    # print(item)

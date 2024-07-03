@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import atexit
 import bisect
+from itertools import tee
 import json
 import os
 import shutil
@@ -435,50 +436,49 @@ class RunningMessage:
 RUNNING_MESSAGE = RunningMessage()
 
 
-class PBarList(list):
-    T = TypeVar("T")
-
+class PBarIterable(Iterable):
     def __init__(
-        self, sequence: List[T], callback_iter: Callable[[],], callback_end_iter: Callable[[bool],]
+        self, iterable: Iterable, callback_iter: Callable[[],], callback_end_iter: Callable[[bool],]
     ) -> None:
-        super().__init__(sequence)
-        self.length = len(sequence)
-        self.progress = 0
+        self.iterable = iterable
         self.callback_iter = callback_iter
         self.callback_end_iter = callback_end_iter
 
     def __iter__(self):
         return PBarIterator(
-            self, callback_iter=self.callback_iter, callback_end_iter=self.callback_end_iter
+            self.iterable, callback_iter=self.callback_iter, callback_end_iter=self.callback_end_iter
         )
 
-
 class PBarIterator(Iterator):
+    
     def __init__(
-        self, sequence: PBarList, callback_iter: Callable[[],], callback_end_iter: Callable[[bool],]
+        self, iterable: Iterable, callback_iter: Callable[[],None], callback_end_iter: Callable[[bool],None]
     ):
-        self.sequence = sequence
+        self.iterator = iter(iterable)
         self.index = 0
         self.callback_iter = callback_iter
         self.callback_end_iter = callback_end_iter
         self._done = False
 
-    def __next__(self):
-        if self.index > 0:
-            self.callback_iter()
+    def __iter__(self) -> PBarIterator:
+        return self
 
-        if self.index < len(self.sequence):
-            item = self.sequence[self.index]
+    def __next__(self):
+        try:
+            if self.index > 0:
+                self.callback_iter()
+
+            item = next(self.iterator)
             self.index += 1
             return item
-        else:
+        except StopIteration:
             if not self._done:
                 self.callback_end_iter(False)
                 self._done = True
             raise StopIteration
 
     def __del__(self):
-        if not self._done:
+        if hasattr(self, "_done") and not self._done:
             self.callback_end_iter(True)
             self._done = True
 
@@ -603,25 +603,26 @@ class RichPrinting:
 
         return new_uuid
 
-    def _remove_line(self, id: uuid.UUID) -> None:
-        if id in self.stack:
+    def _remove_line(self, node_id: uuid.UUID) -> None:
+        if node_id in self.stack:
             raise Exception("Cannot remove a line that is still in the stack")
 
-        parent = self.parents.pop(id)
-        child_index = self.pos_as_child.pop(id)
-        self.trees[parent].children.pop(child_index)
+        if node_id != self.root_id:
+            parent = self.parents.pop(node_id)
+            child_index = self.pos_as_child.pop(node_id)
+            self.trees[parent].children.pop(child_index)
 
-        # Decrease the child index of nodes with the same parent
-        for other_id in self.children[parent][child_index + 1 :]:
-            self.pos_as_child[other_id] -= 1
-        self.children[parent].pop(child_index)
+            # Decrease the child index of nodes with the same parent
+            for other_id in self.children[parent][child_index + 1 :]:
+                self.pos_as_child[other_id] -= 1
+            self.children[parent].pop(child_index)
 
-        if id in self.pbars_progress:
-            self.pbars_progress.pop(id)
+        if node_id in self.pbars_progress:
+            self.pbars_progress.pop(node_id)
 
-        self.heights.pop(id)
-        self.trees.pop(id)
-        self.nodes_in_order.remove(id)
+        self.heights.pop(node_id)
+        self.trees.pop(node_id)
+        self.nodes_in_order.remove(node_id)
 
     @property
     def _terminal_height(self) -> int:
@@ -647,10 +648,10 @@ class RichPrinting:
 
         # Count the space of the stack
         stack_height = 0
-        for id in self.stack[1:]:
-            if self.pos_as_child[id] > 0:
+        for node_id in self.stack[1:]:
+            if self.pos_as_child[node_id] > 0:
                 stack_height += 1
-            stack_height += self.heights[id]
+            stack_height += self.heights[node_id]
         if self.pos_as_child[last_uuid] > 0:
             stack_height += self.heights[last_uuid]
 
@@ -658,8 +659,8 @@ class RichPrinting:
             self.renderable = tree_copy_without_children(self.trees[self.root_id])
             current_height = 1
             last_node = self.renderable
-            for id_idx, id in enumerate(self.stack[1:]):
-                if self.pos_as_child[id] > 0:
+            for id_idx, node_id in enumerate(self.stack[1:]):
+                if self.pos_as_child[node_id] > 0:
                     next_height = self.heights[self.stack[id_idx + 1]]
                     if terminal_height - current_height >= next_height + 2:
                         last_node.add(" ··· ", style="yellow")
@@ -674,7 +675,7 @@ class RichPrinting:
                         still_place = False
 
                 if still_place:
-                    last_node = last_node.add(tree_copy_without_children(self.trees[id]))
+                    last_node = last_node.add(tree_copy_without_children(self.trees[node_id]))
                 else:
                     last_node = last_node.add(" ··· ", style="yellow")
                     last_node.add(tree_copy_without_children(self.trees[last_uuid]))
@@ -713,13 +714,13 @@ class RichPrinting:
         tree_equivs: Dict[uuid.UUID, Tree] = {}
         self.renderable = tree_copy_without_children(self.trees[self.root_id])
         tree_equivs[self.root_id] = self.renderable
-        for id in self.stack[1:]:
-            if id == last_common_parent_id:
+        for node_id in self.stack[1:]:
+            if node_id == last_common_parent_id:
                 break
-            if self.pos_as_child[id] > 0:
-                tree_equivs[self.parents[id]].add(" ··· ", style="yellow")
-            tree_equivs[id] = tree_equivs[self.parents[id]].add(
-                tree_copy_without_children(self.trees[id])
+            if self.pos_as_child[node_id] > 0:
+                tree_equivs[self.parents[node_id]].add(" ··· ", style="yellow")
+            tree_equivs[node_id] = tree_equivs[self.parents[node_id]].add(
+                tree_copy_without_children(self.trees[node_id])
             )
 
         first_last_line_id = self.nodes_in_order[first_last_line_order_index]
@@ -760,9 +761,9 @@ class RichPrinting:
         #     print(f"{self.trees[self.parents[first_last_line_id]].label = }")
         #     raise e
 
-        for id in self.nodes_in_order[first_last_line_order_index + 1 :]:
-            tree_equivs[id] = tree_equivs[self.parents[id]].add(
-                tree_copy_without_children(self.trees[id])
+        for node_id in self.nodes_in_order[first_last_line_order_index + 1 :]:
+            tree_equivs[node_id] = tree_equivs[self.parents[node_id]].add(
+                tree_copy_without_children(self.trees[node_id])
             )
 
         return
@@ -852,14 +853,15 @@ class RichPrinting:
 
         return decorator
 
-    T = TypeVar("T")
-
-    def pbar(self, iterable: Iterable[T], description: str = "", leave: bool = False) -> List[T]:
-        sequence = list(iterable)
-        length = len(sequence)
+    def pbar(self, iterable: Iterable, description: str = "", leave: bool = False) -> PBarIterable:
+        iter_length, iterable = tee(iterable)
+        length = sum(1 for _ in iter_length)
 
         # Improve by looking instead at the progress bars still running to find out if we're inside one
-        last_uuid = self.nodes_in_order[-1]
+        if len(self.nodes_in_order) > 0:
+            last_uuid = self.nodes_in_order[-1]
+        else:
+            last_uuid = self._get_new_uuid()
         if last_uuid not in self.pbars_progress:
             progress = Progress(
                 TextColumn("[progress.description]{task.description}"),
@@ -909,43 +911,45 @@ class RichPrinting:
                     progress.remove_task(taskID)
                     self._remove_line(new_uuid)
 
-        pbar_sequence = PBarList(
-            sequence,
+        pbar_iterable = PBarIterable(
+            iterable,
             callback_iter=lambda: self._pbar_update(new_uuid, taskID),
             callback_end_iter=callback_end_iter,
         )
-        return pbar_sequence
+        return pbar_iterable
 
-    def _pbar_update(self, id: uuid.UUID, taskID: TaskID) -> None:
-        progress = self.pbars_progress[id]
+    def _pbar_update(self, node_id: uuid.UUID, taskID: TaskID) -> None:
+        progress = self.pbars_progress[node_id]
         progress.update(taskID, advance=1)
 
-        self._pbar_node_update(id)
+        self._pbar_node_update(node_id)
 
-    def _pbar_break(self, id: uuid.UUID, taskID: TaskID) -> None:
-        progress = self.pbars_progress[id]
+    def _pbar_break(self, node_id: uuid.UUID, taskID: TaskID) -> None:
+        progress = self.pbars_progress[node_id]
         current_progress = progress.tasks[taskID].completed
         progress.update(taskID, total=current_progress)
 
-        self._pbar_node_update(id)
+        self._pbar_node_update(node_id)
 
-    def _pbar_node_update(self, id: uuid.UUID) -> None:
-        progress = self.pbars_progress[id]
-        parent_id = self.parents[id]
+    def _pbar_node_update(self, node_id: uuid.UUID) -> None:
+        progress = self.pbars_progress[node_id]
         new_node = Tree(progress.get_renderable())
-        child_index = self.pos_as_child[id]
-        self.trees[parent_id].children[child_index] = new_node
-        self.trees[id] = new_node
+        if node_id != self.root_id:
+            parent_id = self.parents[node_id]
+            child_index = self.pos_as_child[node_id]
+            self.trees[parent_id].children[child_index] = new_node
+        self.trees[node_id] = new_node
+
 
         self.render()
 
-    def _pbar_update_max_digits(self, id: uuid.UUID) -> None:
-        progress = self.pbars_progress[id]
+    def _pbar_update_max_digits(self, node_id: uuid.UUID) -> None:
+        progress = self.pbars_progress[node_id]
         max_digits = max(map(lambda task: len(str(task.total)), progress.tasks))
         for task in progress.tasks:
             task.fields["max_digits"] = max_digits
 
-        self._pbar_node_update(id)
+        self._pbar_node_update(node_id)
 
     def print(
         self,

@@ -576,6 +576,9 @@ def get_batch_size(
     if max_batch_size is not None:
         batch_sizes = [batch_size for batch_size in batch_sizes if batch_size < max_batch_size]
     exec_times = [np.inf] * len(batch_sizes)
+    RICH_PRINTING.print(f"{batch_sizes = }")
+    RICH_PRINTING.print(f"{exec_times = }")
+    print_current_memory()
     for idx, batch_size in RICH_PRINTING.pbar(
         enumerate(batch_sizes), leave=True, description="Simulate training with different epochs"
     ):
@@ -664,7 +667,7 @@ def get_batch_size(
             RICH_PRINTING.print(f"\tOOM at batch size {batch_size}")
             break
 
-        except BaseException as e:
+        except Exception as e:
             raise e
 
     # Select best batch size
@@ -684,6 +687,9 @@ def get_batch_size(
     if device.type == "cuda":
         torch.cuda.empty_cache()
     RICH_PRINTING.print(f"Final batch size: {best_batch_size}")
+
+    raise Exception(f"Stop here.")
+
     return best_batch_size
 
 
