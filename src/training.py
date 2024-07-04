@@ -425,6 +425,31 @@ def rgb_chm_usage_legend(use_rgb: bool, use_chm: bool):
             return "No data"
 
 
+def rgb_cir_chm_usage_postfix(use_rgb: bool, use_cir: bool, use_chm: bool):
+    if use_rgb:
+        if use_cir:
+            if use_chm:
+                return "RGB_CIR_CHM"
+            else:
+                return "RGB_CIR"
+        else:
+            if use_chm:
+                return "RGB_CHM"
+            else:
+                return "RGB"
+    else:
+        if use_cir:
+            if use_chm:
+                return "CIR_CHM"
+            else:
+                return "CIR"
+        else:
+            if use_chm:
+                return "CHM"
+            else:
+                return "no_data"
+
+
 def rgb_cir_chm_usage_legend(use_rgb: bool, use_cir: bool, use_chm: bool):
     if use_rgb:
         if use_cir:
@@ -454,7 +479,7 @@ def evaluate_model(
     model: AMF_GD_YOLOv8,
     data_loader: TreeDataLoader,
     device: torch.device,
-    use_rgb: bool = True,
+    use_rgb_cir: bool = True,
     use_chm: bool = True,
     ap_conf_thresholds: Optional[List[float]] = None,
     output_geojson_save_path: Optional[str] = None,
@@ -472,19 +497,19 @@ def evaluate_model(
     if output_geojson_save_path is not None:
         geojson_outputs: List[geojson.FeatureCollection] = []
 
-    if not use_rgb and not use_chm:
+    if not use_rgb_cir and not use_chm:
         raise Exception("You cannot use neither of RGB and CHM.")
 
-    if not use_rgb:
-        old_use_rgb = data_loader.dataset.use_rgb
-        old_use_chm = data_loader.dataset.use_chm
-        data_loader.dataset.use_rgb = False
-        data_loader.dataset.use_chm = True
-    elif not use_chm:
-        old_use_rgb = data_loader.dataset.use_rgb
-        old_use_chm = data_loader.dataset.use_chm
-        data_loader.dataset.use_rgb = True
-        data_loader.dataset.use_chm = False
+    # if not use_rgb_cir:
+    #     old_use_rgb = data_loader.dataset.use_rgb
+    #     old_use_chm = data_loader.dataset.use_chm
+    #     data_loader.dataset.use_rgb = False
+    #     data_loader.dataset.use_chm = True
+    # elif not use_chm:
+    #     old_use_rgb = data_loader.dataset.use_rgb
+    #     old_use_chm = data_loader.dataset.use_chm
+    #     data_loader.dataset.use_rgb = True
+    #     data_loader.dataset.use_chm = False
 
     model.eval()
     with torch.no_grad():
@@ -510,7 +535,7 @@ def evaluate_model(
 
             # Compute the model output
             output = model.forward(
-                image_rgb, image_chm, use_left_temp=use_rgb, use_right_temp=use_chm
+                image_rgb, image_chm, use_left_temp=use_rgb_cir, use_right_temp=use_chm
             )
             preds = model.preds_from_output(output)
 
@@ -553,9 +578,9 @@ def evaluate_model(
         geojson_outputs_merged = merge_geojson_feature_collections(geojson_outputs)
         save_geojson(geojson_outputs_merged, output_geojson_save_path)
 
-    if not use_rgb or not use_chm:
-        data_loader.dataset.use_rgb = old_use_rgb
-        data_loader.dataset.use_chm = old_use_chm
+    # if not use_rgb or not use_chm:
+    #     data_loader.dataset.use_rgb = old_use_rgb
+    #     data_loader.dataset.use_chm = old_use_chm
 
     return ap_metrics
 

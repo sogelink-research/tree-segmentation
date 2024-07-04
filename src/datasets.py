@@ -16,6 +16,7 @@ from torch.utils.data import Dataset
 
 from plot import get_bounding_boxes
 from utils import (
+    Folders,
     get_coordinates_from_full_image_file_name,
     get_file_base_name,
     is_npy_file,
@@ -866,7 +867,7 @@ def split_files_into_lists(
 
 
 def create_and_save_splitted_datasets(
-    rgb_folder_path: str | None,
+    rgb_cir_folder_path: str | None,
     chm_folder_path: str | None,
     annotations_folder_path: str,
     sets_ratios: Sequence[int | float],
@@ -886,11 +887,11 @@ def create_and_save_splitted_datasets(
         for annotations_file in set_files:
             new_dict = {"annotations": annotations_file}
 
-            if rgb_folder_path is not None:
-                rgb_file = annotations_file.replace(
-                    annotations_folder_path, rgb_folder_path
+            if rgb_cir_folder_path is not None:
+                rgb_cir_file = annotations_file.replace(
+                    annotations_folder_path, rgb_cir_folder_path
                 ).replace(".json", ".npy")
-                new_dict["rgb_cir"] = rgb_file
+                new_dict["rgb_cir"] = rgb_cir_file
 
             if chm_folder_path is not None:
                 chm_file = annotations_file.replace(
@@ -899,6 +900,77 @@ def create_and_save_splitted_datasets(
                 new_dict["chm"] = chm_file
 
             all_files_dict[set_name].append(new_dict)
+
+    with open(save_path, "w") as f:
+        json.dump(all_files_dict, f)
+
+
+def create_and_save_splitted_datasets_basis(
+    annotations_folder_path: str,
+    sets_ratios: Sequence[int | float],
+    sets_names: List[str],
+    save_path: str,
+) -> None:
+    files_dict = split_files_into_lists(
+        folder_path=annotations_folder_path,
+        sets_ratios=sets_ratios,
+        sets_names=sets_names,
+        random_seed=0,
+    )
+    all_files_dict = {}
+
+    def keep_path_end(file_path: str) -> str:
+        file_name = os.path.basename(file_path)
+        parent_dir = os.path.basename(os.path.dirname(file_path))
+        return os.path.join(parent_dir, file_name)
+
+    for set_name, set_files in files_dict.items():
+        all_files_dict[set_name] = list(map(keep_path_end, set_files))
+
+    with open(save_path, "w") as f:
+        json.dump(all_files_dict, f)
+
+
+def create_and_save_dataset_splitted_datasets_from_basis(
+    data_folder_path: str,
+    use_rgb_cir: bool,
+    use_chm: bool,
+    annotations_folder_path: str,
+    parts_repartion: Dict[str, str],
+    save_path: str,
+) -> None:
+
+    data_split_files_path = os.path.join(Folders.DATA.value, "data_split_experiences.json")
+    with open(data_split_files_path, "r") as f:
+        data_split_files = json.load(f)
+
+    # Put the base splits in the right datasets
+    train_val_test_split = {"training": [], "validation": [], "test": []}
+    for data_split_key, files in data_split_files.items():
+        for dataset_key in train_val_test_split.keys():
+            if data_split_key in parts_repartion[dataset_key]:
+                train_val_test_split[dataset_key].extend(files)
+                break
+
+    # Create all the full paths
+    all_files_dict = {}
+    for dataset_key, files in train_val_test_split.values():
+        all_files_dict[dataset_key] = []
+        for annotations_file in files:
+            annotations_file = os.path.join(data_folder_path, "annotations", annotations_file)
+            new_dict = {"annotations": annotations_file}
+
+            if use_rgb_cir:
+                rgb_cir_file = annotations_file.replace("annotations", "rgb_cir").replace(
+                    ".json", ".npy"
+                )
+                new_dict["rgb_cir"] = rgb_cir_file
+
+            if use_chm is not None:
+                chm_file = annotations_file.replace("annotations", "chm").replace(".json", ".npy")
+                new_dict["chm"] = chm_file
+
+            all_files_dict[dataset_key].append(new_dict)
 
     with open(save_path, "w") as f:
         json.dump(all_files_dict, f)
