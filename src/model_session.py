@@ -24,7 +24,9 @@ from dataloaders import convert_ground_truth_from_tensors, initialize_dataloader
 from dataset_constants import DatasetConst
 from datasets import (
     compute_mean_and_std,
+    create_and_save_dataset_splitted_datasets_from_basis,
     create_and_save_splitted_datasets,
+    create_and_save_splitted_datasets_basis,
     load_tree_datasets_from_split,
     quick_normalize_chunk,
 )
@@ -57,8 +59,8 @@ from training import (
     TreeDataset,
     evaluate_model,
     get_batch_size,
-    rgb_chm_usage_legend,
-    rgb_chm_usage_postfix,
+    rgb_cir_chm_usage_legend,
+    rgb_cir_chm_usage_postfix,
     train_and_validate,
 )
 from utils import (
@@ -76,7 +78,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("action", help="Action to perform. Must be one of [train, eval]", type=str)
     parser.add_argument(
-        "params_path", help="Path to the file containing the training parameters", type=str
+        "params_path",
+        help="Path to the file containing the training parameters",
+        type=str,
     )
 
     return parser
@@ -235,7 +239,11 @@ class DatasetParams:
         # Crop annotations into tiles
         visibility_threshold = 0.2
         annots_repartition = find_annots_repartition(
-            cropping_limits_x, cropping_limits_y, annotations, self.image_data, visibility_threshold
+            cropping_limits_x,
+            cropping_limits_y,
+            annotations,
+            self.image_data,
+            visibility_threshold,
         )
         crop_annots_into_limits(annots_repartition)
         annots_coordinates_to_local(annots_repartition)
@@ -330,7 +338,9 @@ class DatasetParams:
         temp_folder_manager.cleanup_temp_folder()
 
     def _preprocess_all_data(
-        self, full_images_paths: Dict[str, List[str]], annotations: geojson.FeatureCollection
+        self,
+        full_images_paths: Dict[str, List[str]],
+        annotations: geojson.FeatureCollection,
     ):
         self._preprocess_annotations(annotations)
 
@@ -384,8 +394,6 @@ class DatasetParams:
                 )
 
             _preprocess_images_chm(full_images_paths["chm"], self.cropped_chm_folder_path)
-        else:
-            self.cropped_chm_folder_path = None
 
 
 class TrainingParams:
@@ -399,6 +407,7 @@ class TrainingParams:
         no_improvement_stop_epochs: int,
         proba_drop_rgb: float,
         proba_drop_chm: float,
+        experience: str,
         batch_size: Optional[int] = None,
         transform_spatial_training: Optional[A.Compose] = None,
         transform_pixel_rgb_training: Optional[A.Compose] | None = None,
@@ -413,6 +422,7 @@ class TrainingParams:
         self.no_improvement_stop_epochs = no_improvement_stop_epochs
         self.proba_drop_rgb = proba_drop_rgb
         self.proba_drop_chm = proba_drop_chm
+        self.experience = experience
         self.transform_spatial_training = transform_spatial_training
         self.transform_pixel_rgb_training = transform_pixel_rgb_training
         self.transform_pixel_chm_training = transform_pixel_chm_training
@@ -448,19 +458,34 @@ class TrainingData:
         self._init_transforms()
 
     def _split_data(self, split_random_seed: int):
-        SETS_RATIOS = [3, 1, 1]
-        SETS_NAMES = ["training", "validation", "test"]
+        SETS_RATIOS = [1, 1, 1, 1, 1]
+        SETS_NAMES = ["0", "1", "2", "3", "4"]
+        SPLIT_BASE_PATH = os.path.join(Folders.DATA.value, "data_split_files.json")
+        if not os.path.exists(SPLIT_BASE_PATH):
+            create_and_save_splitted_datasets_basis(
+                self.dataset_params.cropped_annotations_folder_path,
+                sets_ratios=SETS_RATIOS,
+                sets_names=SETS_NAMES,
+                save_path=SPLIT_BASE_PATH,
+            )
+
+        SPLIT_EXPERIENCE_PATH = os.path.join(Folders.DATA.value, "data_split_experiences.json")
+        with open(SPLIT_EXPERIENCE_PATH, "r") as f:
+            split_experience_repartitions = json.load(f)
+        parts_repartion = split_experience_repartitions[self.training_params.experience]
+
         self.data_split_file_path = os.path.join(
-            self.dataset_params.cropped_data_folder_path, f"data_split_{split_random_seed}.json"
+            self.dataset_params.cropped_data_folder_path,
+            f"data_split_{split_random_seed}.json",
         )
-        create_and_save_splitted_datasets(
-            self.dataset_params.cropped_rgb_cir_folder_path,
-            self.dataset_params.cropped_chm_folder_path,
-            self.dataset_params.cropped_annotations_folder_path,
-            SETS_RATIOS,
-            SETS_NAMES,
-            self.data_split_file_path,
-            random_seed=split_random_seed,
+        use_rgb_cir = self.dataset_params.use_rgb or self.dataset_params.use_cir
+        create_and_save_dataset_splitted_datasets_from_basis(
+            data_folder_path=self.dataset_params.cropped_data_folder_path,
+            use_rgb_cir=use_rgb_cir,
+            use_chm=self.dataset_params.use_chm,
+            data_split_files_path=SPLIT_BASE_PATH,
+            parts_repartion=parts_repartion,
+            save_path=self.data_split_file_path,
         )
 
     def _init_transforms(self):
@@ -557,16 +582,17 @@ class ModelSession:
 
     @RICH_PRINTING.running_message("Finding the best batch size...")
     def _init_batch_size(self) -> None:
-        datasets = self._load_datasets()
-        model = self._load_model()
-        # Find best batch size
-        self.batch_size = get_batch_size(
-            model,
-            self.device,
-            datasets["training"],
-            accumulate=self.training_data.training_params.accumulate,
-            num_workers=self.training_data.training_params.num_workers,
-        )
+        if not hasattr(self, "batch_size"):
+            datasets = self._load_datasets()
+            model = self._load_model()
+            # Find best batch size
+            self.batch_size = get_batch_size(
+                model,
+                self.device,
+                datasets["training"],
+                accumulate=self.training_data.training_params.accumulate,
+                num_workers=self.training_data.training_params.num_workers,
+            )
 
     @RICH_PRINTING.running_message("Running a training session...")
     def train(self, overwrite: bool = False):
@@ -639,12 +665,15 @@ class ModelSession:
 
         if self.training_data.dataset_params.use_rgb or self.training_data.dataset_params.use_cir:
             if self.training_data.dataset_params.use_chm:
-                use_rgb_chm = [(True, True), (True, False), (False, True)]
+                use_rgb_cir_chm = [(True, True), (True, False), (False, True)]
+                use_rgb_cir_chm = [(True, True), (True, False), (False, True)]
             else:
-                use_rgb_chm = [(True, False)]
+                use_rgb_cir_chm = [(True, False)]
+                use_rgb_cir_chm = [(True, False)]
         else:
             if self.training_data.dataset_params.use_chm:
-                use_rgb_chm = [(False, True)]
+                use_rgb_cir_chm = [(False, True)]
+                use_rgb_cir_chm = [(False, True)]
             else:
                 raise Exception("There must not be use_rgb, use_cir and use_chm all False.")
 
@@ -652,19 +681,40 @@ class ModelSession:
             loaders_zip, len(loaders_zip), description="Datasets"
         ):
             ap_metrics_list = AP_Metrics_List()
-            for use_rgb, use_chm in RICH_PRINTING.pbar(
-                use_rgb_chm, len(use_rgb_chm), description="Type of input", leave=False
+            for use_rgb_cir, use_chm in RICH_PRINTING.pbar(
+                use_rgb_cir_chm, len(use_rgb_cir_chm), description="Type of input", leave=False
             ):
-
-                data_postfix = rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)
-                data_legend = rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)
+                if use_rgb_cir:
+                    use_rgb = self.training_data.dataset_params.use_rgb
+                    use_cir = self.training_data.dataset_params.use_cir
+                else:
+                    use_rgb = False
+                    use_cir = False
+                data_postfix = rgb_cir_chm_usage_postfix(
+                    use_rgb=use_rgb, use_cir=use_cir, use_chm=use_chm
+                )
+                data_legend = rgb_cir_chm_usage_legend(
+                    use_rgb=use_rgb, use_cir=use_cir, use_chm=use_chm
+                )
+                if use_rgb_cir:
+                    use_rgb = self.training_data.dataset_params.use_rgb
+                    use_cir = self.training_data.dataset_params.use_cir
+                else:
+                    use_rgb = False
+                    use_cir = False
+                data_postfix = rgb_cir_chm_usage_postfix(
+                    use_rgb=use_rgb, use_cir=use_cir, use_chm=use_chm
+                )
+                data_legend = rgb_cir_chm_usage_legend(
+                    use_rgb=use_rgb, use_cir=use_cir, use_chm=use_chm
+                )
                 full_postfix = "_".join([loader_postfix, data_postfix])
                 full_legend = " with ".join([loader_postfix, data_postfix])
                 ap_metrics = evaluate_model(
                     model,
                     loader,
                     self.device,
-                    use_rgb=use_rgb,
+                    use_rgb_cir=use_rgb_cir,
                     use_chm=use_chm,
                     ap_conf_thresholds=conf_thresholds,
                     output_geojson_save_path=os.path.join(
@@ -701,6 +751,7 @@ class ModelSession:
         params_to_save = {
             "annotations_file": self.training_data.dataset_params.annotations_file_name,
             "agnostic": self.training_data.dataset_params.agnostic,
+            "experience": self.training_data.training_params.experience,
             "use_rgb": self.training_data.dataset_params.use_rgb,
             "use_cir": self.training_data.dataset_params.use_cir,
             "use_chm": self.training_data.dataset_params.use_chm,
@@ -808,7 +859,10 @@ def simple_test():
     intervals: List[Tuple[int, int]] = [(0, 0)]
 
     image_rgb_path = os.path.join(
-        Folders.RGB_IMAGES.value, "cropped", "2023_122000_484000_RGB_hrl", "0_0_640_640.tif"
+        Folders.RGB_IMAGES.value,
+        "cropped",
+        "2023_122000_484000_RGB_hrl",
+        "0_0_640_640.tif",
     )
     image_chm_path = os.path.join(
         Folders.CHM.value,
@@ -920,7 +974,10 @@ def simple_test():
         _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
         training_metrics.update("Training", "Best sortedAP", sorted_ap, y_axis="sortedAP")
         training_metrics.update(
-            "Training", "Conf thres of sortedAP", conf_threshold, y_axis="Conf threshold"
+            "Training",
+            "Conf thres of sortedAP",
+            conf_threshold,
+            y_axis="Conf threshold",
         )
 
         training_metrics.end_loop(epoch)

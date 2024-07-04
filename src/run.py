@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import os
 import pickle
+import warnings
 from itertools import product
-from typing import Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
+import albumentations as A
 import numpy as np
 import torch
 
@@ -30,6 +32,7 @@ class ModelTrainingSession(ModelSession):
         chm_z_layers: Optional[Sequence[Tuple[float, float]]] = None,
         annotations_file_name: str = "122000_484000.geojson",
         agnostic: bool = False,
+        experiences: List[str] = ["exp0", "exp1", "exp2", "exp3", "exp4"],
         model_size: str = "n",
         lr: float = 1e-2,
         epochs: int = 1000,
@@ -48,6 +51,7 @@ class ModelTrainingSession(ModelSession):
         self.chm_z_layers = chm_z_layers
         self.annotations_file_name = annotations_file_name
         self.agnostic = agnostic
+        self.experiences = experiences
         self.model_size = model_size
         self.lr = lr
         self.epochs = epochs
@@ -58,18 +62,17 @@ class ModelTrainingSession(ModelSession):
         self.proba_drop_rgb = proba_drop_rgb
         self.proba_drop_chm = proba_drop_chm
         self.device = device
-        self.postfix = postfix
+        self.init_postfix = postfix
 
-        self._init()
-        self.save_init_params()
+        self._init_dataset_params()
 
-    def _init(self) -> None:
+    def _init_dataset_params(self) -> None:
 
         if self.chm_z_layers is None:
             z_tops = [1, 2, 3, 5, 7, 10, 15, 20, np.inf]
             chm_z_layers = [(-np.inf, z_top) for z_top in z_tops]
 
-        dataset_params = DatasetParams(
+        self.dataset_params = DatasetParams(
             annotations_file_name=self.annotations_file_name,
             use_rgb=self.use_rgb,
             use_cir=self.use_cir,
@@ -77,6 +80,9 @@ class ModelTrainingSession(ModelSession):
             chm_z_layers=chm_z_layers,
             agnostic=self.agnostic,
         )
+
+    def _init_training_params(self, experience: str) -> None:
+
         training_params = TrainingParams(
             model_size=self.model_size,
             lr=self.lr,
@@ -87,15 +93,26 @@ class ModelTrainingSession(ModelSession):
             no_improvement_stop_epochs=self.no_improvement_stop_epochs,
             proba_drop_rgb=self.proba_drop_rgb,
             proba_drop_chm=self.proba_drop_chm,
+            experience=experience,
         )
-        training_data = TrainingData(dataset_params=dataset_params, training_params=training_params)
-        super().__init__(training_data=training_data, device=self.device, postfix=self.postfix)
+        training_data = TrainingData(
+            dataset_params=self.dataset_params, training_params=training_params
+        )
+        postfix = self.init_postfix + experience if self.init_postfix is not None else experience
+        super().__init__(training_data=training_data, device=self.device, postfix=postfix)
+
+        self.save_init_params(experience)
+
+    def train(self) -> None:
+        for experience in self.experiences:
+            self._init_training_params(experience)
+            super().train()
 
     @property
     def init_params_path(self) -> str:
         return os.path.join(self.folder_path, "model_init_params.json")
 
-    def save_init_params(self) -> None:
+    def save_init_params(self, experience: str) -> None:
         params_to_save = {
             "use_rgb": self.use_rgb,
             "use_cir": self.use_cir,
@@ -103,6 +120,7 @@ class ModelTrainingSession(ModelSession):
             "chm_z_layers": self.chm_z_layers,
             "annotations_file_name": self.annotations_file_name,
             "agnostic": self.agnostic,
+            "experience": experience,
             "model_size": self.model_size,
             "lr": self.lr,
             "epochs": self.epochs,
@@ -139,12 +157,13 @@ class ModelTrainingSession(ModelSession):
 
 def main():
     params_dict = {
-        "agnostic": [True, False],
+        "epochs": [1000],
+        "lr": [3e-3, 1e-3, 1e-2],
+        "model_size": ["n"],
+        "agnostic": [False, True],
         "use_rgb": [True, False],
         "use_cir": [True, False],
         "use_chm": [True, False],
-        "lr": [1e-2, 3e-3, 1e-3],
-        "model_size": ["n"],
     }
 
     forget_combinations = [
@@ -178,8 +197,9 @@ def main():
     # model_training_session = ModelTrainingSession(epochs=0)
     # model_training_session.train()
 
-    # model_training_session = ModelTrainingSession.from_name("trained_model_1000ep_0")
-    # model_training_session.compute_metrics()
+    # for name in os.listdir("models/amf_gd_yolov8"):
+    #     model_training_session = ModelTrainingSession.from_name(name)
+    #     model_training_session.compute_metrics()
 
 
 if __name__ == "__main__":
