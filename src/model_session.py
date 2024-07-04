@@ -24,6 +24,7 @@ from dataloaders import convert_ground_truth_from_tensors, initialize_dataloader
 from dataset_constants import DatasetConst
 from datasets import (
     compute_mean_and_std,
+    create_and_save_dataset_splitted_datasets_from_basis,
     create_and_save_splitted_datasets,
     create_and_save_splitted_datasets_basis,
     load_tree_datasets_from_split,
@@ -77,7 +78,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("action", help="Action to perform. Must be one of [train, eval]", type=str)
     parser.add_argument(
-        "params_path", help="Path to the file containing the training parameters", type=str
+        "params_path",
+        help="Path to the file containing the training parameters",
+        type=str,
     )
 
     return parser
@@ -236,7 +239,11 @@ class DatasetParams:
         # Crop annotations into tiles
         visibility_threshold = 0.2
         annots_repartition = find_annots_repartition(
-            cropping_limits_x, cropping_limits_y, annotations, self.image_data, visibility_threshold
+            cropping_limits_x,
+            cropping_limits_y,
+            annotations,
+            self.image_data,
+            visibility_threshold,
         )
         crop_annots_into_limits(annots_repartition)
         annots_coordinates_to_local(annots_repartition)
@@ -331,7 +338,9 @@ class DatasetParams:
         temp_folder_manager.cleanup_temp_folder()
 
     def _preprocess_all_data(
-        self, full_images_paths: Dict[str, List[str]], annotations: geojson.FeatureCollection
+        self,
+        full_images_paths: Dict[str, List[str]],
+        annotations: geojson.FeatureCollection,
     ):
         self._preprocess_annotations(annotations)
 
@@ -385,8 +394,6 @@ class DatasetParams:
                 )
 
             _preprocess_images_chm(full_images_paths["chm"], self.cropped_chm_folder_path)
-        else:
-            self.cropped_chm_folder_path = None
 
 
 class TrainingParams:
@@ -400,6 +407,7 @@ class TrainingParams:
         no_improvement_stop_epochs: int,
         proba_drop_rgb: float,
         proba_drop_chm: float,
+        experience: str,
         batch_size: Optional[int] = None,
         transform_spatial_training: Optional[A.Compose] = None,
         transform_pixel_rgb_training: Optional[A.Compose] | None = None,
@@ -414,6 +422,7 @@ class TrainingParams:
         self.no_improvement_stop_epochs = no_improvement_stop_epochs
         self.proba_drop_rgb = proba_drop_rgb
         self.proba_drop_chm = proba_drop_chm
+        self.experience = experience
         self.transform_spatial_training = transform_spatial_training
         self.transform_pixel_rgb_training = transform_pixel_rgb_training
         self.transform_pixel_chm_training = transform_pixel_chm_training
@@ -449,29 +458,35 @@ class TrainingData:
         self._init_transforms()
 
     def _split_data(self, split_random_seed: int):
-        SETS_RATIOS = [3, 1, 1]
-        SETS_NAMES = ["training", "validation", "test"]
+        SETS_RATIOS = [1, 1, 1, 1, 1]
+        SETS_NAMES = ["0", "1", "2", "3", "4"]
+        SPLIT_BASE_PATH = os.path.join(Folders.DATA.value, "data_split_files.json")
+        if not os.path.exists(SPLIT_BASE_PATH):
+            create_and_save_splitted_datasets_basis(
+                self.dataset_params.cropped_annotations_folder_path,
+                sets_ratios=SETS_RATIOS,
+                sets_names=SETS_NAMES,
+                save_path=SPLIT_BASE_PATH,
+            )
+
+        SPLIT_EXPERIENCE_PATH = os.path.join(Folders.DATA.value, "data_split_experiences.json")
+        with open(SPLIT_EXPERIENCE_PATH, "r") as f:
+            split_experience_repartitions = json.load(f)
+        parts_repartion = split_experience_repartitions[self.training_params.experience]
+
         self.data_split_file_path = os.path.join(
-            self.dataset_params.cropped_data_folder_path, f"data_split_{split_random_seed}.json"
+            self.dataset_params.cropped_data_folder_path,
+            f"data_split_{split_random_seed}.json",
         )
-        create_and_save_splitted_datasets(
-            self.dataset_params.cropped_rgb_cir_folder_path,
-            self.dataset_params.cropped_chm_folder_path,
-            self.dataset_params.cropped_annotations_folder_path,
-            SETS_RATIOS,
-            SETS_NAMES,
-            self.data_split_file_path,
-            random_seed=split_random_seed,
+        use_rgb_cir = self.dataset_params.use_rgb or self.dataset_params.use_cir
+        create_and_save_dataset_splitted_datasets_from_basis(
+            data_folder_path=self.dataset_params.cropped_data_folder_path,
+            use_rgb_cir=use_rgb_cir,
+            use_chm=self.dataset_params.use_chm,
+            data_split_files_path=SPLIT_BASE_PATH,
+            parts_repartion=parts_repartion,
+            save_path=self.data_split_file_path,
         )
-
-        create_and_save_splitted_datasets_basis(
-            self.dataset_params.cropped_annotations_folder_path,
-            [1, 1, 1, 1, 1],
-            sets_names=["0", "1", "2", "3", "4"],
-            save_path="data/data_split_files.json",
-        )
-
-        raise Exception("Stop here")
 
     def _init_transforms(self):
         if self.training_params.transform_spatial_training is None:
@@ -720,6 +735,7 @@ class ModelSession:
         params_to_save = {
             "annotations_file": self.training_data.dataset_params.annotations_file_name,
             "agnostic": self.training_data.dataset_params.agnostic,
+            "experience": self.training_data.training_params.experience,
             "use_rgb": self.training_data.dataset_params.use_rgb,
             "use_cir": self.training_data.dataset_params.use_cir,
             "use_chm": self.training_data.dataset_params.use_chm,
@@ -827,7 +843,10 @@ def simple_test():
     intervals: List[Tuple[int, int]] = [(0, 0)]
 
     image_rgb_path = os.path.join(
-        Folders.RGB_IMAGES.value, "cropped", "2023_122000_484000_RGB_hrl", "0_0_640_640.tif"
+        Folders.RGB_IMAGES.value,
+        "cropped",
+        "2023_122000_484000_RGB_hrl",
+        "0_0_640_640.tif",
     )
     image_chm_path = os.path.join(
         Folders.CHM.value,
@@ -939,7 +958,10 @@ def simple_test():
         _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
         training_metrics.update("Training", "Best sortedAP", sorted_ap, y_axis="sortedAP")
         training_metrics.update(
-            "Training", "Conf thres of sortedAP", conf_threshold, y_axis="Conf threshold"
+            "Training",
+            "Conf thres of sortedAP",
+            conf_threshold,
+            y_axis="Conf threshold",
         )
 
         training_metrics.end_loop(epoch)

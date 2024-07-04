@@ -661,7 +661,6 @@ def get_batch_size(
                     total_loss.backward()
 
                     # Gradient accumulation
-
                     if running_accumulation_step % accumulation_steps == 0:
                         optimizer.step()
                         optimizer.zero_grad()

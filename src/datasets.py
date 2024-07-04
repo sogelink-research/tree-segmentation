@@ -935,12 +935,11 @@ def create_and_save_dataset_splitted_datasets_from_basis(
     data_folder_path: str,
     use_rgb_cir: bool,
     use_chm: bool,
-    annotations_folder_path: str,
+    data_split_files_path: str,
     parts_repartion: Dict[str, str],
     save_path: str,
 ) -> None:
 
-    data_split_files_path = os.path.join(Folders.DATA.value, "data_split_experiences.json")
     with open(data_split_files_path, "r") as f:
         data_split_files = json.load(f)
 
@@ -954,7 +953,7 @@ def create_and_save_dataset_splitted_datasets_from_basis(
 
     # Create all the full paths
     all_files_dict = {}
-    for dataset_key, files in train_val_test_split.values():
+    for dataset_key, files in train_val_test_split.items():
         all_files_dict[dataset_key] = []
         for annotations_file in files:
             annotations_file = os.path.join(data_folder_path, "annotations", annotations_file)
