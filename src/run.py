@@ -178,8 +178,9 @@ def main():
     # model_training_session = ModelTrainingSession(epochs=0)
     # model_training_session.train()
 
-    # model_training_session = ModelTrainingSession.from_name("trained_model_1000ep_0")
-    # model_training_session.compute_metrics()
+    # for name in os.listdir("models/amf_gd_yolov8"):
+    #     model_training_session = ModelTrainingSession.from_name(name)
+    #     model_training_session.compute_metrics()
 
 
 if __name__ == "__main__":

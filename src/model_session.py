@@ -25,6 +25,7 @@ from dataset_constants import DatasetConst
 from datasets import (
     compute_mean_and_std,
     create_and_save_splitted_datasets,
+    create_and_save_splitted_datasets_basis,
     load_tree_datasets_from_split,
     quick_normalize_chunk,
 )
@@ -57,8 +58,8 @@ from training import (
     TreeDataset,
     evaluate_model,
     get_batch_size,
-    rgb_chm_usage_legend,
-    rgb_chm_usage_postfix,
+    rgb_cir_chm_usage_legend,
+    rgb_cir_chm_usage_postfix,
     train_and_validate,
 )
 from utils import (
@@ -463,6 +464,15 @@ class TrainingData:
             random_seed=split_random_seed,
         )
 
+        create_and_save_splitted_datasets_basis(
+            self.dataset_params.cropped_annotations_folder_path,
+            [1, 1, 1, 1, 1],
+            sets_names=["0", "1", "2", "3", "4"],
+            save_path="data/data_split_files.json",
+        )
+
+        raise Exception("Stop here")
+
     def _init_transforms(self):
         if self.training_params.transform_spatial_training is None:
             self.transform_spatial_training = get_transform_spatial(
@@ -639,12 +649,12 @@ class ModelSession:
 
         if self.training_data.dataset_params.use_rgb or self.training_data.dataset_params.use_cir:
             if self.training_data.dataset_params.use_chm:
-                use_rgb_chm = [(True, True), (True, False), (False, True)]
+                use_rgb_cir_chm = [(True, True), (True, False), (False, True)]
             else:
-                use_rgb_chm = [(True, False)]
+                use_rgb_cir_chm = [(True, False)]
         else:
             if self.training_data.dataset_params.use_chm:
-                use_rgb_chm = [(False, True)]
+                use_rgb_cir_chm = [(False, True)]
             else:
                 raise Exception("There must not be use_rgb, use_cir and use_chm all False.")
 
@@ -652,19 +662,28 @@ class ModelSession:
             loaders_zip, description="Datasets"
         ):
             ap_metrics_list = AP_Metrics_List()
-            for use_rgb, use_chm in RICH_PRINTING.pbar(
-                use_rgb_chm, description="Type of input", leave=False
+            for use_rgb_cir, use_chm in RICH_PRINTING.pbar(
+                use_rgb_cir_chm, description="Type of input", leave=False
             ):
-
-                data_postfix = rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)
-                data_legend = rgb_chm_usage_legend(use_rgb=use_rgb, use_chm=use_chm)
+                if use_rgb_cir:
+                    use_rgb = self.training_data.dataset_params.use_rgb
+                    use_cir = self.training_data.dataset_params.use_cir
+                else:
+                    use_rgb = False
+                    use_cir = False
+                data_postfix = rgb_cir_chm_usage_postfix(
+                    use_rgb=use_rgb, use_cir=use_cir, use_chm=use_chm
+                )
+                data_legend = rgb_cir_chm_usage_legend(
+                    use_rgb=use_rgb, use_cir=use_cir, use_chm=use_chm
+                )
                 full_postfix = "_".join([loader_postfix, data_postfix])
                 full_legend = " with ".join([loader_postfix, data_postfix])
                 ap_metrics = evaluate_model(
                     model,
                     loader,
                     self.device,
-                    use_rgb=use_rgb,
+                    use_rgb_cir=use_rgb_cir,
                     use_chm=use_chm,
                     ap_conf_thresholds=conf_thresholds,
                     output_geojson_save_path=os.path.join(
