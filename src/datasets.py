@@ -17,7 +17,6 @@ from torch.utils.data import Dataset
 from plot import get_bounding_boxes
 from utils import (
     Folders,
-    Folders,
     get_coordinates_from_full_image_file_name,
     get_file_base_name,
     is_npy_file,
@@ -888,9 +887,6 @@ def create_and_save_splitted_datasets(
         for annotations_file in set_files:
             new_dict = {"annotations": annotations_file}
 
-            if rgb_cir_folder_path is not None:
-                rgb_cir_file = annotations_file.replace(
-                    annotations_folder_path, rgb_cir_folder_path
             if rgb_cir_folder_path is not None:
                 rgb_cir_file = annotations_file.replace(
                     annotations_folder_path, rgb_cir_folder_path

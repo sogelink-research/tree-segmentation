@@ -664,8 +664,8 @@ class RichPrinting:
     def _current_height(self) -> int:
         return sum(self.heights.values())
 
-    def _update_renderable(self) -> None:
-        if self.renderable_up_to_date:
+    def _update_renderable(self, force_update: bool = False) -> None:
+        if not force_update and self.renderable_up_to_date:
             return
         self.renderable_up_to_date = True
 
@@ -798,11 +798,13 @@ class RichPrinting:
 
         return
 
-    def get_renderable(self, force_full: bool = False) -> RenderableType:
+    def get_renderable(
+        self, force_full: bool = False, force_update: bool = False
+    ) -> RenderableType:
         if hasattr(self, "root_id"):
             if force_full:
                 return self.trees[self.root_id]
-            self._update_renderable()
+            self._update_renderable(force_update)
             return self.renderable
         else:
             return Text()
@@ -815,10 +817,10 @@ class RichPrinting:
     def _time_to_update(self) -> bool:
         return time.time() - self.last_pbar_update >= 0.1
 
-    def render(self, force_full: bool = False) -> None:
+    def render(self, force_full: bool = False, force_update: bool = False) -> None:
         if not self.live.is_started:
             self.live.start()
-        self.live.update(self.get_renderable(force_full), refresh=True)
+        self.live.update(self.get_renderable(force_full, force_update), refresh=True)
 
     def _format_message(self, message: str, kind: str) -> NodeFormat:
         label = message
@@ -975,7 +977,7 @@ class RichPrinting:
                 self.trees[parent_id].children[child_index] = new_node
             self.trees[node_id] = new_node
             self.last_pbar_update = time.time()
-            self.render()
+            self.render(force_update=True)
 
     def _pbar_update_max_digits(self, node_id: uuid.UUID) -> None:
         progress = self.pbars_progress[node_id]

@@ -582,16 +582,17 @@ class ModelSession:
 
     @RICH_PRINTING.running_message("Finding the best batch size...")
     def _init_batch_size(self) -> None:
-        datasets = self._load_datasets()
-        model = self._load_model()
-        # Find best batch size
-        self.batch_size = get_batch_size(
-            model,
-            self.device,
-            datasets["training"],
-            accumulate=self.training_data.training_params.accumulate,
-            num_workers=self.training_data.training_params.num_workers,
-        )
+        if not hasattr(self, "batch_size"):
+            datasets = self._load_datasets()
+            model = self._load_model()
+            # Find best batch size
+            self.batch_size = get_batch_size(
+                model,
+                self.device,
+                datasets["training"],
+                accumulate=self.training_data.training_params.accumulate,
+                num_workers=self.training_data.training_params.num_workers,
+            )
 
     @RICH_PRINTING.running_message("Running a training session...")
     def train(self, overwrite: bool = False):
@@ -713,7 +714,6 @@ class ModelSession:
                     model,
                     loader,
                     self.device,
-                    use_rgb_cir=use_rgb_cir,
                     use_rgb_cir=use_rgb_cir,
                     use_chm=use_chm,
                     ap_conf_thresholds=conf_thresholds,

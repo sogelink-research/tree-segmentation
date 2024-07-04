@@ -62,7 +62,7 @@ class ModelTrainingSession(ModelSession):
         self.proba_drop_rgb = proba_drop_rgb
         self.proba_drop_chm = proba_drop_chm
         self.device = device
-        self.postfix = postfix
+        self.init_postfix = postfix
 
         self._init_dataset_params()
 
@@ -98,7 +98,7 @@ class ModelTrainingSession(ModelSession):
         training_data = TrainingData(
             dataset_params=self.dataset_params, training_params=training_params
         )
-        postfix = self.postfix + experience if self.postfix is not None else experience
+        postfix = self.init_postfix + experience if self.init_postfix is not None else experience
         super().__init__(training_data=training_data, device=self.device, postfix=postfix)
 
         self.save_init_params(experience)
@@ -157,13 +157,13 @@ class ModelTrainingSession(ModelSession):
 
 def main():
     params_dict = {
-        "agnostic": [True, False],
+        "epochs": [1000],
+        "lr": [3e-3, 1e-3, 1e-2],
+        "model_size": ["n"],
+        "agnostic": [False, True],
         "use_rgb": [True, False],
         "use_cir": [True, False],
         "use_chm": [True, False],
-        "lr": [1e-2, 3e-3, 1e-3],
-        "model_size": ["n"],
-        "epochs": [1],
     }
 
     forget_combinations = [
