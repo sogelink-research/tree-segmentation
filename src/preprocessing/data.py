@@ -152,7 +152,7 @@ def _old_find_annots_repartition(
 
     # Iterate over each bounding box
     for annot_info in RICH_PRINTING.pbar(
-        annots, leave=False, description="Placing: Bounding boxes:"
+        annots, len(annots), leave=False, description="Placing: Bounding boxes:"
     ):
         annot_value = annot_info["value"]
         x_min = int(round(annot_value["x"] * image_width_factor))
@@ -239,7 +239,7 @@ def find_annots_repartition(
 
     # Iterate over each polygon
     for annot_info in RICH_PRINTING.pbar(
-        annots, leave=False, description="Placing: Bounding boxes:"
+        annots, len(annots), leave=False, description="Placing: Bounding boxes:"
     ):
         label = annot_info["properties"]["label"]
         # If it is a polygon showing non labeled space, remove the image if it intersects with it
@@ -292,7 +292,10 @@ def crop_annots_into_limits(annots_repartition: Dict[Box, List[Annotation]]) -> 
         bounding box of each image with the list of tree bounding boxes that fit in.
     """
     for limits_box, annots in RICH_PRINTING.pbar(
-        annots_repartition.items(), leave=False, description="Cropping: Bounding boxes"
+        annots_repartition.items(),
+        len(annots_repartition),
+        leave=False,
+        description="Cropping: Bounding boxes",
     ):
         for i, annot in enumerate(annots):
             annots[i].box = box_crop_in_box(annot.box, limits_box)
@@ -309,7 +312,10 @@ def annots_coordinates_to_local(
         bounding box of each image with the list of tree bounding boxes that fit in.
     """
     for limits_box, annots in RICH_PRINTING.pbar(
-        annots_repartition.items(), leave=False, description="To local: Bounding boxes"
+        annots_repartition.items(),
+        len(annots_repartition),
+        leave=False,
+        description="To local: Bounding boxes",
     ):
         for i, annot in enumerate(annots):
             annots[i].box = box_pixels_full_to_cropped(annot.box, limits_box)
@@ -324,7 +330,10 @@ def make_annots_agnostic(annots_repartition: Dict[Box, List[Annotation]], only_l
         only_label (str): the label to give to all bounding boxes.
     """
     for annots in RICH_PRINTING.pbar(
-        annots_repartition.values(), leave=False, description="To agnostic: Bounding boxes"
+        annots_repartition.values(),
+        len(annots_repartition),
+        leave=False,
+        description="To agnostic: Bounding boxes",
     ):
         for i, annot in enumerate(annots):
             annots[i].label = only_label
@@ -352,6 +361,7 @@ def save_annots_per_image(
 
     for image_box, annots in RICH_PRINTING.pbar(
         annots_repartition.items(),
+        len(annots_repartition),
         leave=False,
         description="Saving annotations: Bounding boxes",
     ):
@@ -467,8 +477,10 @@ def crop_image(
     files_to_keep: List[str] = []
 
     # Iterate over the cropped annotations
+    files = os.listdir(cropped_annotations_folder_path)
     for file_name in RICH_PRINTING.pbar(
-        os.listdir(cropped_annotations_folder_path),
+        files,
+        len(files),
         leave=True,
         description="Cropping images: Cropped annotations",
     ):
@@ -506,10 +518,11 @@ def crop_image_array_old(
     create_folder(output_folder_path)
 
     files_to_keep: List[str] = []
-
+    files = os.listdir(cropped_annotations_folder_path)
     # Iterate over the cropped annotations
     for file_name in RICH_PRINTING.pbar(
-        os.listdir(cropped_annotations_folder_path),
+        files,
+        len(files),
         leave=True,
         description="Cropping images: Cropped annotations",
     ):

@@ -649,11 +649,11 @@ class ModelSession:
                 raise Exception("There must not be use_rgb, use_cir and use_chm all False.")
 
         for loader, loader_postfix, loader_legend in RICH_PRINTING.pbar(
-            loaders_zip, description="Datasets"
+            loaders_zip, len(loaders_zip), description="Datasets"
         ):
             ap_metrics_list = AP_Metrics_List()
             for use_rgb, use_chm in RICH_PRINTING.pbar(
-                use_rgb_chm, description="Type of input", leave=False
+                use_rgb_chm, len(use_rgb_chm), description="Type of input", leave=False
             ):
 
                 data_postfix = rgb_chm_usage_postfix(use_rgb=use_rgb, use_chm=use_chm)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import atexit
 import bisect
-from itertools import tee
 import json
 import os
 import shutil
@@ -12,17 +11,7 @@ import uuid
 import warnings
 from collections import defaultdict
 from enum import Enum
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    Optional,
-    Tuple,
-    TypeVar,
-)
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import tifffile
@@ -436,31 +425,71 @@ class RunningMessage:
 RUNNING_MESSAGE = RunningMessage()
 
 
-class PBarIterable(Iterable):
+class PBarIterable:
     def __init__(
-        self, iterable: Iterable, callback_iter: Callable[[],], callback_end_iter: Callable[[bool],]
+        self,
+        iterable: Iterable,
+        length: int | None,
+        callback_iter: Callable[[],],
+        callback_end_iter: Callable[[bool],],
     ) -> None:
         self.iterable = iterable
+        self.length = length
         self.callback_iter = callback_iter
         self.callback_end_iter = callback_end_iter
+        self._done = False
 
     def __iter__(self):
-        return PBarIterator(
-            self.iterable, callback_iter=self.callback_iter, callback_end_iter=self.callback_end_iter
-        )
+        iterable = self.iterable
+        callback_iter = self.callback_iter
 
-class PBarIterator(Iterator):
-    
+        iter_index = 0
+
+        try:
+            for obj in iterable:
+                yield obj
+
+                iter_index += 1
+
+                callback_iter()
+        except Exception as e:
+            self.close(before_end=True)
+            raise e
+        finally:
+            self.close(before_end=(iter_index == self.length))
+
+    def close(self, before_end: bool):
+        if not self._done:
+            self.callback_end_iter(before_end)
+            self._done = True
+
+    def __del__(self):
+        self.close(before_end=True)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close(before_end=True)
+        return False  # Do not suppress exceptions
+
+
+class PBarIterator:
+
     def __init__(
-        self, iterable: Iterable, callback_iter: Callable[[],None], callback_end_iter: Callable[[bool],None]
+        self,
+        iterable: Iterable,
+        callback_iter: Callable[[], None],
+        callback_end_iter: Callable[[bool], None],
     ):
-        self.iterator = iter(iterable)
+        self.iterable = iterable
+        self.iterator = iter(self.iterable)
         self.index = 0
         self.callback_iter = callback_iter
         self.callback_end_iter = callback_end_iter
         self._done = False
 
-    def __iter__(self) -> PBarIterator:
+    def __iter__(self):
         return self
 
     def __next__(self):
@@ -471,6 +500,7 @@ class PBarIterator(Iterator):
             item = next(self.iterator)
             self.index += 1
             return item
+
         except StopIteration:
             if not self._done:
                 self.callback_end_iter(False)
@@ -544,11 +574,11 @@ class RichPrinting:
         self.leave = True
         self.renderable_up_to_date = False
         self.renderable: RenderableType = Text()
-        self.last_render_time = -np.inf
+        self.last_pbar_update = -np.inf
 
     def _print_all_end(self):
         if hasattr(self, "live"):
-            self.render(force_full=True, force_render=True)
+            self.render(force_full=True)
 
     def _reset(self) -> None:
         self._print_all_end()
@@ -782,24 +812,24 @@ class RichPrinting:
             self._print_all_end()
             self.live.stop()
 
-    def render(self, force_full: bool = False, force_render: bool = False) -> None:
-        if not force_render and time.time() - self.last_render_time < 0.1:
-            return
+    def _time_to_update(self) -> bool:
+        return time.time() - self.last_pbar_update >= 0.1
+
+    def render(self, force_full: bool = False) -> None:
         if not self.live.is_started:
             self.live.start()
         self.live.update(self.get_renderable(force_full), refresh=True)
-        self.last_render_time = time.time()
 
     def _format_message(self, message: str, kind: str) -> NodeFormat:
         label = message
 
         # Text style
         if kind == "start":
-            style = "green"
+            style = "bold green"
         elif kind == "end":
-            style = "blue"
+            style = "bold blue"
         elif kind == "print":
-            style = "purple"
+            style = "bold purple"
         else:
             raise Exception(f"Unsupported kind: {kind}")
 
@@ -813,14 +843,14 @@ class RichPrinting:
         new_uuid = self._store_new_line(node, kind="start")
         self.stack.append(new_uuid)
         self.stack_order_index.append(len(self.nodes_in_order) - 1)
-        self.render(force_render=True)
+        self.render()
         self.current_level += 1
 
     def log_end_message(self, message: str):
         node_format = self._format_message(message, kind="end")
         node = node_format.to_tree()
         self._store_new_line(node, kind="end")
-        self.render(force_render=True)
+        self.render()
         self.stack.pop(-1)
         self.stack_order_index.pop(-1)
         self.current_level -= 1
@@ -853,10 +883,13 @@ class RichPrinting:
 
         return decorator
 
-    def pbar(self, iterable: Iterable, description: str = "", leave: bool = False) -> PBarIterable:
-        iter_length, iterable = tee(iterable)
-        length = sum(1 for _ in iter_length)
-
+    def pbar(
+        self,
+        iterable: Iterable,
+        length: int,
+        description: str = "",
+        leave: bool = False,
+    ) -> PBarIterable:
         # Improve by looking instead at the progress bars still running to find out if we're inside one
         if len(self.nodes_in_order) > 0:
             last_uuid = self.nodes_in_order[-1]
@@ -877,11 +910,11 @@ class RichPrinting:
         else:
             progress = self.pbars_progress[last_uuid]
 
-        taskID = progress.add_task(description, total=length, max_digits=len(str(length)))
+        max_digits = len(str(length))
+        taskID = progress.add_task(description, total=length, max_digits=max_digits)
         new_node = Tree(progress.get_renderable())
         new_uuid = self._store_new_line(new_node, kind="pbar")
         self.pbars_progress[new_uuid] = progress
-
         self._pbar_update_max_digits(new_uuid)
 
         if last_uuid == new_uuid:
@@ -913,39 +946,43 @@ class RichPrinting:
 
         pbar_iterable = PBarIterable(
             iterable,
+            length,
             callback_iter=lambda: self._pbar_update(new_uuid, taskID),
             callback_end_iter=callback_end_iter,
         )
         return pbar_iterable
 
-    def _pbar_update(self, node_id: uuid.UUID, taskID: TaskID) -> None:
+    def _pbar_update(self, node_id: uuid.UUID, taskID: TaskID, force_render: bool = False) -> None:
         progress = self.pbars_progress[node_id]
         progress.update(taskID, advance=1)
 
-        self._pbar_node_update(node_id)
+        self._pbar_node_update(node_id, force_render)
 
     def _pbar_break(self, node_id: uuid.UUID, taskID: TaskID) -> None:
         progress = self.pbars_progress[node_id]
         current_progress = progress.tasks[taskID].completed
         progress.update(taskID, total=current_progress)
 
-        self._pbar_node_update(node_id)
+        self._pbar_node_update(node_id, force_render=True)
 
-    def _pbar_node_update(self, node_id: uuid.UUID) -> None:
-        progress = self.pbars_progress[node_id]
-        new_node = Tree(progress.get_renderable())
-        if node_id != self.root_id:
-            parent_id = self.parents[node_id]
-            child_index = self.pos_as_child[node_id]
-            self.trees[parent_id].children[child_index] = new_node
-        self.trees[node_id] = new_node
-
-
-        self.render()
+    def _pbar_node_update(self, node_id: uuid.UUID, force_render: bool = False) -> None:
+        if force_render or self._time_to_update():
+            progress = self.pbars_progress[node_id]
+            new_node = Tree(progress.get_renderable())
+            if node_id != self.root_id:
+                parent_id = self.parents[node_id]
+                child_index = self.pos_as_child[node_id]
+                self.trees[parent_id].children[child_index] = new_node
+            self.trees[node_id] = new_node
+            self.last_pbar_update = time.time()
+            self.render()
 
     def _pbar_update_max_digits(self, node_id: uuid.UUID) -> None:
         progress = self.pbars_progress[node_id]
-        max_digits = max(map(lambda task: len(str(task.total)), progress.tasks))
+        max_digits = max(
+            [len(str(task.total)) for task in progress.tasks if task.total is not None]
+        )
+
         for task in progress.tasks:
             task.fields["max_digits"] = max_digits
 
@@ -962,7 +999,7 @@ class RichPrinting:
         node = node_format.to_tree()
         self._store_new_line(node, kind="print")
 
-        self.render(force_render=True)
+        self.render()
 
 
 RICH_PRINTING = RichPrinting()
