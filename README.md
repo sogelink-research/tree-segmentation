@@ -32,4 +32,4 @@ conda env create -n <env-name> -f environment.yml
 
 To run the training or the evaluation of a model, you simply have to modify and execute [`run.py`](src/run.py). You can select the hyperparameters you want to use and launch one or multiple training sessions.
 
-All necessary data (RGB images, CIR images and LiDAR point clouds) will be downloaded and pre-processed the first time you need it, and stored in the [data](data) folder.
+All necessary data (RGB images, CIR images and LiDAR point clouds) will be downloaded and pre-processed the first time you need it, and stored in the [`data`](data) folder.
