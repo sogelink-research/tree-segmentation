@@ -813,6 +813,7 @@ class RichPrinting:
         if hasattr(self, "live"):
             self._print_all_end()
             self.live.stop()
+            print("\x1b[?25h")
 
     def _time_to_update(self) -> bool:
         return time.time() - self.last_pbar_update >= 0.1
