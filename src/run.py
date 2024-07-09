@@ -158,6 +158,7 @@ class ModelTrainingSession(ModelSession):
 def main():
     params_dict = {
         "epochs": [1000],
+        "experiences": [["exp0"]],
         "lr": [3e-3, 1e-3, 1e-2],
         "model_size": ["n"],
         "agnostic": [False, True],
