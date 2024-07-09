@@ -582,7 +582,7 @@ class ModelSession:
 
     @RICH_PRINTING.running_message("Finding the best batch size...")
     def _init_batch_size(self) -> None:
-        if not hasattr(self, "batch_size"):
+        if not hasattr(self, "batch_size") or self.batch_size is None:
             datasets = self._load_datasets()
             model = self._load_model()
             # Find best batch size
