@@ -932,7 +932,7 @@ def create_and_save_splitted_datasets_basis(
         json.dump(all_files_dict, f)
 
 
-def create_and_save_dataset_splitted_datasets_from_basis(
+def create_and_save_splitted_datasets_from_basis(
     data_folder_path: str,
     use_rgb_cir: bool,
     use_chm: bool,
@@ -966,7 +966,7 @@ def create_and_save_dataset_splitted_datasets_from_basis(
                 )
                 new_dict["rgb_cir"] = rgb_cir_file
 
-            if use_chm is not None:
+            if use_chm:
                 chm_file = annotations_file.replace("annotations", "chm").replace(".json", ".npy")
                 new_dict["chm"] = chm_file
 

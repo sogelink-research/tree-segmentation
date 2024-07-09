@@ -173,6 +173,13 @@ def main():
             "use_cir": False,
             "use_chm": False,
         },
+        {
+            "lr": 3e-3,
+            "agnostic": False,
+            "use_rgb": True,
+            "use_cir": True,
+            "use_chm": True,
+        },
     ]
 
     # Generate all combinations of arguments
@@ -194,9 +201,6 @@ def main():
         # Training session
         model_training_session = ModelTrainingSession(**combination)
         model_training_session.train()
-
-    # model_training_session = ModelTrainingSession(epochs=0)
-    # model_training_session.train()
 
     # for name in os.listdir("models/amf_gd_yolov8"):
     #     model_training_session = ModelTrainingSession.from_name(name)

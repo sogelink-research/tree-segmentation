@@ -24,9 +24,9 @@ from dataloaders import convert_ground_truth_from_tensors, initialize_dataloader
 from dataset_constants import DatasetConst
 from datasets import (
     compute_mean_and_std,
-    create_and_save_dataset_splitted_datasets_from_basis,
     create_and_save_splitted_datasets,
     create_and_save_splitted_datasets_basis,
+    create_and_save_splitted_datasets_from_basis,
     load_tree_datasets_from_split,
     quick_normalize_chunk,
 )
@@ -479,7 +479,7 @@ class TrainingData:
             f"data_split_{split_random_seed}.json",
         )
         use_rgb_cir = self.dataset_params.use_rgb or self.dataset_params.use_cir
-        create_and_save_dataset_splitted_datasets_from_basis(
+        create_and_save_splitted_datasets_from_basis(
             data_folder_path=self.dataset_params.cropped_data_folder_path,
             use_rgb_cir=use_rgb_cir,
             use_chm=self.dataset_params.use_chm,
