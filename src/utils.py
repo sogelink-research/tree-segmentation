@@ -812,7 +812,6 @@ class RichPrinting:
     def close(self):
         if hasattr(self, "live"):
             self._print_all_end()
-            self.live.console.show_cursor()
             self.live.stop()
 
     def _time_to_update(self) -> bool:
