@@ -21,4 +21,14 @@ Last weeks, I mainly worked on:
 
 For this week, the main goal should be to run experiments with different set of parameters and analyze the results to find the best combinations.
 
-Then, if we want to continue on developing the models, it would be necessary to identify the most interesting aspects to improve or add to the model (more categories of trees, trying the model on more areas, getting a larger dataset to train the model...).
+Then, the next priorities are the following:
+
+- Modify the model to output **precise masks** instead of bounding boxes. This might be very quick or painful, depending on what really needs to be changed for this to work.
+- Add the possibility to **load a model and test it on any image** / any location (should be easy)
+- Improve the process of **downloading the data** to make it possible to quickly test the model at any location without having the data pre-installed (potentially hard, I will need some help)
+- Add the detection of species:
+    - Add species in the dataset (potentially very hard depending on how precise we want to be)
+    - Add the distinction to the model (easy)
+- Add post-processing steps:
+    - Finding the height of the tree (difficulty should be decent)
+    - Finding the shape of the tree (potentially really hard)
