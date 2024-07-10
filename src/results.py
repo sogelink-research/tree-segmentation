@@ -176,7 +176,7 @@ def training_instability_per_experiment(data_folder: str):
     return df
 
 
-def plot_training_stability_per_learning_rate(
+def plot_training_instability_per_learning_rate(
     data_folder: str, show: bool, save_path: Optional[str] = None
 ):
     if not show and save_path is None:
@@ -210,16 +210,12 @@ def plot_training_stability_per_learning_rate(
 
 data_folder = "models/amf_gd_yolov8"
 
-# df = training_instability_per_experiment(data_folder)
-
-# print(df.columns)
-
 create_all_folders()
 ap_per_data_type_path = os.path.join(Folders.MODELS_RESULTS.value, "ap_per_data_type.png")
 plot_sorted_ap_per_data_type(data_folder=data_folder, show=False, save_path=ap_per_data_type_path)
-stability_per_learning_rate_path = os.path.join(
-    Folders.MODELS_RESULTS.value, "stability_per_learning_rate.png"
+instability_per_learning_rate_path = os.path.join(
+    Folders.MODELS_RESULTS.value, "instability_per_learning_rate.png"
 )
-plot_training_stability_per_learning_rate(
-    data_folder=data_folder, show=False, save_path=stability_per_learning_rate_path
+plot_training_instability_per_learning_rate(
+    data_folder=data_folder, show=False, save_path=instability_per_learning_rate_path
 )
