@@ -696,20 +696,9 @@ class ModelSession:
                 data_legend = rgb_cir_chm_usage_legend(
                     use_rgb=use_rgb, use_cir=use_cir, use_chm=use_chm
                 )
-                if use_rgb_cir:
-                    use_rgb = self.training_data.dataset_params.use_rgb
-                    use_cir = self.training_data.dataset_params.use_cir
-                else:
-                    use_rgb = False
-                    use_cir = False
-                data_postfix = rgb_cir_chm_usage_postfix(
-                    use_rgb=use_rgb, use_cir=use_cir, use_chm=use_chm
-                )
-                data_legend = rgb_cir_chm_usage_legend(
-                    use_rgb=use_rgb, use_cir=use_cir, use_chm=use_chm
-                )
+
                 full_postfix = "_".join([loader_postfix, data_postfix])
-                full_legend = " with ".join([loader_postfix, data_postfix])
+                full_legend = " with ".join([loader_legend, data_legend])
                 ap_metrics = evaluate_model(
                     model,
                     loader,

@@ -463,34 +463,47 @@ class AMF_GD_YOLOv8(nn.Module):
 
     def _pre_process(
         self,
-        x_left: torch.Tensor | str | None,
-        x_right: torch.Tensor | str | None,
+        x_left_input: torch.Tensor | str | None,
+        x_right_input: torch.Tensor | str | None,
         use_left_temp: bool = True,
         use_right_temp: bool = True,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        if isinstance(x_left, str):
-            x_left = self._open_image(x_left)
-        if isinstance(x_right, str):
-            x_right = self._open_image(x_right)
+        if isinstance(x_left_input, str):
+            x_left_input = self._open_image(x_left_input)
+        if isinstance(x_right_input, str):
+            x_right_input = self._open_image(x_right_input)
 
-        if x_left is None:
-            if self.use_left and use_left_temp:
+        if not use_left_temp or not self.use_left:
+            if x_right_input is None:
+                raise Exception("At least one of x_right and x_left should be used.")
+            x_left = torch.zeros(
+                (
+                    x_right_input.shape[0],
+                    self.c_input_left,
+                    x_right_input.shape[2],
+                    x_right_input.shape[3],
+                )
+            ).to(self.device)
+        else:
+            if x_left_input is None:
                 raise Exception("The input of the left channel shouldn't be None.")
-            elif x_right is None:
-                raise Exception("x_right and x_left cannot both be None.")
-            else:
-                x_left = torch.zeros(
-                    (x_right.shape[0], self.c_input_left, x_right.shape[2], x_right.shape[3])
-                ).to(self.device)
-        if x_right is None:
-            if self.use_right and use_right_temp:
+            x_left = x_left_input
+
+        if not use_right_temp or not self.use_right:
+            if x_left_input is None:
+                raise Exception("At least one of x_right and x_left should be used.")
+            x_right = torch.zeros(
+                (
+                    x_left_input.shape[0],
+                    self.c_input_left,
+                    x_left_input.shape[2],
+                    x_left_input.shape[3],
+                )
+            ).to(self.device)
+        else:
+            if x_right_input is None:
                 raise Exception("The input of the left channel shouldn't be None.")
-            elif x_left is None:
-                raise Exception("x_right and x_left cannot both be None.")
-            else:
-                x_right = torch.zeros(
-                    (x_left.shape[0], self.c_input_right, x_left.shape[2], x_left.shape[3])
-                ).to(self.device)
+            x_right = x_right_input
 
         return x_left, x_right
 
@@ -502,8 +515,8 @@ class AMF_GD_YOLOv8(nn.Module):
         use_right_temp: bool = True,
     ) -> List[torch.Tensor]:
         x_left, x_right = self._pre_process(
-            x_left=x_left,
-            x_right=x_right,
+            x_left_input=x_left,
+            x_right_input=x_right,
             use_left_temp=use_left_temp,
             use_right_temp=use_right_temp,
         )

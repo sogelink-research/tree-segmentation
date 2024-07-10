@@ -498,18 +498,19 @@ def evaluate_model(
         geojson_outputs: List[geojson.FeatureCollection] = []
 
     if not use_rgb_cir and not use_chm:
-        raise Exception("You cannot use neither of RGB and CHM.")
+        raise Exception("You cannot use neither of RGB/CIR and CHM.")
 
-    # if not use_rgb_cir:
-    #     old_use_rgb = data_loader.dataset.use_rgb
-    #     old_use_chm = data_loader.dataset.use_chm
-    #     data_loader.dataset.use_rgb = False
-    #     data_loader.dataset.use_chm = True
-    # elif not use_chm:
-    #     old_use_rgb = data_loader.dataset.use_rgb
-    #     old_use_chm = data_loader.dataset.use_chm
-    #     data_loader.dataset.use_rgb = True
-    #     data_loader.dataset.use_chm = False
+    # Modify the dataset to only output the necessary data
+    if not use_rgb_cir:
+        old_use_rgb = data_loader.dataset.use_rgb_cir
+        old_use_chm = data_loader.dataset.use_chm
+        data_loader.dataset.use_rgb_cir = False
+        data_loader.dataset.use_chm = True
+    elif not use_chm:
+        old_use_rgb = data_loader.dataset.use_rgb_cir
+        old_use_chm = data_loader.dataset.use_chm
+        data_loader.dataset.use_rgb_cir = True
+        data_loader.dataset.use_chm = False
 
     model.eval()
     with torch.no_grad():
@@ -578,9 +579,10 @@ def evaluate_model(
         geojson_outputs_merged = merge_geojson_feature_collections(geojson_outputs)
         save_geojson(geojson_outputs_merged, output_geojson_save_path)
 
-    # if not use_rgb or not use_chm:
-    #     data_loader.dataset.use_rgb = old_use_rgb
-    #     data_loader.dataset.use_chm = old_use_chm
+    # Set back the dataset to initial status
+    if not use_rgb_cir or not use_chm:
+        data_loader.dataset.use_rgb_cir = old_use_rgb
+        data_loader.dataset.use_chm = old_use_chm
 
     return ap_metrics
 

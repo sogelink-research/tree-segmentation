@@ -573,11 +573,11 @@ class TreeDataset(Dataset):
             rgb_path = files_paths["rgb_cir"]
             image_rgb = read_image(rgb_path, mode="c", chm=False)
             self.rgb_channels = image_rgb.shape[2]
-            self.use_rgb = True
+            self.use_rgb_cir = True
         else:
             assert self.proba_drop_rgb == 0.0, "If RGB is not used, proba_drop_rgb should be 0."
             self.rgb_channels = 0
-            self.use_rgb = False
+            self.use_rgb_cir = False
 
         if "chm" in files_paths.keys():
             chm_path = files_paths["chm"]
@@ -619,7 +619,7 @@ class TreeDataset(Dataset):
             CHM image, bounding boxes, class labels) after modification.
         """
         random_val = random.random()
-        if random_val < self.proba_drop_rgb or not self.use_rgb:
+        if random_val < self.proba_drop_rgb or not self.use_rgb_cir:
             # Drop RGB
             if self.labels_transformation_drop_rgb is None:
                 raise TypeError("self.labels_transformation_drop_rgb shouldn't be None here.")
@@ -665,7 +665,7 @@ class TreeDataset(Dataset):
     def get_not_normalized(self, idx: int) -> Dict[str, torch.Tensor]:
         # Read the images
         files_paths = self.files_paths_list[idx]
-        if self.use_rgb:
+        if self.use_rgb_cir:
             rgb_path = files_paths["rgb_cir"]
             image_rgb = read_image(rgb_path, chm=False, mode="c")
         else:
@@ -744,7 +744,7 @@ class TreeDataset(Dataset):
             np.ndarray: RGB image.
         """
         files_paths = self.files_paths_list[idx]
-        if self.use_rgb:
+        if self.use_rgb_cir:
             rgb_path = files_paths["rgb_cir"]
             image_rgb = read_image(rgb_path, chm=False, mode="c")
         else:
