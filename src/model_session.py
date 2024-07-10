@@ -787,6 +787,9 @@ class ModelSession:
             json.dump(params_to_save, fp, cls=FullJsonEncoder, sort_keys=True, indent=4)
 
     def save_model(self, model: AMF_GD_YOLOv8):
+        # Save the params
+        self.save_params()
+
         # Save the weights
         model.save_weights()
 

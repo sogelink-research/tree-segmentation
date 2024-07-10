@@ -77,6 +77,8 @@ class Folders(Enum):
     OTHERS_DIR = _absolute_path("../data/others")
     OUTPUT_DIR = _absolute_path("../data/others/model_output")
 
+    MODELS = _absolute_path("../models/amf_gd_yolov8")
+    MODELS_RESULTS = _absolute_path("../models/results")
     MODELS_AMF_GD_YOLOV8 = _absolute_path("../models/amf_gd_yolov8")
     GD_CONFIGS = _absolute_path("../models/gd_configs")
 
