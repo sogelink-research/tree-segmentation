@@ -3,13 +3,12 @@ from __future__ import annotations
 import json
 import os
 import pickle
-import warnings
 from itertools import product
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-import albumentations as A
 import numpy as np
 import torch
+from rich.traceback import install
 
 from model_session import (
     DatasetParams,
@@ -18,7 +17,7 @@ from model_session import (
     TrainingData,
     TrainingParams,
 )
-from utils import RICH_PRINTING
+from utils import RICH_PRINTING, Folders, create_all_folders
 
 
 class ModelTrainingSession(ModelSession):
@@ -32,7 +31,7 @@ class ModelTrainingSession(ModelSession):
         chm_z_layers: Optional[Sequence[Tuple[float, float]]] = None,
         annotations_file_name: str = "122000_484000.geojson",
         agnostic: bool = False,
-        experiences: List[str] = ["exp0", "exp1", "exp2", "exp3", "exp4"],
+        experiment: str = "exp0",
         model_size: str = "n",
         lr: float = 1e-2,
         epochs: int = 1000,
@@ -51,7 +50,7 @@ class ModelTrainingSession(ModelSession):
         self.chm_z_layers = chm_z_layers
         self.annotations_file_name = annotations_file_name
         self.agnostic = agnostic
-        self.experiences = experiences
+        self.experiment = experiment
         self.model_size = model_size
         self.lr = lr
         self.epochs = epochs
@@ -81,7 +80,7 @@ class ModelTrainingSession(ModelSession):
             agnostic=self.agnostic,
         )
 
-    def _init_training_params(self, experience: str) -> None:
+    def _init_training_params(self, experiment: str) -> None:
 
         training_params = TrainingParams(
             model_size=self.model_size,
@@ -93,26 +92,25 @@ class ModelTrainingSession(ModelSession):
             no_improvement_stop_epochs=self.no_improvement_stop_epochs,
             proba_drop_rgb=self.proba_drop_rgb,
             proba_drop_chm=self.proba_drop_chm,
-            experience=experience,
+            experiment=experiment,
         )
         training_data = TrainingData(
             dataset_params=self.dataset_params, training_params=training_params
         )
-        postfix = self.init_postfix + experience if self.init_postfix is not None else experience
+        postfix = self.init_postfix + experiment if self.init_postfix is not None else experiment
         super().__init__(training_data=training_data, device=self.device, postfix=postfix)
 
-        self.save_init_params(experience)
+        self.save_init_params(experiment)
 
     def train(self) -> None:
-        for experience in self.experiences:
-            self._init_training_params(experience)
-            super().train()
+        self._init_training_params(self.experiment)
+        super().train()
 
     @property
     def init_params_path(self) -> str:
         return os.path.join(self.folder_path, "model_init_params.json")
 
-    def save_init_params(self, experience: str) -> None:
+    def save_init_params(self, experiment: str) -> None:
         params_to_save = {
             "use_rgb": self.use_rgb,
             "use_cir": self.use_cir,
@@ -120,7 +118,7 @@ class ModelTrainingSession(ModelSession):
             "chm_z_layers": self.chm_z_layers,
             "annotations_file_name": self.annotations_file_name,
             "agnostic": self.agnostic,
-            "experience": experience,
+            "experiment": experiment,
             "model_size": self.model_size,
             "lr": self.lr,
             "epochs": self.epochs,
@@ -155,16 +153,103 @@ class ModelTrainingSession(ModelSession):
         return ModelTrainingSession.from_pickle(file_path, device)
 
 
+class ParamsCombinations:
+
+    def __init__(
+        self,
+        name: str,
+        params_dict: Optional[Dict[str, List]] = None,
+        forget_combinations: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+
+        self.name = name
+
+        if os.path.exists(self.state_path):
+            self.load_state()
+            return
+
+        if params_dict is None or forget_combinations is None:
+            raise Exception(
+                "If a ParamsCombinations object with the same name doesn't exist, every parameter should be specified."
+            )
+
+        keys, values = zip(*params_dict.items())
+        combinations = [dict(zip(keys, v)) for v in product(*values)]
+
+        self.combinations = [
+            comb
+            for comb in combinations
+            if not any(
+                [
+                    all([comb[key] == value for key, value in forget_comb.items()])
+                    for forget_comb in forget_combinations
+                ]
+            )
+        ]
+
+        self.model_names = [""]
+        self.next_idx = 0
+        self.save_state()
+
+    def save_state(self) -> None:
+        state = {"next_idx": self.next_idx, "parameters": []}
+        for idx, combination in enumerate(self.combinations):
+            if idx < len(self.model_names):
+                model_name = self.model_names[idx]
+            else:
+                model_name = ""
+            state["parameters"].append(
+                {
+                    "combination": combination,
+                    "model_name": model_name,
+                }
+            )
+        with open(self.state_path, "w") as fp:
+            json.dump(state, fp, cls=FullJsonEncoder, sort_keys=True)
+
+    def load_state(self) -> None:
+        with open(self.state_path, "r") as file:
+            state = json.load(file)
+
+        self.next_idx = state["next_idx"]
+        parameters = state["parameters"]
+        self.combinations = list(map(lambda p: p["combination"], parameters))
+        self.model_names = list(map(lambda p: p["model_name"], parameters))
+
+    @property
+    def state_path(self) -> str:
+        state_path = os.path.join(Folders.MODELS_EXPERIMENTS.value, f"{self.name}.json")
+        return state_path
+
+    def __iter__(self):
+        total_combinations = len(self.combinations)
+        for idx in range(self.next_idx, len(self.combinations)):
+            str_len = len(str(total_combinations))
+            RICH_PRINTING.print(f"Experiment {idx+1:>{str_len}}/{total_combinations}")
+
+            model_training_session = ModelTrainingSession(**self.combinations[idx])
+            yield model_training_session
+
+            self.model_names[idx] = model_training_session.model_name
+            self.next_idx += 1
+            self.save_state()
+
+
 def main():
+    # install(show_locals=True)
+    create_all_folders()
+
     params_dict = {
-        "epochs": [1000],
-        "experiences": [["exp0"]],
-        "lr": [3e-3, 1e-3, 1e-2],
+        "epochs": [1],
+        "experiment": ["exp0"],
+        "lr": [1e-2, 6e-3, 2.5e-3, 1e-3],
+        "accumulate": [6, 12, 18, 24, 36],
+        "proba_drop_rgb": [0, 0.1, 0.2, 0.333],
         "model_size": ["n"],
-        "agnostic": [False, True],
-        "use_rgb": [True, False],
-        "use_cir": [True, False],
-        "use_chm": [True, False],
+        "agnostic": [True],
+        "use_rgb": [True],
+        "use_cir": [True],
+        "use_chm": [True],
     }
 
     forget_combinations = [
@@ -173,33 +258,16 @@ def main():
             "use_cir": False,
             "use_chm": False,
         },
-        {
-            "lr": 3e-3,
-            "agnostic": False,
-            "use_rgb": True,
-            "use_cir": True,
-            "use_chm": True,
-        },
     ]
 
-    # Generate all combinations of arguments
-    keys, values = zip(*params_dict.items())
-    combinations = [dict(zip(keys, v)) for v in product(*values)]
+    params_combinations = ParamsCombinations(
+        "training_params_experiment",
+        params_dict=params_dict,
+        forget_combinations=forget_combinations,
+    )
 
-    filtered_combinations = [
-        comb
-        for comb in combinations
-        if not any(
-            [
-                all([comb[key] == value for key, value in forget_comb.items()])
-                for forget_comb in forget_combinations
-            ]
-        )
-    ]
-
-    for combination in filtered_combinations:
+    for model_training_session in params_combinations:
         # Training session
-        model_training_session = ModelTrainingSession(**combination)
         model_training_session.train()
 
     # for name in os.listdir("models/amf_gd_yolov8"):

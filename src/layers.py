@@ -495,7 +495,7 @@ class AMF_GD_YOLOv8(nn.Module):
             x_right = torch.zeros(
                 (
                     x_left_input.shape[0],
-                    self.c_input_left,
+                    self.c_input_right,
                     x_left_input.shape[2],
                     x_left_input.shape[3],
                 )

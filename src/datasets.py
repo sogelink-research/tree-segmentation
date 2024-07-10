@@ -937,7 +937,7 @@ def create_and_save_splitted_datasets_from_basis(
     use_rgb_cir: bool,
     use_chm: bool,
     data_split_files_path: str,
-    parts_repartion: Dict[str, str],
+    parts_repartition: Dict[str, str],
     save_path: str,
 ) -> None:
 
@@ -948,7 +948,7 @@ def create_and_save_splitted_datasets_from_basis(
     train_val_test_split = {"training": [], "validation": [], "test": []}
     for data_split_key, files in data_split_files.items():
         for dataset_key in train_val_test_split.keys():
-            if data_split_key in parts_repartion[dataset_key]:
+            if data_split_key in parts_repartition[dataset_key]:
                 train_val_test_split[dataset_key].extend(files)
                 break
 

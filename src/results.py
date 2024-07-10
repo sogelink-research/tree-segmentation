@@ -8,7 +8,7 @@ import pandas as pd
 import seaborn as sns
 
 from training import rgb_cir_chm_usage_legend
-from utils import RICH_PRINTING, Folders, create_all_folders, create_folder
+from utils import RICH_PRINTING, Folders, create_all_folders
 
 
 def read_params(experiment_folder: str) -> Dict[str, Any]:

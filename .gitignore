@@ -1,5 +1,5 @@
 data/*
-!data/data_split_experiences.json
+!data/data_split_experiments.json
 !data/data_split_files.json
 !data/annotations/
 data/annotations/*

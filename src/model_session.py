@@ -24,7 +24,6 @@ from dataloaders import convert_ground_truth_from_tensors, initialize_dataloader
 from dataset_constants import DatasetConst
 from datasets import (
     compute_mean_and_std,
-    create_and_save_splitted_datasets,
     create_and_save_splitted_datasets_basis,
     create_and_save_splitted_datasets_from_basis,
     load_tree_datasets_from_split,
@@ -407,7 +406,7 @@ class TrainingParams:
         no_improvement_stop_epochs: int,
         proba_drop_rgb: float,
         proba_drop_chm: float,
-        experience: str,
+        experiment: str,
         batch_size: Optional[int] = None,
         transform_spatial_training: Optional[A.Compose] = None,
         transform_pixel_rgb_training: Optional[A.Compose] | None = None,
@@ -422,7 +421,7 @@ class TrainingParams:
         self.no_improvement_stop_epochs = no_improvement_stop_epochs
         self.proba_drop_rgb = proba_drop_rgb
         self.proba_drop_chm = proba_drop_chm
-        self.experience = experience
+        self.experiment = experiment
         self.transform_spatial_training = transform_spatial_training
         self.transform_pixel_rgb_training = transform_pixel_rgb_training
         self.transform_pixel_chm_training = transform_pixel_chm_training
@@ -469,10 +468,10 @@ class TrainingData:
                 save_path=SPLIT_BASE_PATH,
             )
 
-        SPLIT_EXPERIENCE_PATH = os.path.join(Folders.DATA.value, "data_split_experiences.json")
-        with open(SPLIT_EXPERIENCE_PATH, "r") as f:
-            split_experience_repartitions = json.load(f)
-        parts_repartion = split_experience_repartitions[self.training_params.experience]
+        SPLIT_EXPERIMENT_PATH = os.path.join(Folders.DATA.value, "data_split_experiments.json")
+        with open(SPLIT_EXPERIMENT_PATH, "r") as f:
+            split_experiment_repartitions = json.load(f)
+        parts_repartition = split_experiment_repartitions[self.training_params.experiment]
 
         self.data_split_file_path = os.path.join(
             self.dataset_params.cropped_data_folder_path,
@@ -484,7 +483,7 @@ class TrainingData:
             use_rgb_cir=use_rgb_cir,
             use_chm=self.dataset_params.use_chm,
             data_split_files_path=SPLIT_BASE_PATH,
-            parts_repartion=parts_repartion,
+            parts_repartition=parts_repartition,
             save_path=self.data_split_file_path,
         )
 
@@ -740,7 +739,7 @@ class ModelSession:
         params_to_save = {
             "annotations_file": self.training_data.dataset_params.annotations_file_name,
             "agnostic": self.training_data.dataset_params.agnostic,
-            "experience": self.training_data.training_params.experience,
+            "experiment": self.training_data.training_params.experiment,
             "use_rgb": self.training_data.dataset_params.use_rgb,
             "use_cir": self.training_data.dataset_params.use_cir,
             "use_chm": self.training_data.dataset_params.use_chm,
