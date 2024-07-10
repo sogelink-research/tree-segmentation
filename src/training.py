@@ -502,12 +502,12 @@ def evaluate_model(
 
     # Modify the dataset to only output the necessary data
     if not use_rgb_cir:
-        old_use_rgb = data_loader.dataset.use_rgb_cir
+        old_use_rgb_cir = data_loader.dataset.use_rgb_cir
         old_use_chm = data_loader.dataset.use_chm
         data_loader.dataset.use_rgb_cir = False
         data_loader.dataset.use_chm = True
     elif not use_chm:
-        old_use_rgb = data_loader.dataset.use_rgb_cir
+        old_use_rgb_cir = data_loader.dataset.use_rgb_cir
         old_use_chm = data_loader.dataset.use_chm
         data_loader.dataset.use_rgb_cir = True
         data_loader.dataset.use_chm = False
@@ -581,7 +581,7 @@ def evaluate_model(
 
     # Set back the dataset to initial status
     if not use_rgb_cir or not use_chm:
-        data_loader.dataset.use_rgb_cir = old_use_rgb
+        data_loader.dataset.use_rgb_cir = old_use_rgb_cir
         data_loader.dataset.use_chm = old_use_chm
 
     return ap_metrics

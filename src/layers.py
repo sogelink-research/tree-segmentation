@@ -502,7 +502,7 @@ class AMF_GD_YOLOv8(nn.Module):
             ).to(self.device)
         else:
             if x_right_input is None:
-                raise Exception("The input of the left channel shouldn't be None.")
+                raise Exception("The input of the right channel shouldn't be None.")
             x_right = x_right_input
 
         return x_left, x_right
