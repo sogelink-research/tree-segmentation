@@ -266,13 +266,13 @@ def main():
         forget_combinations=forget_combinations,
     )
 
-    for model_training_session in params_combinations:
-        # Training session
-        model_training_session.train()
+    # for model_training_session in params_combinations:
+    #     # Training session
+    #     model_training_session.train()
 
-    # for name in os.listdir("models/amf_gd_yolov8"):
-    #     model_training_session = ModelTrainingSession.from_name(name)
-    #     model_training_session.compute_metrics()
+    for name in os.listdir("models/amf_gd_yolov8"):
+        model_training_session = ModelTrainingSession.from_name(name)
+        model_training_session.compute_metrics()
 
 
 if __name__ == "__main__":
