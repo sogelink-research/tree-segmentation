@@ -80,7 +80,7 @@ class ModelTrainingSession(ModelSession):
             agnostic=self.agnostic,
         )
 
-    def _init_training_params(self, experiment: str) -> None:
+    def _init_training_params(self) -> None:
 
         training_params = TrainingParams(
             model_size=self.model_size,
@@ -92,25 +92,34 @@ class ModelTrainingSession(ModelSession):
             no_improvement_stop_epochs=self.no_improvement_stop_epochs,
             proba_drop_rgb=self.proba_drop_rgb,
             proba_drop_chm=self.proba_drop_chm,
-            experiment=experiment,
+            experiment=self.experiment,
         )
         training_data = TrainingData(
             dataset_params=self.dataset_params, training_params=training_params
         )
-        postfix = self.init_postfix + experiment if self.init_postfix is not None else experiment
+        postfix = (
+            self.init_postfix + self.experiment
+            if self.init_postfix is not None
+            else self.experiment
+        )
         super().__init__(training_data=training_data, device=self.device, postfix=postfix)
 
-        self.save_init_params(experiment)
+        self.save_init_params()
 
     def train(self) -> None:
-        self._init_training_params(self.experiment)
-        super().train()
+        self._init_training_params()
+        return super().train()
+        self._init_training_params()
+
+    def compute_metrics(self, initialize: bool = True):
+
+        return super().compute_metrics(initialize)
 
     @property
     def init_params_path(self) -> str:
         return os.path.join(self.folder_path, "model_init_params.json")
 
-    def save_init_params(self, experiment: str) -> None:
+    def save_init_params(self) -> None:
         params_to_save = {
             "use_rgb": self.use_rgb,
             "use_cir": self.use_cir,
@@ -118,7 +127,7 @@ class ModelTrainingSession(ModelSession):
             "chm_z_layers": self.chm_z_layers,
             "annotations_file_name": self.annotations_file_name,
             "agnostic": self.agnostic,
-            "experiment": experiment,
+            "experiment": self.experiment,
             "model_size": self.model_size,
             "lr": self.lr,
             "epochs": self.epochs,

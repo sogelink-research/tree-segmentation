@@ -471,9 +471,11 @@ class TrainingData:
         SPLIT_EXPERIMENT_PATH = os.path.join(Folders.DATA.value, "data_split_experiments.json")
         with open(SPLIT_EXPERIMENT_PATH, "r") as f:
             split_experiment_repartitions = json.load(f)
+        ### TO REMOVE vvv
         if hasattr(self.training_params, "experience"):
             self.training_params.experiment = self.training_params.experience
             del self.training_params.experience
+        ### TO REMOVE ^^^
         parts_repartition = split_experiment_repartitions[self.training_params.experiment]
 
         self.data_split_file_path = os.path.join(
