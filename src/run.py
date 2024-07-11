@@ -110,9 +110,9 @@ class ModelTrainingSession(ModelSession):
         self._init_training_params()
         return super().train()
 
-    def compute_metrics(self, initialize: bool = True):
-        self._init_training_params()
-        return super().compute_metrics(initialize)
+    # def compute_metrics(self, initialize: bool = True):
+    #     self._init_training_params()
+    #     return super().compute_metrics(initialize)
 
     @property
     def init_params_path(self) -> str:
