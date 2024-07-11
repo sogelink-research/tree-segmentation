@@ -1,7 +1,6 @@
 import time
-from itertools import tee
 
-from utils import RICH_PRINTING, PBarIterable, PBarIterator
+from utils import RICH_PRINTING
 
 
 wait_time = 1.0
@@ -120,7 +119,7 @@ def f7():
     dummy_dataloader = DataLoader(dummy_dataset, batch_size=1, shuffle=True)
 
     time.sleep(wait_time)
-    for i in RICH_PRINTING.pbar(range(1000), 1000, leave=True, description="Epoch"):
+    for i in RICH_PRINTING.pbar(range(5), 5, leave=True, description="Epoch"):
         stream = RICH_PRINTING.pbar(
             dummy_dataloader, len(dummy_dataloader), leave=False, description="Training"
         )
@@ -140,7 +139,7 @@ def main():
 # install(show_locals=True)
 
 if __name__ == "__main__":
-    main()
-    time.sleep(wait_time)
-    RICH_PRINTING.close()
+    for _ in RICH_PRINTING.pbar(range(3), 3):
+        main()
+        time.sleep(wait_time)
     pass

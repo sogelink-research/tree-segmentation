@@ -518,12 +518,14 @@ class RichPrinting:
         self.pbars_progress[new_uuid] = progress
         self._pbar_update_max_digits(new_uuid)
 
+        # If the previous line was a pbar
         if last_uuid == new_uuid:
             if leave:
 
                 def callback_end_iter(by_break: bool):
                     if by_break:
                         self._pbar_break(new_uuid, taskID)
+                    self.current_level -= 1
 
             else:
 
@@ -531,19 +533,29 @@ class RichPrinting:
                     progress.remove_task(taskID)
                     self.heights[new_uuid] -= 1
                     self._pbar_update_max_digits(new_uuid)
+                    self.current_level -= 1
 
+        # If the previous line was something else
         else:
+            self.stack.append(new_uuid)
+            self.stack_order_index.append(len(self.nodes_in_order) - 1)
             if leave:
 
                 def callback_end_iter(by_break: bool):
                     if by_break:
                         self._pbar_break(new_uuid, taskID)
+                    self.stack.pop(-1)
+                    self.stack_order_index.pop(-1)
+                    self.current_level -= 1
 
             else:
 
                 def callback_end_iter(by_break: bool):
                     progress.remove_task(taskID)
                     self._remove_line(new_uuid)
+                    self.stack.pop(-1)
+                    self.stack_order_index.pop(-1)
+                    self.current_level -= 1
 
         pbar_iterable = PBarIterable(
             iterable,
@@ -551,6 +563,7 @@ class RichPrinting:
             callback_iter=lambda: self._pbar_update(new_uuid, taskID),
             callback_end_iter=callback_end_iter,
         )
+        self.current_level += 1
         return pbar_iterable
 
     def _pbar_update(self, node_id: uuid.UUID, taskID: TaskID, force_render: bool = False) -> None:
