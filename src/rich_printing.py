@@ -552,9 +552,9 @@ class RichPrinting:
 
                 def callback_end_iter(by_break: bool):
                     progress.remove_task(taskID)
-                    self._remove_line(new_uuid)
                     self.stack.pop(-1)
                     self.stack_order_index.pop(-1)
+                    self._remove_line(new_uuid)
                     self.current_level -= 1
 
         pbar_iterable = PBarIterable(
