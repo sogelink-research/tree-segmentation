@@ -147,8 +147,9 @@ class ModelTrainingSession(ModelSession):
     @staticmethod
     def from_pickle(file_path: str, device: torch.device) -> ModelTrainingSession:
         with open(file_path, "rb") as f:
-            model_session = pickle.load(f)
+            model_session: ModelTrainingSession = pickle.load(f)
             model_session.device = device
+            RICH_PRINTING.print(f"{model_session.training_data.dataset_params.use_cir = }")
         return model_session
 
     @staticmethod
@@ -279,7 +280,8 @@ def main():
     #     # Training session
     #     model_training_session.train()
 
-    names = os.listdir("models/amf_gd_yolov8")
+    # names = os.listdir("models/amf_gd_yolov8")
+    names = ["trained_model_exp0_1000ep_3"]
     for name in RICH_PRINTING.pbar(names, len(names), description="Trained models", leave=True):
         model_training_session = ModelTrainingSession.from_name(name)
         model_training_session.compute_metrics()
