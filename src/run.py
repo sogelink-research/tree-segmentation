@@ -283,6 +283,7 @@ def main():
     names = os.listdir("models/amf_gd_yolov8")
     # names = ["trained_model_exp0_1000ep_3"]
     for name in RICH_PRINTING.pbar(names, len(names), description="Trained models", leave=True):
+        RICH_PRINTING.print(f"{name = }")
         model_training_session = ModelTrainingSession.from_name(name)
         model_training_session.compute_metrics()
 
