@@ -281,11 +281,11 @@ def main():
     # names = os.listdir("models/amf_gd_yolov8")
     names = ["trained_model_exp0_1000ep_0"]
     for name in RICH_PRINTING.pbar(names, len(names), description="Trained models", leave=True):
-        model_training_session = ModelTrainingSession.from_name(name)
+        model_training_session = ModelSession.from_name(name)
         RICH_PRINTING.print(f"{name = }")
         RICH_PRINTING.print(f"{model_training_session.model_name = }")
         model_training_session.model_name = name
-        model_training_session.compute_metrics()
+        model_training_session.compute_metrics(initialize=True)
 
 
 if __name__ == "__main__":
