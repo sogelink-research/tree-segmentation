@@ -111,7 +111,7 @@ class ModelTrainingSession(ModelSession):
         return super().train()
 
     def compute_metrics(self, initialize: bool = True):
-
+        self._init_training_params()
         return super().compute_metrics(initialize)
 
     @property
@@ -278,7 +278,8 @@ def main():
     #     # Training session
     #     model_training_session.train()
 
-    names = os.listdir("models/amf_gd_yolov8")
+    # names = os.listdir("models/amf_gd_yolov8")
+    names = ["trained_model_exp0_1000ep_0"]
     for name in RICH_PRINTING.pbar(names, len(names), description="Trained models", leave=True):
         model_training_session = ModelTrainingSession.from_name(name)
         RICH_PRINTING.print(f"{name = }")
