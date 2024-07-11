@@ -545,6 +545,9 @@ class ModelSession:
 
     @RICH_PRINTING.running_message("Loading the model...")
     def _load_model(self) -> AMF_GD_YOLOv8:
+        RICH_PRINTING.print(f"{self.training_data.dataset_params.channels_rgb = }")
+        RICH_PRINTING.print(f"{self.training_data.dataset_params.channels_chm = }")
+        RICH_PRINTING.print(f"{self.model_name = }")
         model = AMF_GD_YOLOv8(
             self.training_data.dataset_params.channels_rgb,
             self.training_data.dataset_params.channels_chm,
