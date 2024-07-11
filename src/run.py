@@ -148,7 +148,6 @@ class ModelTrainingSession(ModelSession):
         with open(file_path, "rb") as f:
             model_session: ModelTrainingSession = pickle.load(f)
             model_session.device = device
-            RICH_PRINTING.print(f"{model_session.training_data.dataset_params.use_cir = }")
         return model_session
 
     @staticmethod
@@ -159,7 +158,6 @@ class ModelTrainingSession(ModelSession):
         if not ModelTrainingSession.already_exists(model_name):
             raise Exception(f"There is no model called {model_name}.")
         file_path = ModelTrainingSession.get_pickle_path(model_name)
-        RICH_PRINTING.print(f"{file_path = }")
         return ModelTrainingSession.from_pickle(file_path, device)
 
 
@@ -281,9 +279,7 @@ def main():
     #     model_training_session.train()
 
     names = os.listdir("models/amf_gd_yolov8")
-    # names = ["trained_model_exp0_1000ep_3"]
     for name in RICH_PRINTING.pbar(names, len(names), description="Trained models", leave=True):
-        RICH_PRINTING.print(f"{name = }")
         model_training_session = ModelTrainingSession.from_name(name)
         model_training_session.compute_metrics()
 
