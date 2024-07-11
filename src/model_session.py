@@ -531,7 +531,6 @@ class ModelSession:
                 self.training_data.training_params.epochs, self.postfix
             )
         create_folder(self.folder_path)
-        self.model_path = AMF_GD_YOLOv8.get_weights_path_from_name(self.model_name)
         self.best_epoch = -1
 
     @RICH_PRINTING.running_message("Creating the dataset...")
@@ -556,6 +555,7 @@ class ModelSession:
             scale=self.training_data.training_params.model_size,
         )
         model.to(self.device)
+        self.model_path = AMF_GD_YOLOv8.get_weights_path_from_name(self.model_name)
         if os.path.isfile(self.model_path):
             state_dict = torch.load(self.model_path, map_location=self.device)
             model.load_state_dict(state_dict)
