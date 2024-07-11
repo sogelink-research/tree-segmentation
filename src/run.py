@@ -278,10 +278,9 @@ def main():
     #     # Training session
     #     model_training_session.train()
 
-    # names = os.listdir("models/amf_gd_yolov8")
-    names = ["trained_model_exp0_1000ep_0"]
+    names = os.listdir("models/amf_gd_yolov8")
     for name in RICH_PRINTING.pbar(names, len(names), description="Trained models", leave=True):
-        model_training_session = ModelSession.from_name(name)
+        model_training_session = ModelTrainingSession.from_name(name)
         # model_training_session.model_name = name
         model_training_session.compute_metrics()
 

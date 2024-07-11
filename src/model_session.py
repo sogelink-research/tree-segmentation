@@ -790,6 +790,9 @@ class ModelSession:
         model.save_weights()
 
         # Save the class instance
+        self._save_pickle()
+
+    def _save_pickle(self):
         pickle_path = ModelSession.get_pickle_path(self.model_name)
         with open(pickle_path, "wb") as f:
             pickle.dump(self, f)
