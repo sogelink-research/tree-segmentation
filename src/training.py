@@ -601,7 +601,7 @@ def get_batch_size(
     model.train()
     optimizer = torch.optim.Adam(model.parameters())
 
-    batch_sizes = list(set([accumulate // i for i in range(1, accumulate + 1)]))
+    batch_sizes = sorted(list(set([accumulate // i for i in range(1, accumulate + 1)])))
     if max_batch_size is not None:
         batch_sizes = [batch_size for batch_size in batch_sizes if batch_size < max_batch_size]
     exec_times = [np.inf] * len(batch_sizes)
@@ -676,7 +676,7 @@ def get_batch_size(
             exec_times[idx] = (end_time - start_time) / total_processed
 
         except torch.cuda.OutOfMemoryError:
-            RICH_PRINTING.print(f"\tOOM at batch size {batch_size}")
+            RICH_PRINTING.print(f"OOM at batch size {batch_size}")
             break
 
         except Exception as e:
@@ -744,7 +744,7 @@ def train_and_validate(
     best_loss = np.inf
     skip_until = 3
 
-    for epoch in RICH_PRINTING.pbar(range(1, epochs + 1), epochs, description="Epoch"):
+    for epoch in RICH_PRINTING.pbar(range(1, epochs + 1), epochs, description="Epoch", leave=True):
         # training_metrics.visualize(intervals=intervals, save_paths=training_metrics_path)
         training_metrics.save_metrics(
             os.path.join(
@@ -754,13 +754,13 @@ def train_and_validate(
         )
 
         running_accumulation_step = train(
-            train_loader,
-            model,
-            optimizer,
-            device,
-            accumulation_steps,
-            running_accumulation_step,
-            training_metrics,
+            train_loader=train_loader,
+            model=model,
+            optimizer=optimizer,
+            device=device,
+            accumulation_steps=accumulation_steps,
+            running_accumulation_step=running_accumulation_step,
+            training_metrics=training_metrics,
             epoch=epoch,
             ap_interval=ap_interval,
         )

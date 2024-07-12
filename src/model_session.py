@@ -98,7 +98,6 @@ class DatasetParams:
         tile_size: int = 640,
         tile_overlap: int = 0,
         class_names: Dict[int, str] = DatasetConst.CLASS_NAMES.value,
-        split_random_seed: int = 0,
         no_data_new_value: float = DatasetConst.NO_DATA_NEW_VALUE.value,
         filter_lidar: bool = True,
         mean_rgb_cir: np.ndarray | None = None,
@@ -116,7 +115,6 @@ class DatasetParams:
         self.tile_size = tile_size
         self.tile_overlap = tile_overlap
         self.class_names = class_names
-        self.split_random_seed = split_random_seed
         self.no_data_new_value = no_data_new_value
         self.filter_lidar = filter_lidar
         self.mean_rgb_cir = mean_rgb_cir
@@ -406,7 +404,7 @@ class TrainingParams:
         no_improvement_stop_epochs: int,
         proba_drop_rgb: float,
         proba_drop_chm: float,
-        experiment: str,
+        repartition_name: str,
         batch_size: Optional[int] = None,
         transform_spatial_training: Optional[A.Compose] = None,
         transform_pixel_rgb_training: Optional[A.Compose] | None = None,
@@ -421,7 +419,7 @@ class TrainingParams:
         self.no_improvement_stop_epochs = no_improvement_stop_epochs
         self.proba_drop_rgb = proba_drop_rgb
         self.proba_drop_chm = proba_drop_chm
-        self.experiment = experiment
+        self.repartition_name = repartition_name
         self.transform_spatial_training = transform_spatial_training
         self.transform_pixel_rgb_training = transform_pixel_rgb_training
         self.transform_pixel_chm_training = transform_pixel_chm_training
@@ -453,10 +451,10 @@ class TrainingData:
 
         self.dataset_params.initialize()
         self.training_params.initialize()
-        self._split_data(self.dataset_params.split_random_seed)
+        self._split_data()
         self._init_transforms()
 
-    def _split_data(self, split_random_seed: int):
+    def _split_data(self):
         SETS_RATIOS = [1, 1, 1, 1, 1]
         SETS_NAMES = ["0", "1", "2", "3", "4"]
         SPLIT_BASE_PATH = os.path.join(Folders.DATA.value, "data_split_files.json")
@@ -471,16 +469,11 @@ class TrainingData:
         SPLIT_EXPERIMENT_PATH = os.path.join(Folders.DATA.value, "data_split_experiments.json")
         with open(SPLIT_EXPERIMENT_PATH, "r") as f:
             split_experiment_repartitions = json.load(f)
-        ### TO REMOVE vvv
-        if hasattr(self.training_params, "experience"):
-            self.training_params.experiment = self.training_params.experience
-            del self.training_params.experience
-        ### TO REMOVE ^^^
-        parts_repartition = split_experiment_repartitions[self.training_params.experiment]
+        parts_repartition = split_experiment_repartitions[self.training_params.repartition_name]
 
         self.data_split_file_path = os.path.join(
             self.dataset_params.cropped_data_folder_path,
-            f"data_split_{split_random_seed}.json",
+            "data_split.json",
         )
         use_rgb_cir = self.dataset_params.use_rgb or self.dataset_params.use_cir
         create_and_save_splitted_datasets_from_basis(
@@ -517,19 +510,24 @@ class ModelSession:
         self,
         training_data: TrainingData,
         device: torch.device,
-        postfix: str | None = None,
+        prefix: str = "",
         model_name: str | None = None,
+        parent_folder_path: str | None = None,
     ) -> None:
         self.training_data = training_data
         self.device = device
-        self.postfix = postfix
+        self.prefix = prefix
 
         if model_name is not None:
             self.model_name = model_name
         else:
-            self.model_name = AMF_GD_YOLOv8.get_new_name(
-                self.training_data.training_params.epochs, self.postfix
-            )
+            self.model_name = AMF_GD_YOLOv8.get_new_name(prefix=self.prefix)
+
+        if parent_folder_path is not None:
+            self.parent_folder_path = parent_folder_path
+        else:
+            self.parent_folder_path = Folders.MODELS_AMF_GD_YOLOV8.value
+
         create_folder(self.folder_path)
         self.best_epoch = -1
 
@@ -544,18 +542,15 @@ class ModelSession:
 
     @RICH_PRINTING.running_message("Loading the model...")
     def _load_model(self) -> AMF_GD_YOLOv8:
-        RICH_PRINTING.print(f"{self.training_data.dataset_params.channels_rgb = }")
-        RICH_PRINTING.print(f"{self.training_data.dataset_params.channels_chm = }")
-        RICH_PRINTING.print(f"{self.model_name = }")
         model = AMF_GD_YOLOv8(
             self.training_data.dataset_params.channels_rgb,
             self.training_data.dataset_params.channels_chm,
             class_names=self.training_data.dataset_params.class_names,
             name=self.model_name,
+            parent_folder_path=self.parent_folder_path,
             scale=self.training_data.training_params.model_size,
         )
         model.to(self.device)
-        self.model_path = AMF_GD_YOLOv8.get_weights_path_from_name(self.model_name)
         if os.path.isfile(self.model_path):
             state_dict = torch.load(self.model_path, map_location=self.device)
             model.load_state_dict(state_dict)
@@ -604,7 +599,7 @@ class ModelSession:
     @RICH_PRINTING.running_message("Running a training session...")
     def train(self, overwrite: bool = False):
         # Check if a model with this name already exists
-        if os.path.isfile(self.model_path):
+        if hasattr(self, "model_path") and os.path.isfile(self.model_path):
             if not overwrite:
                 raise ValueError(
                     f"There is already a model at {self.model_path}. Specify overwrite=True in the train function to overwrite it."
@@ -653,7 +648,9 @@ class ModelSession:
             num_workers=self.training_data.training_params.num_workers,
         )
 
-        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model.name)
+        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(
+            parent_folder_path=self.parent_folder_path, model_name=self.model_name
+        )
 
         thresholds_low = np.power(10, np.linspace(-4, -1, 10))
         thresholds_high = np.linspace(0.1, 1.0, 19)
@@ -747,7 +744,7 @@ class ModelSession:
         params_to_save = {
             "annotations_file": self.training_data.dataset_params.annotations_file_name,
             "agnostic": self.training_data.dataset_params.agnostic,
-            "experiment": self.training_data.training_params.experiment,
+            "repartition_name": self.training_data.training_params.repartition_name,
             "use_rgb": self.training_data.dataset_params.use_rgb,
             "use_cir": self.training_data.dataset_params.use_cir,
             "use_chm": self.training_data.dataset_params.use_chm,
@@ -760,7 +757,6 @@ class ModelSession:
             "std_chm": self.training_data.dataset_params.std_chm,
             "no_data_new_value": self.training_data.dataset_params.no_data_new_value,
             "resolution": self.training_data.dataset_params.resolution,
-            "split_random_seed": self.training_data.dataset_params.split_random_seed,
             "tile_overlap": self.training_data.dataset_params.tile_overlap,
             "tile_size": self.training_data.dataset_params.tile_size,
             "accumulate": self.training_data.training_params.accumulate,
@@ -776,9 +772,11 @@ class ModelSession:
             "device": self.device.type,
             "model_name": self.model_name,
             "model_path": self.model_path,
-            "postfix": self.postfix,
+            "prefix": self.prefix,
         }
-        save_path = ModelSession.get_params_path(self.model_name)
+        save_path = ModelSession.get_params_path(
+            parent_folder_path=self.parent_folder_path, model_name=self.model_name
+        )
         with open(save_path, "w") as fp:
             json.dump(params_to_save, fp, cls=FullJsonEncoder, sort_keys=True, indent=4)
 
@@ -793,27 +791,43 @@ class ModelSession:
         self._save_pickle()
 
     def _save_pickle(self):
-        pickle_path = ModelSession.get_pickle_path(self.model_name)
+        pickle_path = ModelSession.get_pickle_path(
+            parent_folder_path=self.parent_folder_path, model_name=self.model_name
+        )
         with open(pickle_path, "wb") as f:
             pickle.dump(self, f)
 
     @property
     def folder_path(self) -> str:
-        return AMF_GD_YOLOv8.get_folder_path_from_name(self.model_name)
+        return AMF_GD_YOLOv8.get_folder_path_from_name(
+            parent_folder_path=self.parent_folder_path, model_name=self.model_name
+        )
+
+    @property
+    def model_path(self) -> str:
+        return AMF_GD_YOLOv8.get_weights_path_from_name(
+            parent_folder_path=self.parent_folder_path, model_name=self.model_name
+        )
 
     @staticmethod
-    def get_params_path(model_name: str) -> str:
-        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
+    def get_params_path(parent_folder_path: str, model_name: str) -> str:
+        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(
+            parent_folder_path=parent_folder_path, model_name=model_name
+        )
         return os.path.join(model_folder_path, "model_params.json")
 
     @staticmethod
-    def get_pickle_path(model_name: str) -> str:
-        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
+    def get_pickle_path(parent_folder_path: str, model_name: str) -> str:
+        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(
+            parent_folder_path=parent_folder_path, model_name=model_name
+        )
         return os.path.join(model_folder_path, "model_session.pkl")
 
     @staticmethod
-    def already_exists(model_name: str) -> bool:
-        pickle_path = ModelSession.get_pickle_path(model_name)
+    def already_exists(parent_folder_path: str, model_name: str) -> bool:
+        pickle_path = ModelSession.get_pickle_path(
+            parent_folder_path=parent_folder_path, model_name=model_name
+        )
         return os.path.exists(pickle_path)
 
     @staticmethod
@@ -825,12 +839,17 @@ class ModelSession:
 
     @staticmethod
     def from_name(
+        parent_folder_path: str,
         model_name: str,
         device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     ) -> ModelSession:
-        if not ModelSession.already_exists(model_name):
-            raise Exception(f"There is no model called {model_name}.")
-        file_path = ModelSession.get_pickle_path(model_name)
+        if not ModelSession.already_exists(
+            parent_folder_path=parent_folder_path, model_name=model_name
+        ):
+            raise Exception(f"There is no model called {model_name} in {parent_folder_path}.")
+        file_path = ModelSession.get_pickle_path(
+            parent_folder_path=parent_folder_path, model_name=model_name
+        )
         return ModelSession.from_pickle(file_path, device)
 
 
@@ -850,6 +869,7 @@ def simple_test():
         1,
         class_names=DatasetConst.CLASS_NAMES.value,
         name="simple_test",
+        parent_folder_path=Folders.MODELS_AMF_GD_YOLOV8.value,
         scale="n",
     )
     model = model.to(device)

@@ -12,7 +12,7 @@ iters_wait_time = iters_total_wait_time / iters
 @RICH_PRINTING.running_message()
 def f0():
     for i in RICH_PRINTING.pbar(range(5), len(range(5)), leave=True):
-        for j in RICH_PRINTING.pbar(range(iters // 5), len(range(5)), leave=False):
+        for j in RICH_PRINTING.pbar(range(iters // 5), len(range(iters // 5)), leave=False):
             time.sleep(iters_wait_time)
     time.sleep(wait_time)
 

@@ -2,13 +2,18 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from pandas.plotting import parallel_coordinates
 
 from training import rgb_cir_chm_usage_legend
 from utils import RICH_PRINTING, Folders, create_all_folders
+
+
+create_all_folders()
 
 
 def read_params(experiment_folder: str) -> Dict[str, Any]:
@@ -88,18 +93,20 @@ def plot_sorted_ap_per_data_type(data_folder: str, show: bool, save_path: Option
 
     # Use seaborn to create a scatter plot with different colors for each group
     # sns.violinplot(data=df, x="Group", y="Best sortedAP", hue="Group", palette="deep")
-    sns.scatterplot(
-        data=df,
-        x="Jittered Group",
-        y="Best sortedAP",
-        # hue="Group",
-        hue="Data used for evaluation",
-        # style="Data used for evaluation",
-        marker="x",
-        s=100,
-        linewidths=2,
-        palette="deep",
-    )
+    # sns.scatterplot(
+    #     data=df,
+    #     x="Jittered Group",
+    #     y="Best sortedAP",
+    #     # hue="Group",
+    #     hue="Data used for evaluation",
+    #     # style="Data used for evaluation",
+    #     marker="x",
+    #     s=100,
+    #     linewidths=2,
+    #     palette="deep",
+    # )
+
+    sns.swarmplot(data=df, x="Numerical Group", y="Best sortedAP", hue="Data used for evaluation")
 
     # Customizing the plot
     plt.xlabel("Data used for evaluation")
@@ -226,8 +233,12 @@ best_ap_df = best_sorted_ap_per_experiment(data_folder=data_folder)
 print(best_ap_df.columns)
 print(best_ap_df)
 
+all_values_same_columns = best_ap_df.apply(all_values_same, axis=0)
+
 # Apply the function to each column and filter columns
-filtered_best_ap_df = best_ap_df.loc[:, ~best_ap_df.apply(all_values_same, axis=0)]
+filtered_best_ap_df = best_ap_df.drop(
+    all_values_same_columns[all_values_same_columns].index, axis=1
+)
 print(filtered_best_ap_df.columns)
 print(filtered_best_ap_df)
 
@@ -241,10 +252,15 @@ filtered_best_ap_df = filtered_best_ap_df.drop(
         "model_path",
         "std_chm",
         "std_rgb_cir",
-    ]
+    ],
+    errors="ignore",
 )
 
-filtered_best_ap_df.to_csv("Best_sortedAP_experiments.csv", index=False)
+print(filtered_best_ap_df.columns)
+print(filtered_best_ap_df)
+
+save_path = os.path.join(Folders.MODELS_RESULTS.value, "training_params_experiment.csv")
+filtered_best_ap_df.to_csv(save_path, index=False)
 
 
 def color_bool(b: bool):
@@ -252,20 +268,23 @@ def color_bool(b: bool):
     return f'background-color: {color.get(b, "")}'
 
 
-filtered_best_ap_df_style = filtered_best_ap_df.style.map(
-    color_bool, subset=["agnostic", "use_rgb", "use_cir", "use_chm"]
-)
+filtered_best_ap_df_style = filtered_best_ap_df.style
+
+# filtered_best_ap_df_style = filtered_best_ap_df_style.map(
+#     color_bool, subset=[""]
+# )
 filtered_best_ap_df_style = filtered_best_ap_df_style.background_gradient(
-    subset=["lr", "proba_drop_chm", "proba_drop_rgb", "Best sortedAP"], cmap="viridis"
+    subset=["lr", "proba_drop_chm", "proba_drop_rgb", "best_epoch", "Best sortedAP"], cmap="viridis"
 )
 
 filtered_best_ap_df.sort_values(
-    by=["agnostic", "use_chm", "use_rgb", "use_cir", "lr", "proba_drop_chm"],
+    by=["accumulate", "lr", "proba_drop_chm", "Data used for evaluation"],
     # ascending=[True, False],
     inplace=True,
 )
 
-filtered_best_ap_df_style.to_html("styled_dataframe.html")
+save_path = os.path.join(Folders.MODELS_RESULTS.value, "training_params_experiment.html")
+filtered_best_ap_df_style.to_html(save_path, index=False)
 
 filtered_best_ap_df.sort_values(
     by=["Best sortedAP"],
@@ -273,12 +292,53 @@ filtered_best_ap_df.sort_values(
     inplace=True,
 )
 
-filtered_best_ap_df_style.to_html("styled_dataframe_2.html")
+save_path = os.path.join(Folders.MODELS_RESULTS.value, "training_params_experiment_sorted.html")
+filtered_best_ap_df_style.to_html(save_path, index=False)
 
 print(filtered_best_ap_df.columns)
 print(filtered_best_ap_df)
 
-create_all_folders()
+# plt.figure()
+# # matplotlib.use("Agg")
+# sns.pairplot(filtered_best_ap_df, hue="Best sortedAP", palette="Spectral")
+# save_path = os.path.join(Folders.MODELS_RESULTS.value, "training_params_experiment_pairplot.png")
+# plt.savefig(save_path)
+
+filtered_best_ap_df.sort_values(
+    by=["proba_drop_chm", "Data used for evaluation"],
+    inplace=True,
+)
+# filtered_best_ap_df["Group"] = filtered_best_ap_df.apply(
+#     lambda row: f'Proba drop: {row["proba_drop_chm"]},\nData:{row["Data used for evaluation"]}',
+#     axis=1,
+# )
+# sns.swarmplot(
+#     data=filtered_best_ap_df,
+#     x="accumulate",
+#     y="Best sortedAP",
+#     hue="Group",
+#     # dodge=True,
+# )
+sns.set_style("ticks", {"axes.grid": True})
+sns.catplot(
+    data=filtered_best_ap_df,
+    kind="swarm",
+    x="accumulate",
+    y="Best sortedAP",
+    hue="Data used for evaluation",
+    row="lr",
+    col="proba_drop_chm",
+    margin_titles=True,
+    height=2,
+    aspect=1,
+)
+
+# plt.legend(title="Group", bbox_to_anchor=(1.05, 1), loc="upper left")
+# plt.tight_layout()
+save_path = os.path.join(Folders.MODELS_RESULTS.value, "training_params_experiment_swarmplot.png")
+plt.savefig(save_path, dpi=200)
+
+
 # ap_per_data_type_path = os.path.join(Folders.MODELS_RESULTS.value, "ap_per_data_type.png")
 # plot_sorted_ap_per_data_type(data_folder=data_folder, show=False, save_path=ap_per_data_type_path)
 # instability_per_learning_rate_path = os.path.join(

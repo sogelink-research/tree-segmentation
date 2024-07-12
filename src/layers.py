@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import uuid
 from typing import Dict, List, Optional, Tuple
 
 import torch
@@ -377,6 +378,7 @@ class AMF_GD_YOLOv8(nn.Module):
         c_input_right: int,
         class_names: Dict[int, str],
         name: str,
+        parent_folder_path: str,
         scale: str = "n",
         r: int = 16,
         loss_weights: Dict[str, float] = {"box": 20, "cls": 1, "dfl": 4},
@@ -390,6 +392,7 @@ class AMF_GD_YOLOv8(nn.Module):
         self.class_names = class_names
         self.class_indices = {value: key for key, value in class_names.items()}
         self.name = name
+        self.parent_folder_path = parent_folder_path
         self.init_folder()
 
         if self.c_input_left == 0 and self.c_input_right == 0:
@@ -574,74 +577,44 @@ class AMF_GD_YOLOv8(nn.Module):
         batch = {"cls": gt_classes, "bboxes": gt_bboxes, "batch_idx": gt_indices}
         return self.criterion(output, batch)
 
-    def save_weights(self, best: bool = True, epoch: Optional[int] = None) -> None:
-        model_weights_path = self.weights_path(best, epoch)
+    def save_weights(self) -> None:
+        model_weights_path = self.weights_path()
         state_dict = self.state_dict()
         torch.save(state_dict, model_weights_path)
 
     @property
     def folder_path(self) -> str:
-        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(self.name)
+        model_folder_path = os.path.join(self.parent_folder_path, self.name)
         return model_folder_path
 
     def init_folder(self) -> None:
         create_folder(self.folder_path)
 
-    def weights_path(self, best: bool = True, epoch: Optional[int] = None) -> str:
+    def weights_path(self) -> str:
         model_weights_path = AMF_GD_YOLOv8.get_weights_path_from_name(
-            model_name=self.name, best=best, epoch=epoch
+            parent_folder_path=self.parent_folder_path, model_name=self.name
         )
         return model_weights_path
 
     @staticmethod
-    def _get_name(index: int, epochs: int, postfix: Optional[str] = None) -> str:
-        if postfix is None:
-            model_name = f"trained_model_{epochs}ep_{index}"
-        else:
-            model_name = f"trained_model_{postfix}_{epochs}ep_{index}"
-        return model_name
-
-    @staticmethod
-    def get_folder_path_from_name(model_name: Optional[str] = None) -> str:
-        model_folder_path = os.path.join(Folders.MODELS_AMF_GD_YOLOV8.value, f"{model_name}")
+    def get_folder_path_from_name(parent_folder_path: str, model_name: str) -> str:
+        model_folder_path = os.path.join(parent_folder_path, f"{model_name}")
         return model_folder_path
 
     @staticmethod
-    def get_weights_path_from_name(
-        model_name: Optional[str] = None, best: bool = True, epoch: Optional[int] = None
-    ) -> str:
-        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
-        best_str = "_best" if best else ""
-        epoch_str = "" if epoch is None else f"_{epoch}ep"
-        model_weights_path = os.path.join(model_folder_path, f"weights{best_str}{epoch_str}.pt")
+    def get_weights_path_from_name(parent_folder_path: str, model_name: str) -> str:
+        model_folder_path = AMF_GD_YOLOv8.get_folder_path_from_name(parent_folder_path, model_name)
+        model_weights_path = os.path.join(model_folder_path, "weights_best.pt")
         return model_weights_path
 
     @staticmethod
-    def get_last_name(epochs: int, postfix: Optional[str] = None) -> str:
-        index = 0
-        model_name = AMF_GD_YOLOv8._get_name(index, epochs, postfix)
-        model_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
-        if not os.path.exists(model_path):
-            raise Exception("No such model exists.")
-        while os.path.exists(model_path):
-            index += 1
-            model_name = AMF_GD_YOLOv8._get_name(index, epochs, postfix)
-            model_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
-
-        model_name = AMF_GD_YOLOv8._get_name(index - 1, epochs, postfix)
-        return model_name
-
-    @staticmethod
-    def get_new_name(epochs: int, postfix: Optional[str] = None) -> str:
-        index = 0
-        model_name = AMF_GD_YOLOv8._get_name(index, epochs, postfix)
-        model_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
-        while os.path.exists(model_path):
-            index += 1
-            model_name = AMF_GD_YOLOv8._get_name(index, epochs, postfix)
-            model_path = AMF_GD_YOLOv8.get_folder_path_from_name(model_name)
-
-        return model_name
+    def get_new_name(prefix: str = "", suffix: str = "") -> str:
+        new_name = uuid.uuid4().hex
+        if prefix != "":
+            new_name = "_".join([prefix, new_name])
+        if suffix != "":
+            new_name = "_".join([new_name, suffix])
+        return new_name
 
 
 class TrainingLoss(v8DetectionLoss):

@@ -3,13 +3,15 @@ from __future__ import annotations
 import json
 import os
 import pickle
+import shutil
 from itertools import product
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
 from rich.traceback import install
 
+from layers import AMF_GD_YOLOv8
 from model_session import (
     DatasetParams,
     FullJsonEncoder,
@@ -17,7 +19,7 @@ from model_session import (
     TrainingData,
     TrainingParams,
 )
-from utils import RICH_PRINTING, Folders, create_all_folders
+from utils import RICH_PRINTING, Folders, create_all_folders, create_folder
 
 
 class ModelTrainingSession(ModelSession):
@@ -31,7 +33,7 @@ class ModelTrainingSession(ModelSession):
         chm_z_layers: Optional[Sequence[Tuple[float, float]]] = None,
         annotations_file_name: str = "122000_484000.geojson",
         agnostic: bool = False,
-        experiment: str = "exp0",
+        repartition_name: str = "exp0",
         model_size: str = "n",
         lr: float = 1e-2,
         epochs: int = 1000,
@@ -42,7 +44,8 @@ class ModelTrainingSession(ModelSession):
         proba_drop_rgb: float = 1 / 3,
         proba_drop_chm: float = 1 / 3,
         device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        postfix: Optional[str] = None,
+        prefix: Optional[str] = None,
+        experiment_name: str = "",
     ) -> None:
         self.use_rgb = use_rgb
         self.use_cir = use_cir
@@ -50,7 +53,7 @@ class ModelTrainingSession(ModelSession):
         self.chm_z_layers = chm_z_layers
         self.annotations_file_name = annotations_file_name
         self.agnostic = agnostic
-        self.experiment = experiment
+        self.repartition_name = repartition_name
         self.model_size = model_size
         self.lr = lr
         self.epochs = epochs
@@ -61,7 +64,19 @@ class ModelTrainingSession(ModelSession):
         self.proba_drop_rgb = proba_drop_rgb
         self.proba_drop_chm = proba_drop_chm
         self.device = device
-        self.init_postfix = postfix
+        self.init_prefix = prefix
+        self.experiment_name = experiment_name
+
+        if experiment_name != "":
+            self.parent_folder_path = os.path.join(
+                Folders.MODELS_EXPERIMENTS.value, experiment_name
+            )
+        else:
+            self.parent_folder_path = Folders.MODELS_AMF_GD_YOLOV8.value
+
+        print(f"{experiment_name = }")
+        print(f"{self.parent_folder_path = }")
+        create_folder(self.parent_folder_path)
 
         self._init_dataset_params()
 
@@ -92,17 +107,22 @@ class ModelTrainingSession(ModelSession):
             no_improvement_stop_epochs=self.no_improvement_stop_epochs,
             proba_drop_rgb=self.proba_drop_rgb,
             proba_drop_chm=self.proba_drop_chm,
-            experiment=self.experiment,
+            repartition_name=self.repartition_name,
         )
         training_data = TrainingData(
             dataset_params=self.dataset_params, training_params=training_params
         )
-        postfix = (
-            self.init_postfix + self.experiment
-            if self.init_postfix is not None
-            else self.experiment
+        prefix = (
+            self.init_prefix + self.repartition_name
+            if self.init_prefix is not None
+            else self.repartition_name
         )
-        super().__init__(training_data=training_data, device=self.device, postfix=postfix)
+        super().__init__(
+            training_data=training_data,
+            device=self.device,
+            prefix=prefix,
+            parent_folder_path=self.parent_folder_path,
+        )
 
         self.save_init_params()
 
@@ -126,18 +146,18 @@ class ModelTrainingSession(ModelSession):
             "chm_z_layers": self.chm_z_layers,
             "annotations_file_name": self.annotations_file_name,
             "agnostic": self.agnostic,
-            "experiment": self.experiment,
+            "repartition_name": self.repartition_name,
             "model_size": self.model_size,
             "lr": self.lr,
             "epochs": self.epochs,
-            "batch_size": self.batch_size,
+            "batch_size": None,  ### TO MODIFY
             "num_workers": self.num_workers,
             "accumulate": self.accumulate,
             "no_improvement_stop_epochs": self.no_improvement_stop_epochs,
             "proba_drop_rgb": self.proba_drop_rgb,
             "proba_drop_chm": self.proba_drop_chm,
             "device": self.device,
-            "postfix": self.postfix,
+            "prefix": self.prefix,
         }
         save_path = self.init_params_path
         with open(save_path, "w") as fp:
@@ -152,13 +172,52 @@ class ModelTrainingSession(ModelSession):
 
     @staticmethod
     def from_name(
+        parent_folder_path: str,
         model_name: str,
         device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     ) -> ModelTrainingSession:
-        if not ModelTrainingSession.already_exists(model_name):
+        if not ModelTrainingSession.already_exists(
+            parent_folder_path=parent_folder_path, model_name=model_name
+        ):
             raise Exception(f"There is no model called {model_name}.")
-        file_path = ModelTrainingSession.get_pickle_path(model_name)
+        file_path = ModelTrainingSession.get_pickle_path(
+            parent_folder_path=parent_folder_path, model_name=model_name
+        )
         return ModelTrainingSession.from_pickle(file_path, device)
+
+    # def update(self, experiment_name: str) -> None:
+    #     old_model_name = self.model_name
+    #     self.postfix = self.postfix if self.postfix is not None else ""
+    #     self.prefix = self.postfix
+    #     self.model_name = AMF_GD_YOLOv8.get_new_name(prefix=self.prefix)
+    #     self.init_prefix = self.init_postfix if self.init_postfix is not None else ""
+    #     self.repartition_name = self.experiment
+    #     self.training_data.training_params.repartition_name = self.repartition_name
+    #     self.experiment_name = experiment_name
+    #     self.parent_folder_path = os.path.join(
+    #         Folders.MODELS_EXPERIMENTS.value, self.experiment_name
+    #     )
+    #     create_folder(self.parent_folder_path)
+
+    #     initial_folder = os.path.join(Folders.MODELS_AMF_GD_YOLOV8.value, old_model_name)
+    #     shutil.copytree(initial_folder, self.folder_path)
+
+    #     if experiment_name != "":
+    #         self.parent_folder_path = os.path.join(
+    #             Folders.MODELS_EXPERIMENTS.value, experiment_name
+    #         )
+    #     else:
+    #         self.parent_folder_path = Folders.MODELS_AMF_GD_YOLOV8.value
+
+    # def update_remove(self) -> None:
+    #     to_remove = [
+    #         self.postfix,
+    #         self.init_postfix,
+    #         self.experiment,
+    #         self.training_data.dataset_params.split_random_seed,
+    #     ]
+    #     for elem in to_remove:
+    #         del elem
 
 
 class ParamsCombinations:
@@ -167,7 +226,7 @@ class ParamsCombinations:
         self,
         name: str,
         params_dict: Optional[Dict[str, List]] = None,
-        forget_combinations: Optional[List[Dict[str, Any]]] = None,
+        forget_combinations: Optional[List[Callable[[Dict[str, Any]], bool]]] = None,
     ) -> None:
 
         self.name = name
@@ -181,18 +240,15 @@ class ParamsCombinations:
                 "If a ParamsCombinations object with the same name doesn't exist, every parameter should be specified."
             )
 
+        params_dict["experiment_name"] = [self.name]
+
         keys, values = zip(*params_dict.items())
         combinations = [dict(zip(keys, v)) for v in product(*values)]
 
         self.combinations = [
             comb
             for comb in combinations
-            if not any(
-                [
-                    all([comb[key] == value for key, value in forget_comb.items()])
-                    for forget_comb in forget_combinations
-                ]
-            )
+            if not any([forget_comb(comb) for forget_comb in forget_combinations])
         ]
 
         self.model_names = [""]
@@ -226,7 +282,9 @@ class ParamsCombinations:
 
     @property
     def state_path(self) -> str:
-        state_path = os.path.join(Folders.MODELS_EXPERIMENTS.value, f"{self.name}.json")
+        state_path = os.path.join(
+            Folders.MODELS_EXPERIMENTS.value, self.name, "parameters_combinations.json"
+        )
         return state_path
 
     def __iter__(self):
@@ -234,6 +292,7 @@ class ParamsCombinations:
         for idx in range(self.next_idx, len(self.combinations)):
             str_len = len(str(total_combinations))
             RICH_PRINTING.print(f"Experiment {idx+1:>{str_len}}/{total_combinations}")
+            print(f"{self.combinations[idx] = }")
 
             model_training_session = ModelTrainingSession(**self.combinations[idx])
             yield model_training_session
@@ -248,11 +307,12 @@ def main():
     create_all_folders()
 
     params_dict = {
-        "epochs": [1],
-        "experiment": ["exp0"],
-        "lr": [1e-2, 6e-3, 2.5e-3, 1e-3],
-        "accumulate": [6, 12, 18, 24, 36],
-        "proba_drop_rgb": [0, 0.1, 0.2, 0.333],
+        "epochs": [1000],
+        "repartition_name": ["exp0"],
+        "lr": [6e-3, 2.5e-3, 1e-3],
+        "accumulate": [12, 24, 36],
+        "proba_drop_rgb": [0, 0.1, 0.333],
+        "proba_drop_chm": [0, 0.1, 0.333],
         "model_size": ["n"],
         "agnostic": [True],
         "use_rgb": [True],
@@ -261,11 +321,8 @@ def main():
     }
 
     forget_combinations = [
-        {
-            "use_rgb": False,
-            "use_cir": False,
-            "use_chm": False,
-        },
+        lambda d: not d["use_rgb"] and not d["use_cir"] and not d["use_chm"],
+        lambda d: d["proba_drop_rgb"] != d["proba_drop_chm"],
     ]
 
     params_combinations = ParamsCombinations(
@@ -274,17 +331,52 @@ def main():
         forget_combinations=forget_combinations,
     )
 
-    # for model_training_session in params_combinations:
-    #     # Training session
-    #     model_training_session.train()
+    for model_training_session in params_combinations:
+        # Training session
+        model_training_session.train()
 
-    names = os.listdir("models/amf_gd_yolov8")
-    # names = ["trained_model_exp0_1000ep_0"]
-    for name in RICH_PRINTING.pbar(names, len(names), description="Trained models", leave=True):
-        model_training_session = ModelTrainingSession.from_name(name)
-        # model_training_session.model_name = name
-        model_training_session.compute_metrics()
-        # model_training_session._save_pickle()
+    # experiment_name = "training_params_experiment"
+    # parent_folder_path = os.path.join(Folders.MODELS_EXPERIMENTS.value, experiment_name)
+    # create_folder(parent_folder_path)
+    # shutil.copyfile(
+    #     "/home/alexandre/Documents/projects/Geodan_internship/tree-segmentation/models/experiments/training_params_experiment.json",
+    #     "/home/alexandre/Documents/projects/Geodan_internship/tree-segmentation/models/experiments/training_params_experiment/parameters_combinations.json",
+    # )
+    # model_names = os.listdir(Folders.MODELS_AMF_GD_YOLOV8.value)
+    # for model_name in model_names:
+    #     model_training_session = ModelTrainingSession.from_name(
+    #         Folders.MODELS_AMF_GD_YOLOV8.value, model_name
+    #     )
+    #     model_training_session.update(experiment_name)
+    #     model_training_session.update_remove()
+    #     model_training_session.save_init_params()
+    #     model_training_session.save_params()
+    #     model_training_session._save_pickle()
+
+    #     new_model_name = model_training_session.model_name
+    #     # print(
+    #     #     f"{ModelSession.get_pickle_path(parent_folder_path=parent_folder_path, model_name=model_name) = }"
+    #     # )
+
+    #     model_training_session = ModelTrainingSession.from_name(
+    #         parent_folder_path=parent_folder_path, model_name=new_model_name
+    #     )
+
+    #     file_path = "/home/alexandre/Documents/projects/Geodan_internship/tree-segmentation/models/experiments/training_params_experiment/parameters_combinations.json"
+    #     with open(file_path) as f:
+    #         data = json.load(f)
+
+    #     for d in data["parameters"]:
+    #         if d["model_name"] == model_name:
+    #             d["model_name"] = new_model_name
+
+    #     with open(file_path, "w") as f:
+    #         json.dump(data, f)
+
+    # model_training_session = ModelTrainingSession.from_name(
+    #     parent_folder_path=parent_folder_path, model_name="exp0_5ddfced3391e48b4bba91caf8d4602ef"
+    # )
+    # model_training_session.compute_metrics()
 
 
 if __name__ == "__main__":
