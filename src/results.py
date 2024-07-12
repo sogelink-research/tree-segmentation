@@ -244,6 +244,8 @@ filtered_best_ap_df = filtered_best_ap_df.drop(
     ]
 )
 
+filtered_best_ap_df.to_csv("Best_sortedAP_experiments.csv", index=False)
+
 
 def color_bool(b: bool):
     color = {True: "green", False: "red"}
