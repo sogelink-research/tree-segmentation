@@ -208,14 +208,80 @@ def plot_training_instability_per_learning_rate(
         plt.savefig(save_path, dpi=200)
 
 
+def to_tuple(x):
+    if isinstance(x, list):
+        return tuple(to_tuple(i) for i in x)
+    elif isinstance(x, dict):
+        return tuple((k, to_tuple(v)) for k, v in sorted(x.items()))
+    return x
+
+
+def all_values_same(column):
+    column = column.apply(to_tuple)
+    return column.nunique() == 1
+
+
 data_folder = "models/amf_gd_yolov8"
+best_ap_df = best_sorted_ap_per_experiment(data_folder=data_folder)
+print(best_ap_df.columns)
+print(best_ap_df)
+
+# Apply the function to each column and filter columns
+filtered_best_ap_df = best_ap_df.loc[:, ~best_ap_df.apply(all_values_same, axis=0)]
+print(filtered_best_ap_df.columns)
+print(filtered_best_ap_df)
+
+filtered_best_ap_df = filtered_best_ap_df.drop(
+    columns=[
+        "batch_size",
+        "postfix",
+        "class_names",
+        "mean_chm",
+        "mean_rgb_cir",
+        "model_path",
+        "std_chm",
+        "std_rgb_cir",
+    ]
+)
+
+
+def color_bool(b: bool):
+    color = {True: "green", False: "red"}
+    return f'background-color: {color.get(b, "")}'
+
+
+filtered_best_ap_df_style = filtered_best_ap_df.style.map(
+    color_bool, subset=["agnostic", "use_rgb", "use_cir", "use_chm"]
+)
+filtered_best_ap_df_style = filtered_best_ap_df_style.background_gradient(
+    subset=["lr", "proba_drop_chm", "proba_drop_rgb", "Best sortedAP"], cmap="viridis"
+)
+
+filtered_best_ap_df.sort_values(
+    by=["agnostic", "use_chm", "use_rgb", "use_cir", "lr", "proba_drop_chm"],
+    # ascending=[True, False],
+    inplace=True,
+)
+
+filtered_best_ap_df_style.to_html("styled_dataframe.html")
+
+filtered_best_ap_df.sort_values(
+    by=["Best sortedAP"],
+    # ascending=[True, False],
+    inplace=True,
+)
+
+filtered_best_ap_df_style.to_html("styled_dataframe_2.html")
+
+print(filtered_best_ap_df.columns)
+print(filtered_best_ap_df)
 
 create_all_folders()
-ap_per_data_type_path = os.path.join(Folders.MODELS_RESULTS.value, "ap_per_data_type.png")
-plot_sorted_ap_per_data_type(data_folder=data_folder, show=False, save_path=ap_per_data_type_path)
-instability_per_learning_rate_path = os.path.join(
-    Folders.MODELS_RESULTS.value, "instability_per_learning_rate.png"
-)
-plot_training_instability_per_learning_rate(
-    data_folder=data_folder, show=False, save_path=instability_per_learning_rate_path
-)
+# ap_per_data_type_path = os.path.join(Folders.MODELS_RESULTS.value, "ap_per_data_type.png")
+# plot_sorted_ap_per_data_type(data_folder=data_folder, show=False, save_path=ap_per_data_type_path)
+# instability_per_learning_rate_path = os.path.join(
+#     Folders.MODELS_RESULTS.value, "instability_per_learning_rate.png"
+# )
+# plot_training_instability_per_learning_rate(
+#     data_folder=data_folder, show=False, save_path=instability_per_learning_rate_path
+# )
