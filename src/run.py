@@ -281,10 +281,14 @@ class ParamsCombinations:
         self.model_names = list(map(lambda p: p["model_name"], parameters))
 
     @property
+    def folder_path(self) -> str:
+        folder_path = os.path.join(Folders.MODELS_EXPERIMENTS.value, self.name)
+        create_folder(folder_path)
+        return folder_path
+
+    @property
     def state_path(self) -> str:
-        state_path = os.path.join(
-            Folders.MODELS_EXPERIMENTS.value, self.name, "parameters_combinations.json"
-        )
+        state_path = os.path.join(self.folder_path, "parameters_combinations.json")
         return state_path
 
     def __iter__(self):
