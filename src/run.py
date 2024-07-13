@@ -308,7 +308,7 @@ def main():
 
     params_dict = {
         "epochs": [1000],
-        "repartition_name": ["exp0"],
+        "repartition_name": ["exp1", "exp2", "exp3", "exp4"],
         "lr": [6e-3, 2.5e-3, 1e-3],
         "accumulate": [12, 24, 36],
         "proba_drop_rgb": [0, 0.1, 0.333],
