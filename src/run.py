@@ -3,13 +3,11 @@ from __future__ import annotations
 import json
 import os
 import pickle
-import shutil
 from itertools import product
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
-from rich.traceback import install
 
 from layers import AMF_GD_YOLOv8
 from model_session import (
@@ -74,11 +72,10 @@ class ModelTrainingSession(ModelSession):
         else:
             self.parent_folder_path = Folders.MODELS_AMF_GD_YOLOV8.value
 
-        print(f"{experiment_name = }")
-        print(f"{self.parent_folder_path = }")
         create_folder(self.parent_folder_path)
 
         self._init_dataset_params()
+        self._init_training_params()
 
     def _init_dataset_params(self) -> None:
 
@@ -251,7 +248,7 @@ class ParamsCombinations:
             if not any([forget_comb(comb) for forget_comb in forget_combinations])
         ]
 
-        self.model_names = [""]
+        self.model_names = [""] * len(self.combinations)
         self.next_idx = 0
         self.save_state()
 
@@ -296,7 +293,7 @@ class ParamsCombinations:
         for idx in range(self.next_idx, len(self.combinations)):
             str_len = len(str(total_combinations))
             RICH_PRINTING.print(f"Experiment {idx+1:>{str_len}}/{total_combinations}")
-            print(f"{self.combinations[idx] = }")
+            RICH_PRINTING.print(f"Parameters: {self.combinations[idx]}")
 
             model_training_session = ModelTrainingSession(**self.combinations[idx])
             yield model_training_session
