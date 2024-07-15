@@ -123,9 +123,9 @@ class ModelTrainingSession(ModelSession):
 
         self.save_init_params()
 
-    def train(self) -> None:
-        self._init_training_params()
-        return super().train()
+    # def train(self) -> None:
+    #     self._init_training_params()
+    #     return super().train()
 
     # def compute_metrics(self, initialize: bool = True):
     #     self._init_training_params()
@@ -250,6 +250,8 @@ class ParamsCombinations:
 
         self.model_names = [""] * len(self.combinations)
         self.next_idx = 0
+
+        create_folder(self.folder_path)
         self.save_state()
 
     def save_state(self) -> None:
@@ -280,7 +282,6 @@ class ParamsCombinations:
     @property
     def folder_path(self) -> str:
         folder_path = os.path.join(Folders.MODELS_EXPERIMENTS.value, self.name)
-        create_folder(folder_path)
         return folder_path
 
     @property
