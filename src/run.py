@@ -310,9 +310,9 @@ def main():
 
     params_dict = {
         "epochs": [1000],
-        "repartition_name": ["exp0"],
-        "lr": [1e-2, 6e-3, 2.5e-3, 1e-3],
-        "accumulate": [6, 12, 24, 36],
+        "repartition_name": ["exp1", "exp2", "exp3", "exp4"],
+        "lr": [1e-2, 6e-3, 2.5e-3],
+        "accumulate": [6, 12, 24],
         "proba_drop_rgb": [0, 0.1, 0.333],
         "proba_drop_chm": [0, 0.1, 0.333],
         "model_size": ["n"],
@@ -325,11 +325,10 @@ def main():
     forget_combinations = [
         lambda d: not d["use_rgb"] and not d["use_cir"] and not d["use_chm"],
         lambda d: d["proba_drop_rgb"] != d["proba_drop_chm"],
-        lambda d: d["lr"] != 1e-2 and d["accumulate"] != 6,
     ]
 
     params_combinations = ParamsCombinations(
-        "training_params_experiment",
+        "training_params_experiment_2",
         params_dict=params_dict,
         forget_combinations=forget_combinations,
     )
