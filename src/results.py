@@ -228,7 +228,7 @@ def all_values_same(column):
     return column.nunique() == 1
 
 
-data_folder = "models/amf_gd_yolov8"
+data_folder = "models/experiments/training_params_experiment"
 best_ap_df = best_sorted_ap_per_experiment(data_folder=data_folder)
 print(best_ap_df.columns)
 print(best_ap_df)
