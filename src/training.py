@@ -606,6 +606,8 @@ def get_batch_size(
         batch_sizes = [batch_size for batch_size in batch_sizes if batch_size < max_batch_size]
     exec_times = [np.inf] * len(batch_sizes)
 
+    last_index = -1
+
     for idx, batch_size in RICH_PRINTING.pbar(
         enumerate(batch_sizes),
         len(batch_sizes),
@@ -681,6 +683,14 @@ def get_batch_size(
 
         except Exception as e:
             raise e
+
+        last_index = idx
+
+    # Remove the last batch size that worked if it is not the first one
+    if last_index == -1:
+        raise Exception("No batch size worked, even 1.")
+    elif last_index >= 1:
+        exec_times[last_index] = np.inf
 
     # Select best batch size
     best_index = min(enumerate(exec_times), key=lambda x: x[1])[0]
