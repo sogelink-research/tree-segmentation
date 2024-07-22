@@ -198,6 +198,7 @@ class DatasetParams:
                     output_tif_paths=full_chm_slices_paths,
                     resolution=self.resolution,
                     z_limits_list=self.chm_z_layers,
+                    image_data=self.image_data,
                     skip_if_file_exists=True,
                 )
             else:

@@ -259,6 +259,7 @@ def compute_full_dtm(
     las_file_name: str,
     output_tif_name: str,
     resolution: float,
+    image_data: ImageData,
     verbose: bool = False,
 ):
     # Create temporary folder
@@ -266,6 +267,15 @@ def compute_full_dtm(
     temp_folder = temp_folder_manager.get_temp_folder()
 
     output_tif_name_temp = os.path.join(temp_folder, "dtm.tif")
+    bounds_box = image_data.coord_box
+    bounds = (
+        [
+            round(bounds_box.x_min),
+            round(bounds_box.y_min),
+            round(bounds_box.x_max) - 1e-6,
+            round(bounds_box.y_max) - 1e-6,
+        ],
+    )
 
     pipeline_json = [
         las_file_name,
@@ -277,6 +287,7 @@ def compute_full_dtm(
             "gdaldriver": "GTiff",
             "window_size": 4,
             "resolution": resolution,
+            "bounds": bounds,
         },
     ]
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
@@ -397,6 +408,7 @@ def compute_slices_chm_from_hag_laz(
     output_tif_paths: List[str],
     resolution: float,
     z_limits_list: Sequence[Tuple[float, float]],
+    image_data: ImageData,
     skip_if_file_exists: bool,
 ):
     if len(output_tif_paths) != len(z_limits_list):
@@ -409,6 +421,7 @@ def compute_slices_chm_from_hag_laz(
             output_tif_path=output_tif_path,
             resolution=resolution,
             z_limits=z_limits,
+            image_data=image_data,
             skip_if_file_exists=skip_if_file_exists,
         )
 
@@ -418,6 +431,7 @@ def compute_slice_chm_from_hag_laz(
     output_tif_path: str,
     resolution: float,
     z_limits: Tuple[float, float],
+    image_data: ImageData,
     skip_if_file_exists: bool,
 ):
     if skip_if_file_exists and os.path.isfile(output_tif_path):
@@ -425,6 +439,17 @@ def compute_slice_chm_from_hag_laz(
 
     z_limit_bottom = "" if np.isneginf(z_limits[0]) else z_limits[0]
     z_limit_top = "" if np.isposinf(z_limits[1]) else z_limits[1]
+
+    bounds_box = image_data.coord_box
+    bounds = (
+        [
+            round(bounds_box.x_min),
+            round(bounds_box.y_min),
+            round(bounds_box.x_max) - 1e-6,
+            round(bounds_box.y_max) - 1e-6,
+        ],
+    )
+
     pipeline_json = [
         {"type": "readers.las", "filename": hag_laz_file_name},
         {
@@ -438,6 +463,7 @@ def compute_slice_chm_from_hag_laz(
             "gdaldriver": "GTiff",
             "window_size": 4,
             "resolution": resolution,
+            "bounds": bounds,
         },
     ]
     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
@@ -450,6 +476,7 @@ def compute_slices_chm(
     output_tif_paths: List[str],
     resolution: float,
     z_limits_list: Sequence[Tuple[float, float]],
+    image_data: ImageData,
     skip_if_file_exists: bool,
 ):
     if skip_if_file_exists and all([os.path.isfile(path) for path in output_tif_paths]):
@@ -466,6 +493,7 @@ def compute_slices_chm(
         laz_file_name,
         output_tif_name=full_dtm_path,
         resolution=resolution,
+        image_data=image_data,
     )
 
     compute_laz_minus_ground_height_with_dtm(
@@ -478,6 +506,7 @@ def compute_slices_chm(
             output_tif_path=output_path,
             resolution=resolution,
             z_limits=z_limits,
+            image_data=image_data,
             skip_if_file_exists=skip_if_file_exists,
         )
 
