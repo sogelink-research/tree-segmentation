@@ -74,7 +74,8 @@ def plot_sorted_ap_per_data_type(data_folder: str, show: bool, save_path: Option
     df = best_sorted_ap_per_experiment(data_folder)
 
     df["Group"] = df.apply(
-        lambda row: rgb_cir_chm_usage_legend(row["use_rgb"], row["use_cir"], row["use_chm"]), axis=1
+        lambda row: rgb_cir_chm_usage_legend(row["use_rgb"], row["use_cir"], row["use_chm"]),
+        axis=1,
     )
     df.sort_values(by=["use_rgb", "use_cir", "use_chm"], inplace=True)
 
@@ -145,7 +146,9 @@ def compute_instability(values: List[float]) -> float:
     return float(np.mean(variations) / mean)
 
 
-def compute_training_loss_instability(experiment_folder: str) -> Dict[str, Dict[str, float]]:
+def compute_training_loss_instability(
+    experiment_folder: str,
+) -> Dict[str, Dict[str, float]]:
     instability_dict = {}
     training_loss_dict = read_training_loss(experiment_folder)
     for loss_name, loss_dict in training_loss_dict.items():
@@ -228,7 +231,9 @@ def all_values_same(column):
     return column.nunique() == 1
 
 
-data_folder = "models/experiments/training_params_experiment"
+experiment_name = "chm_z_layers"
+
+data_folder = f"models/experiments/{experiment_name}"
 best_ap_df = best_sorted_ap_per_experiment(data_folder=data_folder)
 print(best_ap_df.columns)
 print(best_ap_df)
@@ -246,6 +251,7 @@ filtered_best_ap_df = filtered_best_ap_df.drop(
     columns=[
         "batch_size",
         "postfix",
+        "prefix",
         "class_names",
         "mean_chm",
         "mean_rgb_cir",
@@ -259,7 +265,7 @@ filtered_best_ap_df = filtered_best_ap_df.drop(
 print(filtered_best_ap_df.columns)
 print(filtered_best_ap_df)
 
-save_path = os.path.join(Folders.MODELS_RESULTS.value, "training_params_experiment.csv")
+save_path = os.path.join(Folders.MODELS_RESULTS.value, f"{experiment_name}.csv")
 filtered_best_ap_df.to_csv(save_path, index=False)
 
 
@@ -274,25 +280,25 @@ filtered_best_ap_df_style = filtered_best_ap_df.style
 #     color_bool, subset=[""]
 # )
 filtered_best_ap_df_style = filtered_best_ap_df_style.background_gradient(
-    subset=["lr", "proba_drop_chm", "proba_drop_rgb", "best_epoch", "Best sortedAP"], cmap="viridis"
+    # subset=["lr", "proba_drop_chm", "proba_drop_rgb", "best_epoch", "Best sortedAP"],
+    subset=["Best sortedAP"],
+    cmap="viridis",
 )
 
-filtered_best_ap_df.sort_values(
-    by=["accumulate", "lr", "proba_drop_chm", "Data used for evaluation"],
-    # ascending=[True, False],
-    inplace=True,
-)
+# filtered_best_ap_df.sort_values(
+#     by=["accumulate", "lr", "proba_drop_chm", "Data used for evaluation"],
+#     inplace=True,
+# )
 
-save_path = os.path.join(Folders.MODELS_RESULTS.value, "training_params_experiment.html")
+save_path = os.path.join(Folders.MODELS_RESULTS.value, f"{experiment_name}.html")
 filtered_best_ap_df_style.to_html(save_path, index=False)
 
 filtered_best_ap_df.sort_values(
     by=["Best sortedAP"],
-    # ascending=[True, False],
     inplace=True,
 )
 
-save_path = os.path.join(Folders.MODELS_RESULTS.value, "training_params_experiment_sorted.html")
+save_path = os.path.join(Folders.MODELS_RESULTS.value, f"{experiment_name}_sorted.html")
 filtered_best_ap_df_style.to_html(save_path, index=False)
 
 print(filtered_best_ap_df.columns)
@@ -301,13 +307,13 @@ print(filtered_best_ap_df)
 # plt.figure()
 # # matplotlib.use("Agg")
 # sns.pairplot(filtered_best_ap_df, hue="Best sortedAP", palette="Spectral")
-# save_path = os.path.join(Folders.MODELS_RESULTS.value, "training_params_experiment_pairplot.png")
+# save_path = os.path.join(Folders.MODELS_RESULTS.value, f"{experiment_name}_pairplot.png")
 # plt.savefig(save_path)
 
-filtered_best_ap_df.sort_values(
-    by=["proba_drop_chm", "Data used for evaluation"],
-    inplace=True,
-)
+# filtered_best_ap_df.sort_values(
+#     by=["proba_drop_chm", "Data used for evaluation"],
+#     inplace=True,
+# )
 # filtered_best_ap_df["Group"] = filtered_best_ap_df.apply(
 #     lambda row: f'Proba drop: {row["proba_drop_chm"]},\nData:{row["Data used for evaluation"]}',
 #     axis=1,
@@ -320,22 +326,26 @@ filtered_best_ap_df.sort_values(
 #     # dodge=True,
 # )
 sns.set_style("ticks", {"axes.grid": True})
+filtered_best_ap_df["CHM Layers"] = filtered_best_ap_df.apply(
+    lambda x: str(x["chm_z_layers"]), axis=1
+)
 sns.catplot(
     data=filtered_best_ap_df,
     kind="swarm",
-    x="accumulate",
+    x="repartition_name",
     y="Best sortedAP",
     hue="Data used for evaluation",
-    row="lr",
-    col="proba_drop_chm",
+    col="CHM Layers",
+    # row="lr",
+    # col="proba_drop_chm",
     margin_titles=True,
-    height=2,
+    height=5,
     aspect=1,
 )
 
 # plt.legend(title="Group", bbox_to_anchor=(1.05, 1), loc="upper left")
 # plt.tight_layout()
-save_path = os.path.join(Folders.MODELS_RESULTS.value, "training_params_experiment_swarmplot.png")
+save_path = os.path.join(Folders.MODELS_RESULTS.value, f"{experiment_name}_swarmplot.png")
 plt.savefig(save_path, dpi=200)
 
 

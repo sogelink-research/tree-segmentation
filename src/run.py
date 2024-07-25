@@ -82,6 +82,8 @@ class ModelTrainingSession(ModelSession):
         if self.chm_z_layers is None:
             z_tops = [1, 2, 3, 5, 7, 10, 15, 20, np.inf]
             chm_z_layers = [(-np.inf, z_top) for z_top in z_tops]
+        else:
+            chm_z_layers = self.chm_z_layers
 
         self.dataset_params = DatasetParams(
             annotations_file_name=self.annotations_file_name,
@@ -122,14 +124,6 @@ class ModelTrainingSession(ModelSession):
         )
 
         self.save_init_params()
-
-    # def train(self) -> None:
-    #     self._init_training_params()
-    #     return super().train()
-
-    # def compute_metrics(self, initialize: bool = True):
-    #     self._init_training_params()
-    #     return super().compute_metrics(initialize)
 
     @property
     def init_params_path(self) -> str:
@@ -224,6 +218,7 @@ class ParamsCombinations:
         name: str,
         params_dict: Optional[Dict[str, List]] = None,
         forget_combinations: Optional[List[Callable[[Dict[str, Any]], bool]]] = None,
+        repetitions: int = 1,
     ) -> None:
 
         self.name = name
@@ -247,6 +242,8 @@ class ParamsCombinations:
             for comb in combinations
             if not any([forget_comb(comb) for forget_comb in forget_combinations])
         ]
+
+        self.combinations = [comb for comb in self.combinations for _ in range(repetitions)]
 
         self.model_names = [""] * len(self.combinations)
         self.next_idx = 0
@@ -308,18 +305,33 @@ def main():
     # install(show_locals=True)
     create_all_folders()
 
+    chm_z_layers_all_exp = []
+    z_tops_all_exp = [
+        [np.inf],
+        [3, 9, np.inf],
+        [2, 5, 7, 12, np.inf],
+        [1, 2, 3, 5, 7, 10, 15, 20, np.inf],
+    ]
+    for z_tops in z_tops_all_exp:
+        z_layers = [(-np.inf, z_top) for z_top in z_tops]
+        chm_z_layers_all_exp.append(z_layers)
+        z_layers = [(-np.inf, z_tops[0])]
+        z_layers.extend([(z_tops[i], z_tops[i + 1]) for i in range(len(z_tops) - 1)])
+        chm_z_layers_all_exp.append(z_layers)
+
     params_dict = {
         "epochs": [1000],
-        "repartition_name": ["exp1", "exp2", "exp3", "exp4"],
-        "lr": [1e-2, 6e-3, 2.5e-3],
-        "accumulate": [6, 12, 24],
-        "proba_drop_rgb": [0, 0.1, 0.333],
-        "proba_drop_chm": [0, 0.1, 0.333],
+        "repartition_name": ["exp0", "exp1", "exp2", "exp3", "exp4"],
+        "lr": [4e-3],
+        "accumulate": [10],
+        "proba_drop_rgb": [0],
+        "proba_drop_chm": [0],
         "model_size": ["n"],
         "agnostic": [True],
         "use_rgb": [True],
         "use_cir": [True],
         "use_chm": [True],
+        "chm_z_layers": chm_z_layers_all_exp,
     }
 
     forget_combinations = [
@@ -328,9 +340,10 @@ def main():
     ]
 
     params_combinations = ParamsCombinations(
-        "training_params_experiment_2",
+        "chm_z_layers_2",
         params_dict=params_dict,
         forget_combinations=forget_combinations,
+        repetitions=2,
     )
 
     for model_training_session in params_combinations:
