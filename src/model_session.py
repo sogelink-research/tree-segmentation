@@ -125,8 +125,8 @@ class DatasetParams:
         if not self.use_chm:
             self.chm_z_layers = None
 
-        if self.agnostic:
-            self.class_names = {0: self.class_names[0]}
+        # if self.agnostic:
+        #     self.class_names = {0: self.class_names[0]}
 
         self.class_indices = {value: key for key, value in self.class_names.items()}
 
@@ -245,8 +245,8 @@ class DatasetParams:
         )
         crop_annots_into_limits(annots_repartition)
         annots_coordinates_to_local(annots_repartition)
-        if self.agnostic:
-            make_annots_agnostic(annots_repartition, self.class_names[0])
+        # if self.agnostic:
+        #     make_annots_agnostic(annots_repartition, self.class_names[0])
 
         # Save cropped annotations
         output_image_prefix = self.image_data.base_name
@@ -543,10 +543,15 @@ class ModelSession:
 
     @RICH_PRINTING.running_message("Loading the model...")
     def _load_model(self) -> AMF_GD_YOLOv8:
+        if self.training_data.dataset_params.agnostic:
+            class_names = {0: self.training_data.dataset_params.class_names[0]}
+        else:
+            class_names = self.training_data.dataset_params.class_names
+
         model = AMF_GD_YOLOv8(
             self.training_data.dataset_params.channels_rgb,
             self.training_data.dataset_params.channels_chm,
-            class_names=self.training_data.dataset_params.class_names,
+            class_names=class_names,
             name=self.model_name,
             parent_folder_path=self.parent_folder_path,
             scale=self.training_data.training_params.model_size,
@@ -560,13 +565,13 @@ class ModelSession:
 
     @RICH_PRINTING.running_message("Loading the dataset...")
     def _load_datasets(self) -> Dict[str, TreeDataset]:
-        if self.training_data.dataset_params.agnostic:
-            only_label = self.training_data.dataset_params.class_names[0]
-            labels_transformation_drop_rgb = {only_label: only_label}
-            labels_transformation_drop_chm = {only_label: only_label}
-        else:
-            labels_transformation_drop_rgb = DatasetConst.LABELS_TRANSFORMATION_DROP_RGB.value
-            labels_transformation_drop_chm = DatasetConst.LABELS_TRANSFORMATION_DROP_CHM.value
+        # if self.training_data.dataset_params.agnostic:
+        #     only_label = self.training_data.dataset_params.class_names[0]
+        #     labels_transformation_drop_rgb = {only_label: only_label}
+        #     labels_transformation_drop_chm = {only_label: only_label}
+        # else:
+        labels_transformation_drop_rgb = DatasetConst.LABELS_TRANSFORMATION_DROP_RGB.value
+        labels_transformation_drop_chm = DatasetConst.LABELS_TRANSFORMATION_DROP_CHM.value
 
         datasets = load_tree_datasets_from_split(
             self.training_data.data_split_file_path,
@@ -576,6 +581,7 @@ class ModelSession:
             proba_drop_chm=self.training_data.training_params.proba_drop_chm,
             labels_transformation_drop_chm=labels_transformation_drop_chm,
             dismissed_classes=[],
+            agnostic=self.training_data.dataset_params.agnostic,
             transform_spatial_training=self.training_data.training_params.transform_spatial_training,
             transform_pixel_rgb_training=self.training_data.training_params.transform_pixel_rgb_training,
             transform_pixel_chm_training=self.training_data.training_params.transform_pixel_chm_training,
@@ -836,6 +842,11 @@ class ModelSession:
         with open(file_path, "rb") as f:
             model_session = pickle.load(f)
             model_session.device = device
+            model_session.training_data.dataset_params.class_names = DatasetConst.CLASS_NAMES.value
+            model_session.training_data.dataset_params.class_indices = {
+                value: key
+                for key, value in model_session.training_data.dataset_params.class_names.items()
+            }
         return model_session
 
     @staticmethod
@@ -920,7 +931,7 @@ def simple_test():
         thresholds_low = np.power(10, np.linspace(-4, -1, 10))
         thresholds_high = np.linspace(0.1, 1.0, 19)
         conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
-        ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
+        ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds, class_names=model.class_names)
 
         # training_metrics.visualize(
         #     intervals=intervals, save_paths=["Simple_Test_training_plot.png"]
@@ -942,6 +953,7 @@ def simple_test():
                 preds=preds,
                 gt_bboxes=gt_bboxes,
                 gt_classes=gt_classes,
+                gt_non_agnostic_classes=gt_classes,
                 gt_indices=gt_indices,
                 image_indices=image_indices,
             )
@@ -957,11 +969,14 @@ def simple_test():
                         conf_threshold=0.1,
                         number_best=40,
                     )
-                    gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
-                        gt_bboxes=gt_bboxes,
-                        gt_classes=gt_classes,
-                        gt_indices=gt_indices,
-                        image_indices=image_indices,
+                    gt_bboxes_per_image, gt_classes_per_image, gt_non_agnostic_classes_per_image = (
+                        convert_ground_truth_from_tensors(
+                            gt_bboxes=gt_bboxes,
+                            gt_classes=gt_classes,
+                            gt_non_agnostic_classes=gt_classes,
+                            gt_indices=gt_indices,
+                            image_indices=image_indices,
+                        )
                     )
 
                     image_rgb_initial_torch = torch.tensor(image_rgb_initial).permute((2, 0, 1))
@@ -994,7 +1009,7 @@ def simple_test():
         for key, value in loss_dict.items():
             training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
 
-        _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
+        _, _, sorted_ap, _, conf_threshold = ap_metrics.get_best_sorted_ap()
         training_metrics.update("Training", "Best sortedAP", sorted_ap, y_axis="sortedAP")
         training_metrics.update(
             "Training",

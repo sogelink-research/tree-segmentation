@@ -30,6 +30,7 @@ def tree_dataset_collate_fn(
     chm_images_list = []
     bboxes = []
     labels = []
+    non_agnostic_labels = []
     indices = []
     image_indices = []
 
@@ -43,6 +44,7 @@ def tree_dataset_collate_fn(
         chm_image = item["image_chm"]
         bbox = item["bboxes"]
         label = item["labels"]
+        non_agnostic_label = item["non_agnostic_labels"]
         image_index = item["image_index"]
 
         if rgb_image is None:
@@ -55,6 +57,7 @@ def tree_dataset_collate_fn(
         chm_images_list.append(chm_image)
         bboxes.append(bbox)
         labels.append(label)
+        non_agnostic_labels.append(non_agnostic_label)
         indices.extend([i] * bbox.shape[0])  # type: ignore
         image_indices.append(image_index)
 
@@ -73,6 +76,7 @@ def tree_dataset_collate_fn(
 
     bboxes = torch.cat(bboxes)
     labels = torch.cat(labels)
+    non_agnostic_labels = torch.cat(non_agnostic_labels)
     indices = torch.tensor(indices)
     image_indices = torch.tensor(image_indices)
 
@@ -81,6 +85,7 @@ def tree_dataset_collate_fn(
         "image_chm": chm_images,
         "bboxes": bboxes,
         "labels": labels,
+        "non_agnostic_labels": non_agnostic_labels,
         "indices": indices,
         "image_indices": image_indices,
     }
@@ -91,54 +96,60 @@ def tree_dataset_collate_fn(
 def convert_ground_truth_from_tensors(
     gt_bboxes: torch.Tensor,
     gt_classes: torch.Tensor,
+    gt_non_agnostic_classes: torch.Tensor,
     gt_indices: torch.Tensor,
     image_indices: torch.Tensor,
-) -> Tuple[List[List[Box]], List[List[int]]]:
+) -> Tuple[List[List[Box]], List[List[int]], List[List[int]]]:
     """Extracts the ground truth components from the outputs of a TreeDataLoader.
 
     Args:
         gt_bboxes (torch.Tensor): data["bboxes"] from TreeDataLoader
         gt_classes (torch.Tensor): data["labels"] from TreeDataLoader
+        gt_non_agnostic_classes (torch.Tensor): data["non_agnostic_labels"] from TreeDataLoader
         gt_indices (torch.Tensor): data["indices"] from TreeDataLoader
         image_indices (torch.Tensor): data["image_indices"] from TreeDataLoader
 
     Returns:
-        Tuple[List[List[Box]], List[List[int]]]: (gt_bboxes, gt_classes) where each list
-        inside the main list corresponds to one image.
+        Tuple[List[List[Box]], List[List[int]], List[List[int]]]: (gt_bboxes, gt_classes,
+        gt_non_agnostic_classes) where each list inside the main list corresponds to one image.
     """
     number_images = image_indices.shape[0]
 
     bboxes: List[List[Box]] = [[] for _ in range(number_images)]
     classes: List[List[int]] = [[] for _ in range(number_images)]
+    non_agnostic_classes: List[List[int]] = [[] for _ in range(number_images)]
 
     for i in range(number_images):
         mask = gt_indices == i
         bboxes[i] = list(map(Box.from_list, gt_bboxes[mask].tolist()))
         classes[i] = gt_classes[mask].tolist()
+        non_agnostic_classes[i] = gt_non_agnostic_classes[mask].tolist()
 
-    return bboxes, classes
+    return bboxes, classes, non_agnostic_classes
 
 
 def extract_ground_truth_from_dataloader(
     data: Dict[str, torch.Tensor],
-) -> Tuple[List[List[Box]], List[List[int]]]:
+) -> Tuple[List[List[Box]], List[List[int]], List[List[int]]]:
     """Extracts the ground truth components given the output of a TreeDataLoader.
 
     Args:
         data (Dict[str, torch.Tensor]): batch output of a TreeDataLoader.
 
     Returns:
-        Tuple[List[List[Box]], List[List[int]]]: (gt_bboxes, gt_classes) where each list
-        inside the main list corresponds to one image.
+        Tuple[List[List[Box]], List[List[int]], List[List[int]]]: (gt_bboxes, gt_classes,
+        gt_non_agnostic_classes) where each list inside the main list corresponds to one image.
     """
     gt_bboxes: torch.Tensor = data["bboxes"]
     gt_classes: torch.Tensor = data["labels"]
+    gt_non_agnostic_classes: torch.Tensor = data["non_agnostic_labels"]
     gt_indices: torch.Tensor = data["indices"]
     image_indices: torch.Tensor = data["image_indices"]
 
     return convert_ground_truth_from_tensors(
         gt_bboxes=gt_bboxes,
         gt_classes=gt_classes,
+        gt_non_agnostic_classes=gt_non_agnostic_classes,
         gt_indices=gt_indices,
         image_indices=image_indices,
     )

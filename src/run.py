@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import torch
 
+from dataset_constants import DatasetConst
 from layers import AMF_GD_YOLOv8
 from model_session import (
     DatasetParams,
@@ -155,10 +156,22 @@ class ModelTrainingSession(ModelSession):
             json.dump(params_to_save, fp, cls=FullJsonEncoder, sort_keys=True, indent=4)
 
     @staticmethod
-    def from_pickle(file_path: str, device: torch.device) -> ModelTrainingSession:
+    def from_pickle(
+        file_path: str, parent_folder_path: str, model_name: str, device: torch.device
+    ) -> ModelTrainingSession:
         with open(file_path, "rb") as f:
             model_session: ModelTrainingSession = pickle.load(f)
             model_session.device = device
+            RICH_PRINTING.print(f"{model_session.training_data.dataset_params.class_names = }")
+            RICH_PRINTING.print(f"{model_session.folder_path = }")
+            model_session.training_data.dataset_params.class_names = DatasetConst.CLASS_NAMES.value
+            model_session.training_data.dataset_params.class_indices = {
+                value: key
+                for key, value in model_session.training_data.dataset_params.class_names.items()
+            }
+            model_session.parent_folder_path = parent_folder_path
+            model_session.model_name = model_name
+            model_session._save_pickle()
         return model_session
 
     @staticmethod
@@ -174,7 +187,7 @@ class ModelTrainingSession(ModelSession):
         file_path = ModelTrainingSession.get_pickle_path(
             parent_folder_path=parent_folder_path, model_name=model_name
         )
-        return ModelTrainingSession.from_pickle(file_path, device)
+        return ModelTrainingSession.from_pickle(file_path, parent_folder_path, model_name, device)
 
     # def update(self, experiment_name: str) -> None:
     #     old_model_name = self.model_name
@@ -346,9 +359,15 @@ def main():
         repetitions=2,
     )
 
-    for model_training_session in params_combinations:
-        # Training session
-        model_training_session.train()
+    # for model_training_session in params_combinations:
+    #     # Training session
+    #     model_training_session.train()
+
+    model_training_session = ModelTrainingSession.from_name(
+        parent_folder_path=Folders.MODELS_AMF_GD_YOLOV8.value,
+        model_name="exp4_dcb038e1ddd5467c8bf4dca575396e6e",
+    )
+    model_training_session.compute_metrics()
 
     # experiment_name = "training_params_experiment"
     # parent_folder_path = os.path.join(Folders.MODELS_EXPERIMENTS.value, experiment_name)

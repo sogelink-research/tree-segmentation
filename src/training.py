@@ -255,7 +255,11 @@ def train(
         thresholds_low = np.power(10, np.linspace(-4, -1, 10))
         thresholds_high = np.linspace(0.1, 1.0, 19)
         conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
-        ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
+        ap_metrics = AP_Metrics(
+            conf_threshold_list=conf_thresholds,
+            class_names=train_loader.dataset.labels_to_str,
+            agnostic=train_loader.dataset.agnostic,
+        )
 
     model.train()
     stream = RICH_PRINTING.pbar(
@@ -286,11 +290,13 @@ def train(
         with torch.no_grad():
             if compute_ap:
                 preds = model.preds_from_output(output)
+                gt_non_agnostic_classes: torch.Tensor = data["non_agnostic_labels"]
                 ap_metrics.add_preds(
                     model=model,
                     preds=preds,
                     gt_bboxes=gt_bboxes,
                     gt_classes=gt_classes,
+                    gt_non_agnostic_classes=gt_non_agnostic_classes,
                     gt_indices=gt_indices,
                     image_indices=image_indices,
                 )
@@ -315,7 +321,7 @@ def train(
             training_metrics.update("Training", key, value.item(), count=batch_size, y_axis="Loss")
 
     if compute_ap:
-        _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
+        _, _, sorted_ap, _, conf_threshold = ap_metrics.get_best_sorted_ap()
         training_metrics.update("Training", "Best sortedAP", sorted_ap, y_axis="sortedAP")
         training_metrics.update(
             "Training", "Conf thres of sortedAP", conf_threshold, y_axis="Conf threshold"
@@ -338,7 +344,11 @@ def validate(
         thresholds_low = np.power(10, np.linspace(-4, -1, 10))
         thresholds_high = np.linspace(0.1, 1.0, 19)
         conf_thresholds = np.hstack((thresholds_low, thresholds_high)).tolist()
-        ap_metrics = AP_Metrics(conf_threshold_list=conf_thresholds)
+        ap_metrics = AP_Metrics(
+            conf_threshold_list=conf_thresholds,
+            class_names=val_loader.dataset.labels_to_str,
+            agnostic=val_loader.dataset.agnostic,
+        )
 
     model.eval()
     stream = RICH_PRINTING.pbar(val_loader, len(val_loader), leave=False, description="Validation")
@@ -380,17 +390,19 @@ def validate(
             # Model evaluations:
             if compute_ap:
                 preds = model.preds_from_output(output)
+                gt_non_agnostic_classes: torch.Tensor = data["non_agnostic_labels"]
                 ap_metrics.add_preds(
                     model=model,
                     preds=preds,
                     gt_bboxes=gt_bboxes,
                     gt_classes=gt_classes,
+                    gt_non_agnostic_classes=gt_non_agnostic_classes,
                     gt_indices=gt_indices,
                     image_indices=image_indices,
                 )
 
     if compute_ap:
-        _, _, sorted_ap, conf_threshold = ap_metrics.get_best_sorted_ap()
+        _, _, sorted_ap, _, conf_threshold = ap_metrics.get_best_sorted_ap()
         training_metrics.update("Validation", "Best sortedAP", sorted_ap, y_axis="sortedAP")
         training_metrics.update(
             "Validation", "Conf thres of sortedAP", conf_threshold, y_axis="Conf threshold"
@@ -492,7 +504,11 @@ def evaluate_model(
 
     ap_conf_thresholds = [] if ap_conf_thresholds is None else ap_conf_thresholds
     # AP metrics
-    ap_metrics = AP_Metrics(conf_threshold_list=ap_conf_thresholds)
+    ap_metrics = AP_Metrics(
+        conf_threshold_list=ap_conf_thresholds,
+        class_names=data_loader.dataset.labels_to_str,
+        agnostic=data_loader.dataset.agnostic,
+    )
 
     if output_geojson_save_path is not None:
         geojson_outputs: List[geojson.FeatureCollection] = []
@@ -542,11 +558,13 @@ def evaluate_model(
 
             # Compute the AP metrics
             if ap_conf_thresholds is not None:
+                gt_non_agnostic_classes: torch.Tensor = data["non_agnostic_labels"]
                 ap_metrics.add_preds(
                     model=model,
                     preds=preds,
                     gt_bboxes=gt_bboxes,
                     gt_classes=gt_classes,
+                    gt_non_agnostic_classes=gt_non_agnostic_classes,
                     gt_indices=gt_indices,
                     image_indices=image_indices,
                 )

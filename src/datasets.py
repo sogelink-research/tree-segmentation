@@ -488,6 +488,7 @@ class TreeDataset(Dataset):
         proba_drop_rgb: float = 0.0,
         proba_drop_chm: float = 0.0,
         dismissed_classes: List[str] = [],
+        agnostic: bool = False,
         transform_spatial: A.Compose | None = None,
         transform_pixel_rgb: A.Compose | None = None,
         transform_pixel_chm: A.Compose | None = None,
@@ -512,6 +513,8 @@ class TreeDataset(Dataset):
             tensor of zeros. Default to 0.0.
             dismissed_classes (List[str], optional): list of classes for which the bounding boxes
             are ignored. Defaults to [].
+            agnostic (bool, optional): whether the dataset should return agnostic labels by default.
+            Defaults to False.
             transform_spatial (Callable | None, optional): spatial augmentations applied to CHM and
             RGB images. Defaults to None.
             transform_pixel_rgb (Callable | None, optional): pixel augmentations applied to RGB
@@ -548,6 +551,7 @@ class TreeDataset(Dataset):
 
         self.labels_to_index = labels_to_index
         self.labels_to_str = {value: key for key, value in self.labels_to_index.items()}
+        self.agnostic = agnostic
 
         self.proba_drop_rgb = proba_drop_rgb
         self.labels_transformation_drop_rgb = labels_transformation_drop_rgb
@@ -662,7 +666,9 @@ class TreeDataset(Dataset):
                 labels.pop(idx)
         return image_rgb, image_chm, bboxes, labels
 
-    def get_not_normalized(self, idx: int) -> Dict[str, torch.Tensor]:
+    def get_not_normalized(
+        self, idx: int, agnostic: Optional[bool] = None
+    ) -> Dict[str, torch.Tensor]:
         # Read the images
         files_paths = self.files_paths_list[idx]
         if self.use_rgb_cir:
@@ -713,6 +719,12 @@ class TreeDataset(Dataset):
             image_rgb, image_chm, bboxes, labels
         )
 
+        # Make labels agnostic if necessary
+        agnostic = self.agnostic if agnostic is None else agnostic
+        non_agnostic_labels = labels
+        if agnostic:
+            labels = [0] * len(labels)
+
         to_tensor = Atorch.ToTensorV2()
         image_rgb_tensor = (
             to_tensor(image=image_rgb)["image"].to(torch.float32) if image_rgb is not None else None
@@ -726,12 +738,13 @@ class TreeDataset(Dataset):
             "image_chm": image_chm_tensor,
             "bboxes": torch.tensor(bboxes).to(torch.float32),
             "labels": torch.tensor(labels),
+            "non_agnostic_labels": torch.tensor(non_agnostic_labels),
             "image_index": idx,
         }
         return sample
 
-    def __getitem__(self, idx: int):
-        sample = self.get_not_normalized(idx)
+    def __getitem__(self, idx: int, agnostic: Optional[bool] = None):
+        sample = self.get_not_normalized(idx, agnostic)
         return sample
 
     def get_rgb_image(self, idx: int) -> np.ndarray | None:
@@ -987,6 +1000,7 @@ def load_tree_datasets_from_split(
     proba_drop_rgb: float = 0.0,
     proba_drop_chm: float = 0.0,
     dismissed_classes: List[str] = [],
+    agnostic: bool = False,
     no_data_new_value: float = -5.0,
 ) -> Dict[str, TreeDataset]:
     with open(data_split_file_path, "r") as f:
@@ -1001,6 +1015,7 @@ def load_tree_datasets_from_split(
         proba_drop_chm=proba_drop_chm,
         labels_transformation_drop_chm=labels_transformation_drop_chm,
         dismissed_classes=dismissed_classes,
+        agnostic=agnostic,
         transform_spatial=transform_spatial_training,
         transform_pixel_rgb=transform_pixel_rgb_training,
         transform_pixel_chm=transform_pixel_chm_training,
@@ -1015,6 +1030,7 @@ def load_tree_datasets_from_split(
         proba_drop_chm=0.0,
         labels_transformation_drop_chm=labels_transformation_drop_chm,
         dismissed_classes=dismissed_classes,
+        agnostic=agnostic,
         transform_spatial=None,
         transform_pixel_rgb=None,
         transform_pixel_chm=None,
@@ -1034,6 +1050,7 @@ def load_tree_datasets_from_split(
         proba_drop_chm=0.0,
         labels_transformation_drop_chm=labels_transformation_drop_chm,
         dismissed_classes=dismissed_classes,
+        agnostic=agnostic,
         transform_spatial=None,
         transform_pixel_rgb=None,
         transform_pixel_chm=None,

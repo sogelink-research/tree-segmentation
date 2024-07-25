@@ -598,7 +598,7 @@ class AMF_GD_YOLOv8(nn.Module):
 
     @staticmethod
     def get_folder_path_from_name(parent_folder_path: str, model_name: str) -> str:
-        model_folder_path = os.path.join(parent_folder_path, f"{model_name}")
+        model_folder_path = os.path.join(parent_folder_path, model_name)
         return model_folder_path
 
     @staticmethod

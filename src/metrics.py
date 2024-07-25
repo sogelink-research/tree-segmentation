@@ -44,7 +44,7 @@ def hungarian_algorithm(
 
     # Extract pairs of indices where matches were found
     matched_pairs = [
-        ((pred, gt), float(1 - cost_matrix[pred, gt]), pred_labels[pred])
+        ((pred, gt), float(1 - cost_matrix[pred, gt]), gt_labels[gt])
         for pred, gt in zip(pred_ind, gt_ind)
         if pred < pred_len and gt < gt_len and cost_matrix[pred, gt] != max_cost
     ]
@@ -92,7 +92,21 @@ def compute_sorted_ap(
     matched_pairs: List[Match],
     unmatched_pred: List[Tuple[int, str]],
     unmatched_gt: List[Tuple[int, str]],
-) -> Tuple[List[float], List[float], float]:
+) -> Tuple[List[float], List[float], float, Tuple[int, int]]:
+    """_summary_
+
+    Args:
+        matched_pairs (List[Match]): _description_
+        unmatched_pred (List[Tuple[int, str]]): _description_
+        unmatched_gt (List[Tuple[int, str]]): _description_
+
+    Returns:
+        Tuple[List[float], List[float], float, Tuple[int, int]]:
+        - The IoU values of the matched pairs, in increasing order
+        - The corresponding AP values
+        - The final sortedAP value
+        - The number of predicted and ground-truth boxes
+    """
     matched_pairs.sort(key=lambda t: t[1])
     sorted_ious = list(map(lambda t: t[1], matched_pairs))
 
@@ -102,24 +116,25 @@ def compute_sorted_ap(
     fn0 = len(unmatched_gt)
 
     if tp0 == 0:
-        return [], [], 0.0
+        return [], [], 0.0, (tp0 + fp0, tp0 + fn0)
     aps = [(tp0) / (p + fn0)]
     sorted_ap = sorted_ious[0] * aps[0]
     for k in range(1, tp0):
         aps.append((tp0 - k) / (p + fn0 + k))
         sorted_ap += 0.5 * (sorted_ious[k] - sorted_ious[k - 1]) * (aps[k] + aps[k - 1])
-    return sorted_ious, aps, sorted_ap
+    return sorted_ious, aps, sorted_ap, (tp0 + fp0, tp0 + fn0)
 
 
 def compute_sorted_ap_per_label(
     matched_pairs: List[Match],
     unmatched_preds: List[Tuple[int, str]],
     unmatched_gts: List[Tuple[int, str]],
-) -> Dict[str, Tuple[List[float], List[float], float]]:
+    class_names: Dict[int, str],
+) -> Dict[str, Tuple[List[float], List[float], float, Tuple[int, int]]]:
 
-    grouped_matched_pairs = defaultdict(list)
-    grouped_unmatched_preds = defaultdict(list)
-    grouped_unmatched_gts = defaultdict(list)
+    grouped_matched_pairs = {label: [] for label in class_names.values()}
+    grouped_unmatched_preds = {label: [] for label in class_names.values()}
+    grouped_unmatched_gts = {label: [] for label in class_names.values()}
 
     for matched_pair in matched_pairs:
         label = matched_pair[2]
@@ -133,13 +148,8 @@ def compute_sorted_ap_per_label(
         label = unmatched_gt[1]
         grouped_unmatched_gts[label].append(unmatched_gt)
 
-    all_labels = set()
-    all_labels.update(grouped_matched_pairs.keys())
-    all_labels.update(grouped_unmatched_preds.keys())
-    all_labels.update(grouped_unmatched_gts.keys())
-
     results = {}
-    for label in all_labels:
+    for label in class_names.values():
         matched_pairs_temp = grouped_matched_pairs[label]
         unmatched_preds_temp = grouped_unmatched_preds[label]
         unmatched_gts_temp = grouped_unmatched_gts[label]
@@ -156,53 +166,61 @@ def compute_sorted_ap_confs(
     matched_pairs_list: List[List[Match]],
     unmatched_preds_list: List[List[Tuple[int, str]]],
     unmatched_gts_list: List[List[Tuple[int, str]]],
-) -> Tuple[List[List[float]], List[List[float]], List[float]]:
+) -> Tuple[List[List[float]], List[List[float]], List[float], List[Tuple[int, int]]]:
 
     sorted_ious_list: List[List[float]] = []
     aps_list: List[List[float]] = []
     sorted_ap_list: List[float] = []
+    boxes_len_list: List[Tuple[int, int]] = []
 
     for matched_pairs, unmatched_preds, unmatched_gts in zip(
         matched_pairs_list, unmatched_preds_list, unmatched_gts_list
     ):
-        sorted_ious, aps, sorted_ap = compute_sorted_ap(
+        sorted_ious, aps, sorted_ap, boxes_len = compute_sorted_ap(
             matched_pairs, unmatched_preds, unmatched_gts
         )
         sorted_ious_list.append(sorted_ious)
         aps_list.append(aps)
         sorted_ap_list.append(sorted_ap)
+        boxes_len_list.append(boxes_len)
 
-    return sorted_ious_list, aps_list, sorted_ap_list
+    return sorted_ious_list, aps_list, sorted_ap_list, boxes_len_list
 
 
 def compute_sorted_ap_confs_per_label(
     matched_pairs_list: List[List[Match]],
     unmatched_preds_list: List[List[Tuple[int, str]]],
     unmatched_gts_list: List[List[Tuple[int, str]]],
-) -> Dict[str, Tuple[List[List[float]], List[List[float]], List[float]]]:
+    class_names: Dict[int, str],
+) -> Dict[str, Tuple[List[List[float]], List[List[float]], List[float], List[Tuple[int, int]]]]:
 
     sorted_ious_list_dict: Dict[str, List[List[float]]] = defaultdict(list)
     aps_list_dict: Dict[str, List[List[float]]] = defaultdict(list)
     sorted_ap_list_dict: Dict[str, List[float]] = defaultdict(list)
+    boxes_len_list_dict: Dict[str, List[Tuple[int, int]]] = defaultdict(list)
 
     for matched_pairs, unmatched_preds, unmatched_gts in zip(
         matched_pairs_list, unmatched_preds_list, unmatched_gts_list
     ):
         sorted_ap_per_label = compute_sorted_ap_per_label(
-            matched_pairs, unmatched_preds, unmatched_gts
+            matched_pairs, unmatched_preds, unmatched_gts, class_names=class_names
         )
-        for label, (sorted_ious, aps, sorted_ap) in sorted_ap_per_label.items():
+        for label, (sorted_ious, aps, sorted_ap, boxes_len) in sorted_ap_per_label.items():
             sorted_ious_list_dict[label].append(sorted_ious)
             aps_list_dict[label].append(aps)
             sorted_ap_list_dict[label].append(sorted_ap)
+            boxes_len_list_dict[label].append(boxes_len)
 
-    results = {}
+    results: Dict[
+        str, Tuple[List[List[float]], List[List[float]], List[float], List[Tuple[int, int]]]
+    ] = {}
     for label in sorted_ap_per_label.keys():
         sorted_ious_list = sorted_ious_list_dict[label]
         aps_list = aps_list_dict[label]
         sorted_ap_list = sorted_ap_list_dict[label]
+        boxes_len_list = boxes_len_list_dict[label]
 
-        results[label] = (sorted_ious_list, aps_list, sorted_ap_list)
+        results[label] = (sorted_ious_list, aps_list, sorted_ap_list, boxes_len_list)
 
     return results
 
@@ -211,6 +229,7 @@ def plot_ap_iou(
     sorted_ious_list: List[List[float]],
     aps_list: List[List[float]],
     sorted_ap_list: List[float],
+    boxes_len_list: List[Tuple[int, int]],
     conf_threshold_list: List[float],
     legend_list: List[str],
     title: Optional[str] = None,
@@ -219,8 +238,8 @@ def plot_ap_iou(
 ):
     plt.figure(figsize=(10, 6))
 
-    for sorted_ious, aps, sorted_ap, legend, conf_threshold in zip(
-        sorted_ious_list, aps_list, sorted_ap_list, legend_list, conf_threshold_list
+    for sorted_ious, aps, sorted_ap, legend, boxes_len, conf_threshold in zip(
+        sorted_ious_list, aps_list, sorted_ap_list, legend_list, boxes_len_list, conf_threshold_list
     ):
         x = [0.0]
         y = [aps[0] if len(aps) > 0 else 0.0]
@@ -232,11 +251,12 @@ def plot_ap_iou(
         plt.plot(
             x,
             y,
-            label=f"{legend}\n- conf_threshold = {round(conf_threshold, 5)}\n- sortedAP = {round(sorted_ap, 4)}",
+            label=f"{legend}\n- Confidence thresh. = {round(conf_threshold, 5)}\n- sortedAP = {round(sorted_ap, 4)}\n- Boxes (pred., gt) = {boxes_len}",
         )
-        plt.grid(alpha=0.5)
-        plt.xlabel("IoU")
-        plt.ylabel("AP")
+
+    plt.grid(alpha=0.5)
+    plt.xlabel("IoU")
+    plt.ylabel("AP")
 
     title = "Sorted AP curve" if title is None else title
     plt.title(title)
@@ -272,9 +292,10 @@ def plot_sap_conf(
         y = sorted_ap
 
         plt.plot(x, y, label=f"{legend}")
-        plt.grid(alpha=0.5)
-        plt.xlabel("Confidence threshold")
-        plt.ylabel("Sorted AP")
+
+    plt.grid(alpha=0.5)
+    plt.xlabel("Confidence threshold")
+    plt.ylabel("Sorted AP")
 
     title = "Sorted AP w.r.t the confidence threshold" if title is None else title
     plt.title(title)
@@ -294,8 +315,11 @@ def plot_sap_conf(
 
 
 class AP_Metrics:
-    def __init__(self, conf_threshold_list: List[float], agnostic: bool = False) -> None:
+    def __init__(
+        self, conf_threshold_list: List[float], class_names: Dict[int, str], agnostic: bool = False
+    ) -> None:
         self.conf_threshold_list = conf_threshold_list
+        self.class_names = class_names
         self.agnostic = agnostic
 
         self.reset()
@@ -318,6 +342,7 @@ class AP_Metrics:
         preds: torch.Tensor,
         gt_bboxes: torch.Tensor,
         gt_classes: torch.Tensor,
+        gt_non_agnostic_classes: torch.Tensor,
         gt_indices: torch.Tensor,
         image_indices: torch.Tensor,
     ) -> None:
@@ -327,11 +352,14 @@ class AP_Metrics:
             preds, conf_threshold=lowest_conf_threshold
         )
 
-        gt_bboxes_per_image, gt_classes_per_image = convert_ground_truth_from_tensors(
-            gt_bboxes=gt_bboxes,
-            gt_classes=gt_classes,
-            gt_indices=gt_indices,
-            image_indices=image_indices,
+        gt_bboxes_per_image, gt_classes_per_image, gt_non_agnostic_classes_per_image = (
+            convert_ground_truth_from_tensors(
+                gt_bboxes=gt_bboxes,
+                gt_classes=gt_classes,
+                gt_non_agnostic_classes=gt_non_agnostic_classes,
+                gt_indices=gt_indices,
+                image_indices=image_indices,
+            )
         )
 
         # Compute the matchings for each individual image
@@ -341,10 +369,10 @@ class AP_Metrics:
             scores_list,
             classes_as_ints_list,
             gt_bboxes_per_image,
-            gt_classes_per_image,
+            gt_non_agnostic_classes_per_image,
         ):
-            classes_as_strs = [model.class_names[i] for i in classes_as_ints]
-            gt_classes_list_as_strs = [model.class_names[i] for i in gt_classes_list]
+            classes_as_strs = [self.class_names[i] for i in classes_as_ints]
+            gt_classes_list_as_strs = [self.class_names[i] for i in gt_classes_list]
             matched_pairs_temp, unmatched_pred_temp, unmatched_gt_temp = hungarian_algorithm_confs(
                 pred_bboxes=bboxes,
                 pred_labels=classes_as_strs,
@@ -365,25 +393,30 @@ class AP_Metrics:
 
     def compute_sorted_ap(self, per_label: bool = False) -> None:
         if not per_label and not self.sorted_ap_updated:
-            self.sorted_ious_list, self.aps_list, self.sorted_ap_list = compute_sorted_ap_confs(
-                self.matched_pairs, self.unmatched_pred, self.unmatched_gt
+            self.sorted_ious_list, self.aps_list, self.sorted_ap_list, self.boxes_len_list = (
+                compute_sorted_ap_confs(self.matched_pairs, self.unmatched_pred, self.unmatched_gt)
             )
             self.sorted_ap_updated = True
 
         elif per_label and not self.sorted_ap_per_label_updated:
             self.sorted_ap_per_label_dict = compute_sorted_ap_confs_per_label(
-                self.matched_pairs, self.unmatched_pred, self.unmatched_gt
+                self.matched_pairs,
+                self.unmatched_pred,
+                self.unmatched_gt,
+                class_names=self.class_names,
             )
 
             self.sorted_ap_per_label_updated = True
 
     def get_sorted_aps(
         self,
-    ) -> Tuple[List[List[float]], List[List[float]], List[float], List[float]]:
+    ) -> Tuple[
+        List[List[float]], List[List[float]], List[float], List[Tuple[int, int]], List[float]
+    ]:
         """Returns the data of the sortedAP for all the confidence thresholds given to the class.
 
         Returns:
-            Tuple[List[List[float]], List[List[float]], List[float], List[float]]:
+            Tuple[List[List[float]], List[List[float]], List[float], List[Tuple[int, int]], List[float]]:
             (sorted_ious_list, aps_list, sorted_ap_list, conf_threshold_list) where the first
             dimension of each list corresponds to one confidence threshold value:
             - sorted_ious_list contains the lists of IoUs between the matched pairs, in increasing
@@ -392,23 +425,31 @@ class AP_Metrics:
             sorted_ious_list.
             - sorted_ap_list contains the sortedAP metrics (the integral of aps w.r.t.
             sorted_ious).
+            - boxes_len_list contains the total number of boxes.
             - conf_threshold_list contains the model confidence thresholds used to compute the
             metrics above.
         """
         self.compute_sorted_ap()
-        return self.sorted_ious_list, self.aps_list, self.sorted_ap_list, self.conf_threshold_list
+        return (
+            self.sorted_ious_list,
+            self.aps_list,
+            self.sorted_ap_list,
+            self.boxes_len_list,
+            self.conf_threshold_list,
+        )
 
-    def get_best_sorted_ap(self) -> Tuple[List[float], List[float], float, float]:
+    def get_best_sorted_ap(self) -> Tuple[List[float], List[float], float, Tuple[int, int], float]:
         """Returns the best sortedAP among those computed with the confidence thresholds given to
         the class. The methods also outputs the values of the AP/IoU curve and the corresponding
         threshold.
 
         Returns:
-            Tuple[List[float], List[float], float, float]: (sorted_ious, aps, sorted_ap,
-            conf_threshold) where:
+            Tuple[List[float], List[float], float, Tuple[int, int], float]: (sorted_ious, aps,
+            sorted_ap, boxes_len, conf_threshold) where:
             - sorted_ious is the list of IoUs between the matched pairs, in increasing order.
             - aps is the list of AP scores corresponding to the IoUs in sorted_ious.
             - sorted_ap is the sortedAP metrics (the integral of aps w.r.t. sorted_ious).
+            - boxes_len is the total number of boxes.
             - conf_threshold is the corresponding model confidence threshold.
         """
         self.compute_sorted_ap()
@@ -416,33 +457,38 @@ class AP_Metrics:
         best_sorted_ious = self.sorted_ious_list[best_index]
         best_aps = self.aps_list[best_index]
         best_sorted_ap = self.sorted_ap_list[best_index]
+        best_boxes_len = self.boxes_len_list[best_index]
         best_conf_threshold = self.conf_threshold_list[best_index]
-        return best_sorted_ious, best_aps, best_sorted_ap, best_conf_threshold
+        return best_sorted_ious, best_aps, best_sorted_ap, best_boxes_len, best_conf_threshold
 
     def get_sorted_aps_per_label(
         self,
-    ) -> Dict[str, Tuple[List[List[float]], List[List[float]], List[float]]]:
+    ) -> Dict[str, Tuple[List[List[float]], List[List[float]], List[float], List[Tuple[int, int]]]]:
         self.compute_sorted_ap(per_label=True)
         return self.sorted_ap_per_label_dict
 
     def get_best_sorted_ap_per_label(
         self,
-    ) -> Dict[str, Tuple[List[float], List[float], float, float]]:
+    ) -> Dict[str, Tuple[List[float], List[float], float, Tuple[int, int], float]]:
         self.compute_sorted_ap(per_label=True)
-        best_sorted_ap_dict = {}
+        best_sorted_ap_dict: Dict[
+            str, Tuple[List[float], List[float], float, Tuple[int, int], float]
+        ] = {}
         for label, sorted_ap_elems in self.sorted_ap_per_label_dict.items():
-            sorted_ious_list, aps_list, sorted_ap_list = sorted_ap_elems
+            sorted_ious_list, aps_list, sorted_ap_list, boxes_len_list = sorted_ap_elems
 
             best_index = sorted_ap_list.index(max(sorted_ap_list))
             best_sorted_ious = sorted_ious_list[best_index]
             best_aps = aps_list[best_index]
             best_sorted_ap = sorted_ap_list[best_index]
+            best_boxes_len = boxes_len_list[best_index]
             best_conf_threshold = self.conf_threshold_list[best_index]
 
             best_sorted_ap_dict[label] = (
                 best_sorted_ious,
                 best_aps,
                 best_sorted_ap,
+                best_boxes_len,
                 best_conf_threshold,
             )
 
@@ -452,6 +498,7 @@ class AP_Metrics:
         best_sorted_ious_list = []
         best_aps_list = []
         best_sorted_ap_list = []
+        best_boxes_len_list = []
         best_conf_threshold_list = []
         legend_list = []
 
@@ -461,18 +508,21 @@ class AP_Metrics:
             best_sorted_ious,
             best_aps,
             best_sorted_ap,
+            best_boxes_len,
             best_conf_threshold,
         ) in best_sorted_ap_dict.items():
             legend_list.append(label)
             best_sorted_ious_list.append(best_sorted_ious)
             best_aps_list.append(best_aps)
             best_sorted_ap_list.append(best_sorted_ap)
+            best_boxes_len_list.append(best_boxes_len)
             best_conf_threshold_list.append(best_conf_threshold)
 
         plot_ap_iou(
             sorted_ious_list=best_sorted_ious_list,
             aps_list=best_aps_list,
             sorted_ap_list=best_sorted_ap_list,
+            boxes_len_list=best_boxes_len_list,
             conf_threshold_list=best_conf_threshold_list,
             legend_list=legend_list,
             title=title,
@@ -486,11 +536,16 @@ class AP_Metrics:
 
         sorted_aps_per_label_dict = self.get_sorted_aps_per_label()
 
+        print(f"{self.conf_threshold_list = }")
+
         for label, (
             sorted_ious_list,
             aps_list,
             sorted_ap_list,
+            boxes_len_list,
         ) in sorted_aps_per_label_dict.items():
+            print(f"{label = }")
+            print(f"{sorted_ap_list = }")
             sorted_ap_lists.append(sorted_ap_list)
             conf_threshold_lists.append(self.conf_threshold_list)
             legend_list.append(label)
@@ -532,21 +587,24 @@ class AP_Metrics_List:
         best_sorted_ious_list = []
         best_aps_list = []
         best_sorted_ap_list = []
+        best_boxes_len_list = []
         best_conf_threshold_list = []
 
         for ap_metrics in self.ap_metrics_list:
-            best_sorted_ious, best_aps, best_sorted_ap, best_conf_threshold = (
+            best_sorted_ious, best_aps, best_sorted_ap, best_boxes_len, best_conf_threshold = (
                 ap_metrics.get_best_sorted_ap()
             )
             best_sorted_ious_list.append(best_sorted_ious)
             best_aps_list.append(best_aps)
             best_sorted_ap_list.append(best_sorted_ap)
+            best_boxes_len_list.append(best_boxes_len)
             best_conf_threshold_list.append(best_conf_threshold)
 
         plot_ap_iou(
             sorted_ious_list=best_sorted_ious_list,
             aps_list=best_aps_list,
             sorted_ap_list=best_sorted_ap_list,
+            boxes_len_list=best_boxes_len_list,
             conf_threshold_list=best_conf_threshold_list,
             legend_list=self.legend_list,
             title=title,
@@ -574,26 +632,30 @@ class AP_Metrics_List:
         best_sorted_ious_list = []
         best_aps_list = []
         best_sorted_ap_list = []
+        best_boxes_len_list = []
         best_conf_threshold_list = []
 
         sorted_ious_lists = []
         aps_lists = []
         sorted_ap_lists = []
+        boxes_len_lists = []
         conf_threshold_lists = []
 
         for ap_metrics in self.ap_metrics_list:
-            best_sorted_ious, best_aps, best_sorted_ap, best_conf_threshold = (
+            best_sorted_ious, best_aps, best_sorted_ap, best_boxes_len, best_conf_threshold = (
                 ap_metrics.get_best_sorted_ap()
             )
             best_sorted_ious_list.append(best_sorted_ious)
             best_aps_list.append(best_aps)
             best_sorted_ap_list.append(best_sorted_ap)
+            best_boxes_len_list.append(best_boxes_len)
             best_conf_threshold_list.append(best_conf_threshold)
 
             ap_metrics.compute_sorted_ap()
             sorted_ious_lists.append(ap_metrics.sorted_ious_list)
             aps_lists.append(ap_metrics.aps_list)
             sorted_ap_lists.append(ap_metrics.sorted_ap_list)
+            boxes_len_lists.append(ap_metrics.boxes_len_list)
             conf_threshold_lists.append(ap_metrics.conf_threshold_list)
 
         results = {
