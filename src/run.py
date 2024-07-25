@@ -363,11 +363,11 @@ def main():
     #     # Training session
     #     model_training_session.train()
 
-    model_training_session = ModelTrainingSession.from_name(
-        parent_folder_path=Folders.MODELS_AMF_GD_YOLOV8.value,
-        model_name="exp4_dcb038e1ddd5467c8bf4dca575396e6e",
-    )
-    model_training_session.compute_metrics()
+    models_folder = os.path.join(Folders.MODELS.value, "chm_z_layers_2")
+    model_names = os.listdir(models_folder)
+    for model_name in model_names:
+        model_training_session = ModelTrainingSession.from_name(models_folder, model_name)
+        model_training_session.compute_metrics()
 
     # experiment_name = "training_params_experiment"
     # parent_folder_path = os.path.join(Folders.MODELS_EXPERIMENTS.value, experiment_name)
