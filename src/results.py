@@ -231,7 +231,7 @@ def all_values_same(column):
     return column.nunique() == 1
 
 
-experiment_name = "chm_z_layers"
+experiment_name = "chm_z_layers_2"
 
 data_folder = f"models/experiments/{experiment_name}"
 best_ap_df = best_sorted_ap_per_experiment(data_folder=data_folder)
