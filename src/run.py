@@ -359,15 +359,15 @@ def main():
         repetitions=2,
     )
 
-    # for model_training_session in params_combinations:
-    #     # Training session
-    #     model_training_session.train()
+    for model_training_session in params_combinations:
+        # Training session
+        model_training_session.train()
 
-    models_folder = os.path.join(Folders.MODELS.value, "chm_z_layers_2")
-    model_names = os.listdir(models_folder)
-    for model_name in model_names:
-        model_training_session = ModelTrainingSession.from_name(models_folder, model_name)
-        model_training_session.compute_metrics()
+    # models_folder = os.path.join(Folders.MODELS.value, "chm_z_layers_2")
+    # model_names = os.listdir(models_folder)
+    # for model_name in model_names:
+    #     model_training_session = ModelTrainingSession.from_name(models_folder, model_name)
+    #     model_training_session.compute_metrics()
 
     # experiment_name = "training_params_experiment"
     # parent_folder_path = os.path.join(Folders.MODELS_EXPERIMENTS.value, experiment_name)
