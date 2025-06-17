@@ -27,7 +27,6 @@ from utils import (
     get_file_base_name,
 )
 
-
 gdal.UseExceptions()
 
 
@@ -43,7 +42,8 @@ def _get_rgb_download_url(image_name_with_ext: str) -> str:
     block, parcel = _get_block_perceel_from_image_file_name(image_name_with_ext)
     parcel_int = parcel[-1]
 
-    return f"https://ns_hwh.fundaments.nl/hwh-ortho/2023/Ortho/{parcel_int}/{block}/beelden_tif_tegels/{image_name_with_ext}"
+    # return f"https://ns_hwh.fundaments.nl/hwh-ortho/2023/Ortho/{parcel_int}/{block}/beelden_tif_tegels/{image_name_with_ext}"
+    return f"https://fsn1.your-objectstorage.com/hwh-ortho/2023/Ortho/{parcel_int}/{block}/beelden_tif_tegels/{image_name_with_ext}"
 
 
 def get_rgb_image_path_from_file_name(file_name: str) -> str:
@@ -91,7 +91,8 @@ def download_rgb_names_shapefile(verbose: bool = True) -> str:
     shapefile_path = os.path.join(Folders.IMAGES.value, "2023_HRL_blokindeling.zip")
     if not os.path.exists(shapefile_path):
         download_file(
-            "https://ns_hwh.fundaments.nl/hwh-stereo/AUX/BOUNDS/2023_HRL_blokindeling.zip",
+            # "https://ns_hwh.fundaments.nl/hwh-stereo/AUX/BOUNDS/2023_HRL_blokindeling.zip",
+            "https://basisdata.nl/hwh-stereo/AUX/BOUNDS/2023_HRL_blokindeling.zip",
             shapefile_path,
             no_ssl=True,
             verbose=verbose,
@@ -374,7 +375,9 @@ def download_cir(
                 "f": "image",  # Output format
                 "bboxSR": "EPSG:28992",  # Coordinate system
                 "bbox": current_bbox,
-                "size": f"{pixels_per_download},{pixels_per_download}",  # Width and height of the output image
+                "size": (
+                    f"{pixels_per_download},{pixels_per_download}"
+                ),  # Width and height of the output image
                 "mapScale": map_scale,
                 "formatOptions": "TIFF",
                 "transparent": True,

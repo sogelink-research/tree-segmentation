@@ -66,7 +66,9 @@ def best_sorted_ap_per_experiment(data_folder: str):
     return df
 
 
-def plot_sorted_ap_per_data_type(data_folder: str, show: bool, save_path: Optional[str] = None):
+def plot_sorted_ap_per_data_type(
+    data_folder: str, data_used_order: List[str], show: bool, save_path: Optional[str] = None
+):
     if not show and save_path is None:
         RICH_PRINTING.print("Nothing to do!")
         return
@@ -107,7 +109,14 @@ def plot_sorted_ap_per_data_type(data_folder: str, show: bool, save_path: Option
     #     palette="deep",
     # )
 
-    sns.swarmplot(data=df, x="Numerical Group", y="Best sortedAP", hue="Data used for evaluation")
+    sns.swarmplot(
+        data=df,
+        x="Numerical Group",
+        y="Best sortedAP",
+        hue="Data used for evaluation",
+        hue_order=data_used_order,
+        palette="colorblind",
+    )
 
     # Customizing the plot
     plt.xlabel("Data used for evaluation")
@@ -304,6 +313,8 @@ filtered_best_ap_df_style.to_html(save_path, index=False)
 print(filtered_best_ap_df.columns)
 print(filtered_best_ap_df)
 
+data_used_order = ["RGB and CIR", "CHM only", "RGB, CIR and CHM"]
+
 # plt.figure()
 # # matplotlib.use("Agg")
 # sns.pairplot(filtered_best_ap_df, hue="Best sortedAP", palette="Spectral")
@@ -349,8 +360,13 @@ save_path = os.path.join(Folders.MODELS_RESULTS.value, f"{experiment_name}_swarm
 plt.savefig(save_path, dpi=200)
 
 
-# ap_per_data_type_path = os.path.join(Folders.MODELS_RESULTS.value, "ap_per_data_type.png")
-# plot_sorted_ap_per_data_type(data_folder=data_folder, show=False, save_path=ap_per_data_type_path)
+ap_per_data_type_path = os.path.join(Folders.MODELS_RESULTS.value, "ap_per_data_type.png")
+plot_sorted_ap_per_data_type(
+    data_folder=data_folder,
+    data_used_order=data_used_order,
+    show=False,
+    save_path=ap_per_data_type_path,
+)
 # instability_per_learning_rate_path = os.path.join(
 #     Folders.MODELS_RESULTS.value, "instability_per_learning_rate.png"
 # )
