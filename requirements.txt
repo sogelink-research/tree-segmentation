@@ -1,0 +1,54 @@
+# Python version
+# python>=3.11,<3.12
+
+# Pytorch
+torch>=2.3.0
+torchvision>=0.18.0
+# Note: pytorch-cuda may need specific installation instructions or separate handling
+
+# Deep Learning
+scipy>=1.4.1
+ultralytics
+albumentations
+
+# Jupyter notebook
+ipykernel
+ipywidgets
+
+# Others
+numpy>=2.0.0
+matplotlib
+opencv-python>=4.1.2
+addict>=2.4.0
+tensorboard>=2.7.0
+pycocotools>=2.0
+onnx>=1.10.0
+cmake
+geojson
+
+# Images manipulation
+gdal
+shapely
+tifffile
+
+# Point clouds manipulation
+pdal
+python-pdal
+
+# Downloading files
+requests
+
+# Speed test
+snakeviz
+h5py
+netCDF4
+
+# Additional pip packages
+vscode-tqdm
+laspy[lazrs,laszip]
+pyyaml>=5.3.1 # Useless?
+
+# Gold-YOLO
+onnxsim>=0.3.6
+thop
+mmcv==1.5.0
